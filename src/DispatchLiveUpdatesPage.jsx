@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from "react";
 import { Search, Plus, Truck, ClipboardList, CheckCircle2, Clock, AlertTriangle, DollarSign, Trash2, Save, Users, ShieldCheck, Database, UserPlus, UserX, Crown } from "lucide-react";
 import { motion } from "framer-motion";
-
+import { supabase } from "./lib/supabase";
+import { useEffect } from "react";
 const initialJobs = [
   {
     id: 1001,
