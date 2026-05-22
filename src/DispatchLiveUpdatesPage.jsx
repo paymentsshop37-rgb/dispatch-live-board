@@ -110,7 +110,7 @@ function money(value) {
 }
 
 export default function DispatchLiveUpdatesPage() {
-  const [jobs, setJobs] = useState([]);
+const [jobs, setJobs] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
