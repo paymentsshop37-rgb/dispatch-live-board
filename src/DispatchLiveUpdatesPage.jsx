@@ -161,7 +161,26 @@ async function fetchJobs() {
     };
   }, [jobs]);
 
-  function addJob(e) {
+  async function addJob(e) {
+  e.preventDefault();
+
+  const newJob = {
+    ...form,
+    parts: Number(form.parts || 0),
+    totalBill: Number(form.totalBill || 0),
+    techLabor: Number(form.techLabor || 0),
+  };
+
+  const { data, error } = await supabase
+    .from("jobs")
+    .insert([newJob])
+    .select();
+
+  if (!error && data) {
+    setJobs([data[0], ...jobs]);
+    setForm(emptyForm());
+  }
+}
     e.preventDefault();
     const total = Number(form.totalBill || 0) || Number(form.parts || 0);
     setJobs([
