@@ -120,7 +120,20 @@ export default function DispatchLiveUpdatesPage() {
   const [currentUserRole] = useState("Admin");
   const [jobToDelete, setJobToDelete] = useState(null);
   const isAdmin = currentUserRole === "Admin";
+useEffect(() => {
+  fetchJobs();
+}, []);
 
+async function fetchJobs() {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("*")
+    .order("date", { ascending: true });
+
+  if (!error && data) {
+    setJobs(data);
+  }
+}
   const filteredJobs = useMemo(() => {
     return jobs
       .filter((job) => {
