@@ -195,8 +195,18 @@ async function fetchJobs() {
     ]);
     setForm(emptyForm());
   }
+async function updateJob(id, field, value) {
+  setJobs(
+    jobs.map((job) =>
+      job.id === id ? { ...job, [field]: value } : job
+    )
+  );
 
-  function updateJob(id, field, value) {
+  await supabase
+    .from("jobs")
+    .update({ [field]: value })
+    .eq("id", id);
+}
     setJobs(
       jobs.map((job) => {
         if (job.id !== id) return job;
