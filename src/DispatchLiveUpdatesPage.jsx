@@ -219,7 +219,18 @@ async function updateJob(id, field, value) {
     );
   }
 
-  function deleteJob(id) {
+  async function deleteJob(id) {
+  await supabase
+    .from("jobs")
+    .delete()
+    .eq("id", id);
+
+  setJobs((currentJobs) =>
+    currentJobs.filter((job) => job.id !== id)
+  );
+
+  setJobToDelete(null);
+}
     setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
     setJobToDelete(null);
   }
