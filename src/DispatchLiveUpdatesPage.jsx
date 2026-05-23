@@ -673,6 +673,8 @@ async function deleteJob(id) {
     </div>
   );
 }
+
+export default DispatchLiveUpdatesPage;
       
 function emptyForm() {
   return {
@@ -695,7 +697,6 @@ function emptyForm() {
   };
 }
 
-function StatCard({ icon, label, value }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">{React.cloneElement(icon, { className: "h-5 w-5" })}</div>
