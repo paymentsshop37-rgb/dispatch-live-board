@@ -1,8 +1,8 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { supabase } from "./lib/supabase";
 import { Search, Plus, Truck, ClipboardList, CheckCircle2, Clock, AlertTriangle, DollarSign, Trash2, Save, Users, ShieldCheck, Database, UserPlus, UserX, Crown } from "lucide-react";
 import { motion } from "framer-motion";
-import { useEffect } from "react";
+import { supabase } from "./lib/supabase";
+
 const initialJobs = [
   {
     id: 1001,
@@ -109,8 +109,63 @@ function money(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
 }
 
+const fieldMap = {
+  date: "job_date",
+  time: "job_time",
+  reference: "invoice_number",
+  rowFlag: "row_flag",
+  invoice: "invoice_status",
+  paymentMethod: "payment_method",
+  paymentReceiver: "received",
+  totalBill: "total_bill",
+  techLabor: "tech_labor",
+};
+
+function fromDbJob(row) {
+  return {
+    id: row.id,
+    date: row.job_date || "",
+    time: row.job_time || "",
+    reference: row.invoice_number || "",
+    dispatch: row.dispatch || "",
+    company: row.company || "",
+    tech: row.tech || "",
+    location: row.location || "",
+    status: row.status || "New",
+    rowFlag: row.row_flag || "Normal",
+    invoice: row.invoice_status || "Pending",
+    paymentMethod: row.payment_method || "Pending",
+    paymentReceiver: row.received || "A",
+    updates: row.updates || "",
+    totalBill: Number(row.total_bill || 0),
+    parts: Number(row.parts || 0),
+    techLabor: Number(row.tech_labor || 0),
+  };
+}
+
+function toDbJob(job) {
+  return {
+    job_date: job.date || null,
+    job_time: job.time || "",
+    invoice_number: job.reference || "",
+    dispatch: job.dispatch || "",
+    company: job.company || "",
+    tech: job.tech || "",
+    location: job.location || "",
+    status: job.status || "New",
+    row_flag: job.rowFlag || "Normal",
+    invoice_status: job.invoice || "Pending",
+    payment_method: job.paymentMethod || "Pending",
+    received: job.paymentReceiver || "A",
+    updates: job.updates || "",
+    total_bill: Number(job.totalBill || 0),
+    parts: Number(job.parts || 0),
+    tech_labor: Number(job.techLabor || 0),
+  };
+}
+
 export default function DispatchLiveUpdatesPage() {
-const [jobs, setJobs] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
@@ -119,34 +174,39 @@ const [jobs, setJobs] = useState([]);
   const [newUser, setNewUser] = useState({ name: "", email: "", role: "Dispatcher" });
   const [currentUserRole] = useState("Admin");
   const [jobToDelete, setJobToDelete] = useState(null);
+  const isAdmin = currentUserRole === "Admin";
+
   useEffect(() => {
-  fetchJobs();
-}, []);
+    loadJobs();
 
-async function fetchJobs() {
-  const { data, error } = await supabase
-    .from("jobs")
-    .select("*")
-    .order("date", { ascending: true });
+    const channel = supabase
+      .channel("live-jobs")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "jobs" },
+        () => loadJobs()
+      )
+      .subscribe();
 
-  if (!error && data) {
-    setJobs(data);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  async function loadJobs() {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("*")
+      .order("job_date", { ascending: true });
+
+    if (error) {
+      console.error("Error loading jobs:", error.message);
+      return;
+    }
+
+    setJobs((data || []).map(fromDbJob));
   }
-}
-useEffect(() => {
-  fetchJobs();
-}, []);
 
-async function fetchJobs() {
-  const { data, error } = await supabase
-    .from("jobs")
-    .select("*")
-    .order("date", { ascending: true });
-
-  if (!error && data) {
-    setJobs(data);
-  }
-}
   const filteredJobs = useMemo(() => {
     return jobs
       .filter((job) => {
@@ -175,75 +235,57 @@ async function fetchJobs() {
   }, [jobs]);
 
   async function addJob(e) {
-  e.preventDefault();
-
-  const newJob = {
-    ...form,
-    parts: Number(form.parts || 0),
-    totalBill: Number(form.totalBill || 0),
-    techLabor: Number(form.techLabor || 0),
-  };
-
-  const { data, error } = await supabase
-    .from("jobs")
-    .insert([newJob])
-    .select();
-
-  if (!error && data) {
-    setJobs([data[0], ...jobs]);
-    setForm(emptyForm());
-  }
-}
     e.preventDefault();
-    const total = Number(form.totalBill || 0) || Number(form.parts || 0);
-    setJobs([
-      {
-        id: Date.now(),
-        ...form,
-        parts: Number(form.parts || 0),
-        totalBill: total,
-        techLabor: Number(form.techLabor || 0),
-      },
-      ...jobs,
-    ]);
-    setForm(emptyForm());
-  }
-async function updateJob(id, field, value) {
-  setJobs(
-    jobs.map((job) =>
-      job.id === id ? { ...job, [field]: value } : job
-    )
-  );
 
-  await supabase
-    .from("jobs")
-    .update({ [field]: value })
-    .eq("id", id);
-}
-    setJobs(
-      jobs.map((job) => {
-        if (job.id !== id) return job;
-        const updated = { ...job, [field]: value };
-        if (["parts"].includes(field)) {
-          updated.totalBill = Number(updated.parts || 0);
-        }
-        return updated;
-      })
+    const newJob = {
+      ...form,
+      parts: Number(form.parts || 0),
+      totalBill: Number(form.totalBill || 0),
+      techLabor: Number(form.techLabor || 0),
+    };
+
+    const { data, error } = await supabase
+      .from("jobs")
+      .insert([toDbJob(newJob)])
+      .select()
+      .single();
+
+    if (error) {
+      alert("Error saving job: " + error.message);
+      return;
+    }
+
+    if (data) {
+      setJobs((currentJobs) => [fromDbJob(data), ...currentJobs]);
+      setForm(emptyForm());
+    }
+  }
+
+  async async function updateJob(id, field, value) {
+    setJobs((currentJobs) =>
+      currentJobs.map((job) => (job.id === id ? { ...job, [field]: value } : job))
     );
+
+    const dbField = fieldMap[field] || field;
+    const { error } = await supabase
+      .from("jobs")
+      .update({ [dbField]: value })
+      .eq("id", id);
+
+    if (error) {
+      alert("Error updating job: " + error.message);
+      loadJobs();
+    }
   }
 
-  async function deleteJob(id) {
-  await supabase
-    .from("jobs")
-    .delete()
-    .eq("id", id);
+  async async function deleteJob(id) {
+    const { error } = await supabase.from("jobs").delete().eq("id", id);
 
-  setJobs((currentJobs) =>
-    currentJobs.filter((job) => job.id !== id)
-  );
+    if (error) {
+      alert("Error deleting job: " + error.message);
+      return;
+    }
 
-  setJobToDelete(null);
-}
     setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
     setJobToDelete(null);
   }
