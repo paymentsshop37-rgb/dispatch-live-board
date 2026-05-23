@@ -675,7 +675,6 @@ async function deleteJob(id) {
 
 function emptyForm() {
   return {
- 
     date: new Date().toISOString().slice(0, 10),
     dispatch: "",
     time: "",
