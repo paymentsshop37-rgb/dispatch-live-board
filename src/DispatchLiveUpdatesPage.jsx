@@ -676,7 +676,9 @@ async function deleteJob(id) {
 export default DispatchLiveUpdatesPage;
       
 function emptyForm() {
-  return {
+function emptyForm() {
+  return { date: new Date().toISOString().slice(0, 10), dispatch: "", time: "", reference: "", company: "", tech: "", location: "", status: "New", rowFlag: "Normal", invoice: "Pending", paymentMethod: "Pending", paymentReceiver: "A", updates: "", parts: "", totalBill: "", techLabor: "" };
+}
     date: new Date().toISOString().slice(0, 10),
     dispatch: "",
     time: "",
