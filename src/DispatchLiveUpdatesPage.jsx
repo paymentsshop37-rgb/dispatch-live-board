@@ -672,7 +672,6 @@ async function deleteJob(id) {
       </div>
     </div>
   );
-}
 
 function emptyForm() {
   return {
