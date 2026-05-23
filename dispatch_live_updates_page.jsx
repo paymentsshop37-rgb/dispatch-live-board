@@ -109,6 +109,20 @@ function money(value) {
 
 export default function DispatchLiveUpdatesPage() {
  const [jobs, setJobs] = useState([]);
+  useEffect(() => {
+  loadJobs();
+}, []);
+
+async function loadJobs() {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (!error && data) {
+    setJobs(data);
+  }
+}
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
