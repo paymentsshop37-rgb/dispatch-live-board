@@ -672,7 +672,6 @@ async function deleteJob(id) {
       </div>
     </div>
   );
-}
 
 export default DispatchLiveUpdatesPage;
       
@@ -696,16 +695,13 @@ function emptyForm() {
     techLabor: "",
   };
 }
-
+function StatCard({ icon, label, value }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl bg-white p-5 shadow-sm">
-      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">{React.cloneElement(icon, { className: "h-5 w-5" })}</div>
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold">{value}</p>
+      ...
     </motion.div>
   );
 }
-
 function Input({ label, value, onChange, type = "text", placeholder = "" }) {
   return <label className="space-y-1 text-sm font-medium">{label}<input type={type} className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} /></label>;
 }
