@@ -276,23 +276,43 @@ async function loadJobs() {
   }
 
   async function updateJob(id, field, value) {
-    setJobs((currentJobs) =>
-      currentJobs.map((job) => (job.id === id ? { ...job, [field]: value } : job))
-    );
+  const oldJob = jobs.find((job) => job.id === id);
+  const oldValue = oldJob ? oldJob[field] : "";
 
-    const dbField = fieldMap[field] || field;
-    const { error } = await supabase
-      .from("jobs")
-      .update({ [dbField]: value })
-      .eq("id", id);
+  setJobs((currentJobs) =>
+    currentJobs.map((job) =>
+      job.id === id ? { ...job, [field]: value } : job
+    )
+  );
 
-    if (error) {
-      alert("Error updating job: " + error.message);
-      loadJobs();
-    }
+  const dbField = fieldMap[field] || field;
+
+  const { error } = await supabase
+    .from("jobs")
+    .update({ [dbField]: value })
+    .eq("id", id);
+
+  if (error) {
+    alert("Error updating job: " + error.message);
+    loadJobs();
+    return;
   }
 
- async function deleteJob(id) {
+  await supabase.from("change_logs").insert([
+    {
+      job_id: id,
+      action: "updated",
+      field_name: field,
+      old_value: String(oldValue ?? ""),
+      new_value: String(value ?? ""),
+      user_name: "Dispatcher",
+    },
+  ]);
+}
+
+async function deleteJob(id) {
+  const deletedJob = jobs.find((job) => job.id === id);
+
   const { error } = await supabase
     .from("jobs")
     .delete()
@@ -302,6 +322,17 @@ async function loadJobs() {
     alert("Error deleting job: " + error.message);
     return;
   }
+
+  await supabase.from("change_logs").insert([
+    {
+      job_id: id,
+      action: "deleted",
+      field_name: "job",
+      old_value: deletedJob?.reference || deletedJob?.company || String(id),
+      new_value: "",
+      user_name: "Dispatcher",
+    },
+  ]);
 
   setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
   setJobToDelete(null);
