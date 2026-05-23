@@ -188,6 +188,7 @@ async function loadJobs() {
   const [newUser, setNewUser] = useState({ name: "", email: "", role: "Dispatcher" });
   const [currentUserRole] = useState("Admin");
   const [jobToDelete, setJobToDelete] = useState(null);
+  const [changeLogs, setChangeLogs] = useState([]);
   const isAdmin = currentUserRole === "Admin";
 
   useEffect(() => {
@@ -219,7 +220,12 @@ async function loadJobs() {
     }
 
     setJobs((data || []).map(fromDbJob));
-  }
+  const { data: logsData } = await supabase
+  .from("change_logs")
+  .select("*")
+  .order("created_at", { ascending: false });
+
+setChangeLogs(logsData || []);
 
   const filteredJobs = useMemo(() => {
     return jobs
@@ -444,7 +450,41 @@ async function deleteJob(id) {
             <div className="mb-4 flex items-center gap-3">
               <Database className="h-5 w-5 text-emerald-700" />
               <h2 className="text-xl font-bold">Secure Data Storage</h2>
-            </div>
+           <div className="rounded-3xl bg-white p-5 shadow-sm mt-6">
+  <div className="mb-4 flex items-center gap-3">
+    <ClipboardList className="h-5 w-5 text-orange-700" />
+    <h2 className="text-xl font-bold">Change History / Audit Logs</h2>
+  </div>
+
+  <div className="space-y-3 max-h-80 overflow-auto">
+    {changeLogs.map((log) => (
+      <div
+        key={log.id}
+        className="rounded-2xl border border-orange-200 bg-orange-50 p-3"
+      >
+        <p className="font-semibold text-orange-900">
+          {log.user_name}
+        </p>
+
+        <p className="text-sm text-orange-700">
+          {log.action} • {log.field_name}
+        </p>
+
+        <p className="text-sm text-gray-700">
+          <span className="font-semibold">Old:</span> {log.old_value}
+        </p>
+
+        <p className="text-sm text-gray-700">
+          <span className="font-semibold">New:</span> {log.new_value}
+        </p>
+
+        <p className="text-xs text-gray-500 mt-1">
+          {new Date(log.created_at).toLocaleString()}
+        </p>
+      </div>
+    ))}
+  </div>
+</div>
             <div className="grid gap-3 text-sm">
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
                 <p className="font-bold text-emerald-800">Protected Database</p>
