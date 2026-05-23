@@ -676,7 +676,7 @@ async function deleteJob(id) {
 export default DispatchLiveUpdatesPage;
       
 function emptyForm() {
-  return {
+  return (
     date: new Date().toISOString().slice(0, 10),
     dispatch: "",
     time: "",
