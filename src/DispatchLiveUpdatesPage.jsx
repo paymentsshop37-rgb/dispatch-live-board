@@ -292,17 +292,20 @@ async function loadJobs() {
     }
   }
 
- async function deleteJob
-    const { error } = await supabase.from("jobs").delete().eq("id", id);
+ async function deleteJob(id) {
+  const { error } = await supabase
+    .from("jobs")
+    .delete()
+    .eq("id", id);
 
-    if (error) {
-      alert("Error deleting job: " + error.message);
-      return;
-    }
-
-    setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
-    setJobToDelete(null);
+  if (error) {
+    alert("Error deleting job: " + error.message);
+    return;
   }
+
+  setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
+  setJobToDelete(null);
+}
 
   function requestDelete(job) {
     setJobToDelete(job);
