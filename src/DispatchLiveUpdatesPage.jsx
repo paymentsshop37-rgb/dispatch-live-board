@@ -275,7 +275,7 @@ async function loadJobs() {
     }
   }
 
-  async async function updateJob(id, field, value) {
+  async function updateJob(id, field, value) {
     setJobs((currentJobs) =>
       currentJobs.map((job) => (job.id === id ? { ...job, [field]: value } : job))
     );
@@ -292,7 +292,7 @@ async function loadJobs() {
     }
   }
 
-  async async function deleteJob(id) {
+ async function deleteJob
     const { error } = await supabase.from("jobs").delete().eq("id", id);
 
     if (error) {
