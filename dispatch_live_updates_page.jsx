@@ -109,7 +109,7 @@ function money(value) {
 }
 
 export default function DispatchLiveUpdatesPage() {
-  const [jobs, setJobs] = useState(initialJobs);
+ const [jobs, setJobs] = useState([]);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
@@ -117,7 +117,20 @@ export default function DispatchLiveUpdatesPage() {
   const [users, setUsers] = useState(initialUsers);
   const [newUser, setNewUser] = useState({ name: "", email: "", role: "Dispatcher" });
   const [currentUserRole] = useState("Admin");
-  const [jobToDelete, setJobToDelete] = useState(null);
+  async function deleteJob(id) {
+  const { error } = await supabase
+    .from("jobs")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    alert("Error deleting job: " + error.message);
+    return;
+  }
+
+  setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
+  setJobToDelete(null);
+}
   const isAdmin = currentUserRole === "Admin";
 
   const filteredJobs = useMemo(() => {
