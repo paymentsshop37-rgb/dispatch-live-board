@@ -412,6 +412,27 @@ if (!accessGranted) {
             </div>
             <div className="rounded-2xl bg-white/10 px-4 py-3 text-sm text-slate-200">Admin Controlled Access</div>
           </div>
+          <div className="flex gap-3 mt-4">
+  <button
+    onClick={() => {
+      setAccessGranted(false);
+      setAccessCode("");
+      setCurrentUserRole(null);
+    }}
+    className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+  >
+    Logout
+  </button>
+
+  <button
+    onClick={() => {
+      document.documentElement.classList.toggle("dark");
+    }}
+    className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700"
+  >
+    Dark Mode
+  </button>
+</div>
         </motion.div>
 
         <div className="grid gap-4 md:grid-cols-5">
