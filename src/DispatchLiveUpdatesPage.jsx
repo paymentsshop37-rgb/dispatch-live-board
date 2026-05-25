@@ -169,20 +169,6 @@ function toDbJob(job) {
 
 export default function DispatchLiveUpdatesPage() {
   const [jobs, setJobs] = useState([]);
-  useEffect(() => {
-  loadJobs();
-}, []);
-
-async function loadJobs() {
-  const { data, error } = await supabase
-    .from("jobs")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (!error && data) {
-    setJobs(data);
-  }
-}
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
@@ -229,6 +215,7 @@ async function loadJobs() {
   .order("created_at", { ascending: false });
 
 setChangeLogs(logsData || []);
+  }
 
   const filteredJobs = useMemo(() => {
     return jobs
@@ -453,6 +440,7 @@ async function deleteJob(id) {
             <div className="mb-4 flex items-center gap-3">
               <Database className="h-5 w-5 text-emerald-700" />
               <h2 className="text-xl font-bold">Secure Data Storage</h2>
+            </div>
            <div className="rounded-3xl bg-white p-5 shadow-sm mt-6">
   <div className="mb-4 flex items-center gap-3">
     <ClipboardList className="h-5 w-5 text-orange-700" />
