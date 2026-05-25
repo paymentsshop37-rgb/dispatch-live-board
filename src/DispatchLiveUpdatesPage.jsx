@@ -675,9 +675,7 @@ async function deleteJob(id) {
       </div>
     </div>
   );
-
-export default DispatchLiveUpdatesPage;
-      
+   
 function emptyForm() {
   const today = new Date().toISOString().slice(0, 10);
 
