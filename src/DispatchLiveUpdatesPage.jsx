@@ -638,6 +638,13 @@ if (!accessGranted) {
                 <Input label="Tech Labor" type="number" value={form.techLabor} onChange={(v) => setForm({ ...form, techLabor: v })} />
               </div>
               <button className="mt-2 rounded-2xl bg-slate-950 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-slate-800">Add Job to Live Board</button>
+              <button
+  onClick={() => exportJobsToCSV(filteredJobs)}
+  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 flex items-center gap-2"
+>
+  <FileSpreadsheet className="h-4 w-4" />
+  Export Excel
+</button>
             </div>
           </form>
 
