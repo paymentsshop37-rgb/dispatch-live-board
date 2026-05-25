@@ -679,9 +679,27 @@ async function deleteJob(id) {
 export default DispatchLiveUpdatesPage;
       
 function emptyForm() {
-  return { date: new Date().toISOString().slice(0, 10), dispatch: "", time: "", reference: "", company: "", tech: "", location: "", status: "New", rowFlag: "Normal", invoice: "Pending", paymentMethod: "Pending", paymentReceiver: "A", updates: "", parts: "", totalBill: "", techLabor: "" };
+  const today = new Date().toISOString().slice(0, 10);
+
+  return {
+    date: today,
+    dispatch: "",
+    time: "",
+    reference: "",
+    company: "",
+    tech: "",
+    location: "",
+    status: "New",
+    rowFlag: "Normal",
+    invoice: "Pending",
+    paymentMethod: "Pending",
+    paymentReceiver: "A",
+    updates: "",
+    parts: "",
+    totalBill: "",
+    techLabor: "",
+  };
 }
-      
 function StatCard({ icon, label, value }) {
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="rounded-3xl bg-white p-5 shadow-sm">
