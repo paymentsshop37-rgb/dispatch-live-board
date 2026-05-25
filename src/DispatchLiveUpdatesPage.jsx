@@ -110,6 +110,71 @@ const paymentReceivers = ["A", "B"];
 
 function money(value) {
   function exportJobsToCSV(jobs) {
+    function exportJobsToPDF(jobs) {
+  const reportWindow = window.open("", "_blank");
+
+  const rows = jobs.map((job) => {
+    const profit =
+      Number(job.totalBill || 0) -
+      Number(job.parts || 0) -
+      Number(job.techLabor || 0);
+
+    return `
+      <tr>
+        <td>${job.date || ""}</td>
+        <td>${job.reference || ""}</td>
+        <td>${job.company || ""}</td>
+        <td>${job.tech || ""}</td>
+        <td>${job.location || ""}</td>
+        <td>${job.status || ""}</td>
+        <td>$${Number(job.totalBill || 0).toFixed(2)}</td>
+        <td>$${profit.toFixed(2)}</td>
+      </tr>
+    `;
+  }).join("");
+
+  reportWindow.document.write(`
+    <html>
+      <head>
+        <title>Dispatch Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 30px; color: #111827; }
+          h1 { margin-bottom: 5px; }
+          .subtitle { color: #6b7280; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; }
+          th { background: #f3f4f6; }
+          .footer { margin-top: 25px; font-size: 11px; color: #6b7280; }
+        </style>
+      </head>
+      <body>
+        <h1>Dispatch Live Report</h1>
+        <div class="subtitle">Generated ${new Date().toLocaleString()}</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Invoice</th>
+              <th>Company</th>
+              <th>Tech</th>
+              <th>Location</th>
+              <th>Status</th>
+              <th>Total Bill</th>
+              <th>Profit</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div class="footer">Dispatch Live Board · Professional Road Service Report</div>
+        <script>
+          window.print();
+        </script>
+      </body>
+    </html>
+  `);
+
+  reportWindow.document.close();
+}
   const headers = [
     "Date",
     "Time",
