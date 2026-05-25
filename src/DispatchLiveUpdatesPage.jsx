@@ -3,6 +3,9 @@ import { Search, Plus, Truck, ClipboardList, CheckCircle2, Clock, AlertTriangle,
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
 
+const DISPATCH_PASSWORD = "DISPATCH2026";
+const ADMIN_PASSWORD = "ADMIN2026";
+
 const initialJobs = [
   {
     id: 1001,
