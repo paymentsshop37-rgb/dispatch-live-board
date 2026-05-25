@@ -109,6 +109,60 @@ const paymentReceivers = ["A", "B"];
 
 
 function money(value) {
+  function exportJobsToCSV(jobs) {
+  const headers = [
+    "Date",
+    "Time",
+    "Invoice",
+    "Dispatch",
+    "Company",
+    "Tech",
+    "Location",
+    "Status",
+    "Invoice Status",
+    "Payment Method",
+    "Received",
+    "Updates",
+    "Total Bill",
+    "Parts",
+    "Tech Labor",
+    "Profit",
+  ];
+
+  const rows = jobs.map((job) => [
+    job.date,
+    job.time,
+    job.reference,
+    job.dispatch,
+    job.company,
+    job.tech,
+    job.location,
+    job.status,
+    job.invoice,
+    job.paymentMethod,
+    job.paymentReceiver,
+    job.updates,
+    job.totalBill,
+    job.parts,
+    job.techLabor,
+    Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0),
+  ]);
+
+  const csvContent =
+    [headers, ...rows]
+      .map((row) =>
+        row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `dispatch-report-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
 }
 
