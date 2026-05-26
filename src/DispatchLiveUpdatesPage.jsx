@@ -620,6 +620,11 @@ export default function DispatchLiveUpdatesPage() {
         <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-8">
           <StatCard icon={<ClipboardList />} label="Total Jobs" value={stats.total} />
           <StatCard icon={<Clock />} label="Weekly Jobs" value={stats.weeklyJobs} />
+          <StatCard
+  icon={<ClipboardList />}
+  label="Monthly Jobs"
+  value={stats.monthlyJobs}
+/>
           <StatCard icon={<Clock />} label="In Progress" value={stats.inProgress} />
           <StatCard icon={<CheckCircle2 />} label="Completed" value={stats.completed} />
           <StatCard icon={<AlertTriangle />} label="Open Invoices" value={stats.pendingInvoices} />
