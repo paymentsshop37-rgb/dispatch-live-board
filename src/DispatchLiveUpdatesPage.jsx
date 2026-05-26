@@ -555,6 +555,22 @@ if (!accessGranted) {
         </motion.div>
 
         <div className="grid gap-4 md:grid-cols-5">
+          <StatCard
+  icon={<Clock />}
+  label="Weekly Jobs"
+  value={jobs.filter(job => {
+    const jobDate = new Date(job.date);
+    const now = new Date();
+    const diff = (now - jobDate) / (1000 * 60 * 60 * 24);
+    return diff <= 7;
+  }).length}
+/>
+
+<StatCard
+  icon={<AlertTriangle />}
+  label="Cancelled"
+  value={jobs.filter(job => job.status === "Cancelled").length}
+/>
           <StatCard icon={<ClipboardList />} label="Total Jobs" value={stats.total} />
           <StatCard icon={<Clock />} label="In Progress" value={stats.inProgress} />
           <StatCard icon={<CheckCircle2 />} label="Completed" value={stats.completed} />
