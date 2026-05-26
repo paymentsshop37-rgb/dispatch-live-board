@@ -512,7 +512,9 @@ async function uploadPhoto(jobId, file) {
       },
     ]);
   }
-
+await logActivity(
+  `${currentUserRole || "Unknown User"} deleted job ${job.invoiceNumber || job.id}`
+);
   async function deleteJob(id) {
     const deletedJob = jobs.find((job) => job.id === id);
 
