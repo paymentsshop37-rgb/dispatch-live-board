@@ -205,6 +205,7 @@ function exportJobsToPDF(jobs) {
 
 function fromDbJob(row) {
   return {
+    photo_url: row.photo_url || "",
     id: row.id,
     date: row.job_date || "",
     time: row.job_time || "",
