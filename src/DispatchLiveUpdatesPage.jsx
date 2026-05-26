@@ -785,10 +785,11 @@ if (!accessGranted) {
             {log.time}
           </p>
         </div>
-      ))
+    ))
     )}
   </div>
-</div>
+  </div>
+   
     )}
 
         <div className="grid gap-4 lg:grid-cols-2">
