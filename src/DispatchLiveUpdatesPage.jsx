@@ -640,6 +640,34 @@ if (!accessGranted) {
     </ResponsiveContainer>
   </div>
 </div>
+            <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+  <h2 className="mb-4 text-xl font-bold">Jobs By City</h2>
+
+  <div className="h-[320px] w-full">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart
+        data={Object.entries(
+          jobs.reduce((acc, job) => {
+            const city = job.location || "Unknown";
+
+            acc[city] = (acc[city] || 0) + 1;
+
+            return acc;
+          }, {})
+        ).map(([name, value]) => ({
+          name,
+          value,
+        }))}
+      >
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" />
+        <YAxis />
+        <Tooltip />
+        <Bar dataKey="value" radius={[10, 10, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+</div>
           </div>
         )}
 
