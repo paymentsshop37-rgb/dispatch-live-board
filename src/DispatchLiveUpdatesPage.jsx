@@ -443,7 +443,13 @@ setChangeLogs(logsData || []);
     loadJobs();
     return;
   }
+const newActivity = {
+  id: Date.now(),
+  message: `${currentUserRole || "Dispatcher"} changed ${field} from "${oldValue}" to "${value}"`,
+  time: new Date().toLocaleString(),
+};
 
+setActivityLogs((logs) => [newActivity, ...logs]);
   await supabase.from("change_logs").insert([
     {
       job_id: id,
