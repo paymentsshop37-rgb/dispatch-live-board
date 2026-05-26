@@ -553,6 +553,10 @@ if (!accessGranted) {
   </button>
 </div>
         </motion.div>
+        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
+  <Bell className="h-4 w-4" />
+  Live Notifications Enabled · Dispatch updates sync instantly across all users
+</div>
 
         <div className="grid gap-4 md:grid-cols-5">
           <StatCard
