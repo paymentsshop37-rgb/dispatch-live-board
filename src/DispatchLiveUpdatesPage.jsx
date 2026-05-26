@@ -957,15 +957,8 @@ export default function DispatchLiveUpdatesPage() {
 
                 <tbody>
                   {filteredJobs.map((job) => (
-                    <tr
-                      key={job.id}
-                     <tr
-  key={job.id}
-  className={`border-t border-slate-200 align-top hover:brightness-[0.98] ${
-    job.rowFlag === "Problem" || job.status === "Dry Run"
-      ? "bg-red-100 border-l-4 border-red-600 animate-pulse"
-      : rowStyles[job.rowFlag || "Normal"]
-  }`}
+                  <tr
+  key={job.id} className={`border-t border-slate-200 align-top hover:brightness-[0.98] $ {job.rowFlag === "Problem" || job.status === "Dry Run" ? "bg-red-100 border-l-4 border-red-600 animate-pulse" : rowStyles[job.rowFlag || "Normal" ]}`}
 >
                       <Td>
                         <select
