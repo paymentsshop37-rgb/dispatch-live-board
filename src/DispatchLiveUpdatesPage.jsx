@@ -974,6 +974,7 @@ async function uploadPhoto(jobId, file) {
                     <Th>Parts</Th>
                     <Th>Tech Labor</Th>
                     <Th>Profit</Th>
+                    <Th>Photo</Th>
                     <Th>Actions</Th>
                   </tr>
                 </thead>
