@@ -512,9 +512,7 @@ async function uploadPhoto(jobId, file) {
       },
     ]);
   }
-await logActivity(
-  `${currentUserRole || "Unknown User"} deleted job ${job.invoiceNumber || job.id}`
-);
+
   async function deleteJob(id) {
     const deletedJob = jobs.find((job) => job.id === id);
 
@@ -524,7 +522,13 @@ await logActivity(
       alert("Error deleting job: " + error.message);
       return;
     }
+const newActivity = {
+  id: Date.now(),
+  message: `${currentUserRole || "Dispatcher"} deleted job ${deletedJob?.reference || deletedJob?.company || id}`,
+  time: new Date().toLocaleString(),
+};
 
+setActivityLogs((logs) => [newActivity, ...logs]);
     await supabase.from("change_logs").insert([
       {
         job_id: id,
