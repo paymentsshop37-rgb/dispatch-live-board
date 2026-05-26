@@ -67,6 +67,7 @@ const paymentMethods = ["EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire
 const paymentReceivers = ["A", "B"];
 
 const fieldMap = {
+  photo_url: "photo_url",
   date: "job_date",
   time: "job_time",
   reference: "invoice_number",
