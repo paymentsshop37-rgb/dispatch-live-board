@@ -446,7 +446,28 @@ export default function DispatchLiveUpdatesPage() {
       ]);
     }
   }
+async function uploadPhoto(jobId, file) {
+  if (!file) return;
 
+  const fileName = `${jobId}-${Date.now()}-${file.name}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from("job-photos")
+    .upload(fileName, file);
+
+  if (uploadError) {
+    alert(uploadError.message);
+    return;
+  }
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage
+    .from("job-photos")
+    .getPublicUrl(fileName);
+
+  await updateJob(jobId, "photo_url", publicUrl);
+}
   async function updateJob(id, field, value) {
     const oldJob = jobs.find((job) => job.id === id);
     const oldValue = oldJob ? oldJob[field] : "";
