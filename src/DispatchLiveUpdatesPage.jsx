@@ -312,22 +312,27 @@ export default function DispatchLiveUpdatesPage() {
   }
 }
 
-  useEffect(() => {
-    loadJobs();
+useEffect(() => {
+  loadJobs();
 
-    const channel = supabase
-      .channel("live-jobs")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "jobs" },
-        () => loadJobs()
-      )
-      .subscribe();
+  const channel = supabase
+    .channel("live-jobs")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "jobs" },
+      () => {
+        loadJobs();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+        const audio = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
+        audio.play();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, []);
 
   async function loadJobs() {
     const { data, error } = await supabase
