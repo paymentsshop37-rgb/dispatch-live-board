@@ -752,6 +752,27 @@ if (!accessGranted) {
                 <select className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
                   {["All", "New", "In Progress", "Completed", "Canceled", "Dry Run"].map((s) => <option key={s}>{s}</option>)}
                 </select>
+                <select
+  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+>
+  <option>All Cities</option>
+  {[...new Set(jobs.map(job => job.location))]
+    .filter(Boolean)
+    .map(city => (
+      <option key={city}>{city}</option>
+    ))}
+</select>
+
+<select
+  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+>
+  <option>All Dispatchers</option>
+  {[...new Set(jobs.map(job => job.dispatch))]
+    .filter(Boolean)
+    .map(dispatch => (
+      <option key={dispatch}>{dispatch}</option>
+    ))}
+</select>
               </div>
             </div>
 
