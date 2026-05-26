@@ -98,13 +98,16 @@ const statusStyles = {
 };
 
 const rowStyles = {
-  Normal: "bg-white",
-  Pending: "bg-yellow-50 border-l-4 border-yellow-400",
-  Problem: "bg-red-50 border-l-4 border-red-500",
+  New: "bg-blue-50 border-l-4 border-blue-500",
+  "In Progress": "bg-yellow-50 border-l-4 border-yellow-500",
   Completed: "bg-emerald-50 border-l-4 border-emerald-500",
-  Info: "bg-blue-50 border-l-4 border-blue-500",
+  Cancelled: "bg-red-50 border-l-4 border-red-500",
+  "Dry Run": "bg-orange-50 border-l-4 border-orange-500",
+  Pending: "bg-slate-50 border-l-4 border-slate-400",
+  Problem: "bg-red-50 border-l-4 border-red-500",
+  Info: "bg-cyan-50 border-l-4 border-cyan-500",
+  Normal: "bg-white",
 };
-
 const invoiceStyles = {
   Pending: "bg-slate-100 text-slate-700",
   Sent: "bg-blue-100 text-blue-700",
