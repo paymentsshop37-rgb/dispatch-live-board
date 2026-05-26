@@ -765,6 +765,30 @@ if (!accessGranted) {
   </div>
 </div>
           </div>
+      <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+  <h2 className="mb-4 text-xl font-bold">Live Activity Log</h2>
+
+  <div className="space-y-3">
+    {activityLogs.length === 0 ? (
+      <p className="text-sm text-slate-500">
+        No recent activity yet.
+      </p>
+    ) : (
+      activityLogs.map((log) => (
+        <div
+          key={log.id}
+          className="rounded-2xl border border-slate-200 px-4 py-3"
+        >
+          <p className="text-sm font-medium">{log.message}</p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            {log.time}
+          </p>
+        </div>
+      ))
+    )}
+  </div>
+</div>
         )}
 
         <div className="grid gap-4 lg:grid-cols-2">
