@@ -290,6 +290,7 @@ export default function DispatchLiveUpdatesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
+  const [periodFilter, setPeriodFilter] = useState("This Week");
   const [cityFilter, setCityFilter] = useState("All");
   const [dispatchFilter, setDispatchFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
@@ -358,8 +359,39 @@ export default function DispatchLiveUpdatesPage() {
         const matchesDate = dateFilter === "All" || job.date === dateFilter;
         const matchesCity = cityFilter === "All" || job.location === cityFilter;
         const matchesDispatch = dispatchFilter === "All" || job.dispatch === dispatchFilter;
+const today = new Date();
+const jobDate = new Date(job.date);
 
-        return matchesSearch && matchesStatus && matchesDate && matchesCity && matchesDispatch;
+const startOfWeek = new Date(today);
+startOfWeek.setDate(today.getDate() - today.getDay());
+
+const endOfWeek = new Date(startOfWeek);
+endOfWeek.setDate(startOfWeek.getDate() + 6);
+
+const isThisWeek =
+  jobDate >= startOfWeek && jobDate <= endOfWeek;
+
+const isThisMonth =
+  jobDate.getMonth() === today.getMonth() &&
+  jobDate.getFullYear() === today.getFullYear();
+
+const matchesPeriod =
+  periodFilter === "All"
+    ? true
+    : periodFilter === "This Week"
+    ? isThisWeek
+    : periodFilter === "This Month"
+    ? isThisMonth
+    : true;
+
+return (
+  matchesSearch &&
+  matchesStatus &&
+  matchesDate &&
+  matchesCity &&
+  matchesDispatch &&
+  matchesPeriod
+);
       })
       .sort((a, b) => new Date(a.date) - new Date(b.date));
   }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter]);
