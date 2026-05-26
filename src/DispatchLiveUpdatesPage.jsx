@@ -491,7 +491,13 @@ async function uploadPhoto(jobId, file) {
       loadJobs();
       return;
     }
+const activityMessage = {
+  id: Date.now(),
+  message: `${currentUserRole || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
+  time: new Date().toLocaleString(),
+};
 
+setActivityLogs((logs) => [activityMessage, ...logs]);
     setActivityLogs((logs) => [
       {
         id: Date.now(),
