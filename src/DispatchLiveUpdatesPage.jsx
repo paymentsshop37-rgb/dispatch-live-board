@@ -311,6 +311,7 @@ export default function DispatchLiveUpdatesPage() {
   const [newUser, setNewUser] = useState({ name: "", email: "", role: "Dispatcher" });
   const [jobToDelete, setJobToDelete] = useState(null);
   const [changeLogs, setChangeLogs] = useState([]);
+  const [activityLogs, setActivityLogs] = useState([]);
   const isAdmin = currentUserRole === "Admin";
   function handleLogin() {
   if (accessCode === ADMIN_PASSWORD) {
