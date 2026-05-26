@@ -959,8 +959,14 @@ export default function DispatchLiveUpdatesPage() {
                   {filteredJobs.map((job) => (
                     <tr
                       key={job.id}
-                      className={`border-t border-slate-200 align-top hover:brightness-[0.98] ${rowStyles[job.status] || rowStyles[job.rowFlag] || "bg-white"}`}
-                    >
+                     <tr
+  key={job.id}
+  className={`border-t border-slate-200 align-top hover:brightness-[0.98] ${
+    job.rowFlag === "Problem" || job.status === "Dry Run"
+      ? "bg-red-100 border-l-4 border-red-600 animate-pulse"
+      : rowStyles[job.rowFlag || "Normal"]
+  }`}
+>
                       <Td>
                         <select
                           className="rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold"
