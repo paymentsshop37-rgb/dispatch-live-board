@@ -610,6 +610,36 @@ if (!accessGranted) {
               <StatCard icon={<CheckCircle2 />} label="Profit" value={money(stats.profit)} />
             </div>
             <p className="mt-3 text-xs text-slate-500">Only Admin can view this financial report section in the published system.</p>
+            <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+  <h2 className="mb-4 text-xl font-bold">Revenue Analytics</h2>
+
+  <div className="h-[320px] w-full">
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart
+        data={[
+          {
+            name: "Revenue",
+            value: stats.revenue || 0,
+          },
+          {
+            name: "Expenses",
+            value: stats.totalExpenses || 0,
+          },
+          {
+            name: "Profit",
+            value: stats.profit || 0,
+          },
+        ]}
+      >
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="name" />
+        <YAxis />
+        <Tooltip />
+        <Bar dataKey="value" radius={[10, 10, 0, 0]} />
+      </BarChart>
+    </ResponsiveContainer>
+  </div>
+</div>
           </div>
         )}
 
