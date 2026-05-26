@@ -570,9 +570,16 @@ if (!accessGranted) {
   </button>
 </div>
         </motion.div>
-        <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 flex items-center gap-2">
-  <Bell className="h-4 w-4" />
-  Live Notifications Enabled · Dispatch updates sync instantly across all users
+       <div className="mt-4 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+  <BellRing className="h-5 w-5 animate-pulse" />
+
+  <div>
+    <p className="font-bold">Live Dispatch Notifications Active</p>
+
+    <p className="text-xs text-amber-700">
+      All dispatch updates sync instantly across all connected users
+    </p>
+  </div>
 </div>
 
         <div className="grid gap-4 md:grid-cols-5">
