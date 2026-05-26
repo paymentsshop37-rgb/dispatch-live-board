@@ -228,6 +228,7 @@ function fromDbJob(row) {
 
 function toDbJob(job) {
   return {
+    photo_url: job.photo_url || "",
     job_date: job.date || null,
     job_time: job.time || "",
     invoice_number: job.reference || "",
