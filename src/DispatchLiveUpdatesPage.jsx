@@ -1104,7 +1104,35 @@ async function uploadPhoto(jobId, file) {
                           {money(Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0))}
                         </div>
                       </Td>
+<Td>
+  <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">
+    <Upload className="h-4 w-4" />
 
+    Upload
+
+    <input
+      type="file"
+      className="hidden"
+      accept="image/*"
+      onChange={(e) =>
+        uploadPhoto(job.id, e.target.files[0])
+      }
+    />
+  </label>
+
+  {job.photo_url && (
+    <a
+      href={job.photo_url}
+      target="_blank"
+      rel="noreferrer"
+      className="mt-2 flex items-center gap-1 text-xs font-bold text-blue-700"
+    >
+      <ImageIcon className="h-4 w-4" />
+
+      View
+    </a>
+  )}
+</Td>
                       <Td>
                         <div className="flex gap-2">
                           <button type="button" title="Auto Saved" className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
