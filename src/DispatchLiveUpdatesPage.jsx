@@ -471,6 +471,16 @@ async function uploadPhoto(jobId, file) {
 
   await updateJob(jobId, "photo_url", publicUrl);
 }
+  const activityMessage = {
+  id: Date.now(),
+  message: `${currentUserRole || "Dispatcher"} uploaded photo to job ${jobId}`,
+  time: new Date().toLocaleString(),
+};
+
+setActivityLogs((logs) => [
+  activityMessage,
+  ...logs,
+]);
   async function updateJob(id, field, value) {
     const oldJob = jobs.find((job) => job.id === id);
     const oldValue = oldJob ? oldJob[field] : "";
