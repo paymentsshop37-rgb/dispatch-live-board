@@ -637,6 +637,41 @@ export default function DispatchLiveUpdatesPage() {
             <p className="mt-3 text-xs text-slate-500">
               Only Admin can view this financial report section in the published system.
             </p>
+            <div className="mt-6 rounded-3xl border border-blue-200 bg-blue-50 p-5">
+  <div className="mb-4 flex items-center gap-3">
+    <FileText className="h-5 w-5 text-blue-700" />
+
+    <h2 className="text-xl font-bold text-blue-900">
+      Invoice Center
+    </h2>
+  </div>
+
+  <div className="grid gap-4 md:grid-cols-4">
+    <StatCard
+      icon={<Clock />}
+      label="Pending"
+      value={jobs.filter(j => j.invoice === "Pending").length}
+    />
+
+    <StatCard
+      icon={<Bell />}
+      label="Sent"
+      value={jobs.filter(j => j.invoice === "Sent").length}
+    />
+
+    <StatCard
+      icon={<CheckCircle2 />}
+      label="Paid"
+      value={jobs.filter(j => j.invoice === "Paid").length}
+    />
+
+    <StatCard
+      icon={<AlertTriangle />}
+      label="Need Review"
+      value={jobs.filter(j => j.invoice === "Need Review").length}
+    />
+  </div>
+</div>
 
             <AnalyticsCard
               title="Revenue Analytics"
