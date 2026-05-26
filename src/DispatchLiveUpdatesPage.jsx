@@ -1,9 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import {
   Search,
-  Plus,
   Truck,
-  Search,
   Plus,
   Upload,
   Image as ImageIcon,
