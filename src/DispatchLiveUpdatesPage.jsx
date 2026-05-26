@@ -781,7 +781,7 @@ if (!accessGranted) {
             </div>
 
             <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="w-full min-w-[1350px] border-collapse text-left text-sm">
+              <table className="w-full min-w-[1600px] lg:min-w-full border-collapse text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <Th>Flag</Th><Th>Date</Th><Th>Time</Th><Th>Invoice #</Th><Th>Dispatch</Th><Th>Company</Th><Th>Tech</Th><Th>Location</Th><Th>Status</Th><Th>Invoice</Th><Th>Payment</Th><Th>Received</Th><Th>Updates</Th><Th>Total Bill</Th><Th>Parts</Th><Th>Tech Labor</Th><Th>Profit</Th><Th>Actions</Th>
