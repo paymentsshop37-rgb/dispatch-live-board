@@ -17,6 +17,7 @@ import {
   Crown,
   FileSpreadsheet,
   FileText,
+  Bell,
   BellRing,
 } from "lucide-react";
 import { motion } from "framer-motion";
