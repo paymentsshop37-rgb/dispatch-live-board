@@ -477,10 +477,7 @@ async function uploadPhoto(jobId, file) {
   time: new Date().toLocaleString(),
 };
 
-setActivityLogs((logs) => [
-  activityMessage,
-  ...logs,
-]);
+setActivityLogs((logs) => [ activityMessage, ...logs,]);
   async function updateJob(id, field, value) {
     const oldJob = jobs.find((job) => job.id === id);
     const oldValue = oldJob ? oldJob[field] : "";
