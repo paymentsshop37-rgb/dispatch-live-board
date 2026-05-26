@@ -710,6 +710,14 @@ if (!accessGranted) {
   <FileSpreadsheet className="h-4 w-4" />
   Export Excel
 </button>
+              <button
+  type="button"
+  onClick={() => exportJobsToPDF(filteredJobs)}
+  className="mt-2 ml-2 rounded-2xl bg-red-600 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-red-700 flex items-center gap-2"
+>
+  <FileText className="h-4 w-4" />
+  Export PDF
+</button>
             </div>
           </form>
 
