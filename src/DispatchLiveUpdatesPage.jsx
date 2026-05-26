@@ -765,7 +765,7 @@ if (!accessGranted) {
   </div>
 </div>
           </div>
-      <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+ <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
   <h2 className="mb-4 text-xl font-bold">Live Activity Log</h2>
 
   <div className="space-y-3">
@@ -785,11 +785,10 @@ if (!accessGranted) {
             {log.time}
           </p>
         </div>
-    ))
+      ))
     )}
   </div>
-  
-    )}
+</div>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-3xl bg-white p-5 shadow-sm">
