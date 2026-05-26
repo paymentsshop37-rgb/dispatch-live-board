@@ -593,6 +593,29 @@ if (!accessGranted) {
           <StatCard icon={<Clock />} label="In Progress" value={stats.inProgress} />
           <StatCard icon={<CheckCircle2 />} label="Completed" value={stats.completed} />
           <StatCard icon={<AlertTriangle />} label="Open Invoices" value={stats.pendingInvoices} />
+          <StatCard
+  icon={<AlertTriangle />}
+  label="Cancelled"
+  value={jobs.filter((j) => j.status === "Cancelled").length}
+/>
+
+<StatCard
+  icon={<Truck />}
+  label="Dry Runs"
+  value={jobs.filter((j) => j.status === "Dry Run").length}
+/>
+
+<StatCard
+  icon={<DollarSign />}
+  label="Revenue"
+  value={money(stats.revenue)}
+/>
+
+<StatCard
+  icon={<CheckCircle2 />}
+  label="Profit"
+  value={money(stats.profit)}
+/>
           
         </div>
 
