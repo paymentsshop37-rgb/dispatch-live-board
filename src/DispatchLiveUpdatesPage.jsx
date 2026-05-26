@@ -816,7 +816,23 @@ if (!accessGranted) {
                       <Td><Editable value={job.dispatch} onChange={(v) => updateJob(job.id, "dispatch", v)} /></Td>
                       <Td><input className="w-[320px] rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500" value={job.company} onChange={(e) => updateJob(job.id, "company", e.target.value)} /></Td>
                       <Td><Editable value={job.tech} onChange={(v) => updateJob(job.id, "tech", v)} /></Td>
-                      <Td><Editable value={job.location} onChange={(v) => updateJob(job.id, "location", v)} /></Td>
+                      <Td>
+  <div className="flex items-center gap-2">
+    <Editable
+      value={job.location}
+      onChange={(v) => updateJob(job.id, "location", v)}
+    />
+
+    <a
+      href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.location || "")}`}
+      target="_blank"
+      rel="noreferrer"
+      className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700"
+    >
+      Map
+    </a>
+  </div>
+</Td>
                       <Td><select className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[job.status]}`} value={job.status} onChange={(e) => updateJob(job.id, "status", e.target.value)}>{["New", "In Progress", "Completed", "Canceled", "Dry Run"].map((s) => <option key={s}>{s}</option>)}</select></Td>
                       <Td><select className={`rounded-full px-3 py-1 text-xs font-bold ${invoiceStyles[job.invoice]}`} value={job.invoice} onChange={(e) => updateJob(job.id, "invoice", e.target.value)}>{["Pending", "Sent", "Paid", "Need Review"].map((s) => <option key={s}>{s}</option>)}</select></Td>
                       <Td>
