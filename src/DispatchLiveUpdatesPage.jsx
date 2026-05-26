@@ -697,6 +697,31 @@ export default function DispatchLiveUpdatesPage() {
             />
 
             <AnalyticsCard title="Jobs By City" data={chartDataBy(jobs, "location")} />
+            <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
+  <h2 className="mb-4 text-xl font-bold">Live GPS Dispatch Map</h2>
+
+  <div className="grid gap-3 md:grid-cols-2">
+    {[...new Set(jobs.map((job) => job.location))]
+      .filter(Boolean)
+      .map((location) => (
+        <a
+          key={location}
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-2xl border border-blue-200 bg-blue-50 p-4 hover:bg-blue-100"
+        >
+          <p className="font-bold text-blue-900">{location}</p>
+          <p className="text-sm text-blue-700">
+            {jobs.filter((job) => job.location === location).length} active jobs
+          </p>
+          <p className="mt-2 text-xs font-bold text-blue-600">
+            Open in Google Maps →
+          </p>
+        </a>
+      ))}
+  </div>
+</div>
             <AnalyticsCard title="Tech Performance" data={chartDataBy(jobs, "tech")} />
             <AnalyticsCard title="Dispatcher Performance" data={chartDataBy(jobs, "dispatch")} />
 
