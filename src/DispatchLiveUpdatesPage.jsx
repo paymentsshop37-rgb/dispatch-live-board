@@ -386,6 +386,15 @@ export default function DispatchLiveUpdatesPage() {
         const diff = (now - jobDate) / (1000 * 60 * 60 * 24);
         return diff <= 7;
       }).length,
+       monthlyJobs: jobs.filter((job) => {
+      const jobDate = new Date(job.date);
+      const now = new Date();
+
+      return (
+        jobDate.getMonth() === now.getMonth() &&
+        jobDate.getFullYear() === now.getFullYear()
+      );
+    }).length,
       pendingInvoices: jobs.filter((j) => j.invoice !== "Paid").length,
       revenue: jobs.reduce((sum, job) => sum + Number(job.totalBill || 0), 0),
       partsExpense: jobs.reduce((sum, job) => sum + Number(job.parts || 0), 0),
