@@ -1130,6 +1130,22 @@ async function uploadPhoto(jobId, file) {
       <ImageIcon className="h-4 w-4" />
 
       View
+      <button
+  onClick={async () => {
+    const fileName = job.photo_url.split("/").pop();
+
+    await supabase.storage
+      .from("job-photos")
+      .remove([fileName]);
+
+    await updateJob(job.id, "photo_url", "");
+  }}
+  className="mt-2 flex items-center gap-1 text-xs font-bold text-red-600"
+>
+  <Trash2 className="h-4 w-4" />
+
+  Delete Photo
+</button>
     </a>
   )}
 </Td>
