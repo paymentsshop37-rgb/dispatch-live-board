@@ -393,8 +393,8 @@ return (
   matchesPeriod
 );
       })
-      .sort((a, b) => new Date(a.date) - new Date(b.date));
-  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter]);
+      .sort((a, b) => Number(a.jobNumber || a.id) - Number(b.jobNumber || b.id));
+  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, periodFilter]);
 
   const dates = useMemo(
     () => [...new Set(jobs.map((job) => job.date).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b)),
@@ -1037,11 +1037,17 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </thead>
 
                 <tbody>
-                  {filteredJobs.map((job) => (
+                  {filteredJobs.map((job, index) => (
                   <tr
   key={job.id} className={`border-t border-slate-200 align-top hover:brightness-[0.98] $ {job.rowFlag === "Problem" || job.status === "Dry Run" ? "bg-red-300 border-l-8 border-red-800 shadow-lg" : rowStyles[job.rowFlag || "Normal" ]}`}
 >
-                      <Td>
+                     <Td>
+  <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold">
+    #{index + 1}
+  </span>
+</Td> 
+                    
+                    <Td>
                         <select
                           className="rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold"
                           value={job.rowFlag || "Normal"}
