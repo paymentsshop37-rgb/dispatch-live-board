@@ -1014,6 +1014,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <table className="w-full min-w-[1600px] lg:min-w-full border-collapse text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
+                    <Th>#</Th>
                     <Th>Flag</Th>
                     <Th>Date</Th>
                     <Th>Time</Th>
