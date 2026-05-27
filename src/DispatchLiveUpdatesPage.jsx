@@ -1150,8 +1150,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       <Td>
                         <textarea
                           className="min-h-20 w-72 rounded-xl border border-slate-200 p-2 outline-none focus:border-slate-500"
-                          value={job.updates}
-                          onChange={(e) => updateJob(job.id, "updates", e.target.value)}
+                          defaultValue={job.updates}
+                          onBlur={(e) => updateJob(job.id, "updates", e.target.value)}
                         />
                       </Td>
 
