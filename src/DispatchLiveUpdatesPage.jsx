@@ -393,7 +393,7 @@ return (
   matchesPeriod
 );
       })
-      .sort((a, b) => Number(a.jobNumber || a.id) - Number(b.jobNumber || b.id));
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
   }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, periodFilter]);
 
   const dates = useMemo(
