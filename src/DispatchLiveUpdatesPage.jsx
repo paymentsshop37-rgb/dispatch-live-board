@@ -1155,10 +1155,32 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         />
                       </Td>
 
-                      <Td><MoneyInput value={job.totalBill} onChange={(v) => updateJob(job.id, "totalBill", Number(v))} className="font-bold" /></Td>
-                      <Td><MoneyInput value={job.parts} onChange={(v) => updateJob(job.id, "parts", Number(v))} /></Td>
-                      <Td><MoneyInput value={job.techLabor} onChange={(v) => updateJob(job.id, "techLabor", Number(v))} /></Td>
+                     <Td>
+  <input
+    type="number"
+    className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500 font-bold"
+    defaultValue={job.totalBill}
+    onBlur={(e) => updateJob(job.id, "totalBill", Number(e.target.value || 0))}
+  />
+</Td>
 
+<Td>
+  <input
+    type="number"
+    className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+    defaultValue={job.parts}
+    onBlur={(e) => updateJob(job.id, "parts", Number(e.target.value || 0))}
+  />
+</Td>
+
+<Td>
+  <input
+    type="number"
+    className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+    defaultValue={job.techLabor}
+    onBlur={(e) => updateJob(job.id, "techLabor", Number(e.target.value || 0))}
+  />
+</Td>
                       <Td>
                         <div className={`rounded-xl px-3 py-2 text-center text-xs font-bold ${
                           Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0) >= 0
