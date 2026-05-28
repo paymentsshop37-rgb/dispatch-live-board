@@ -363,11 +363,12 @@ const today = new Date();
 const jobDate = new Date(job.date);
 
 const startOfWeek = new Date(today);
+startOfWeek.setHours(0, 0, 0, 0);
 startOfWeek.setDate(today.getDate() - today.getDay());
 
 const endOfWeek = new Date(startOfWeek);
+endOfWeek.setHours(23, 59, 59, 999);
 endOfWeek.setDate(startOfWeek.getDate() + 6);
-
 const isThisWeek =
   jobDate >= startOfWeek && jobDate <= endOfWeek;
 
@@ -927,7 +928,19 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               >
                 Add Job to Live Board
               </button>
+<div className="mb-4 flex gap-2">
+  <select
+    className="rounded-xl border border-slate-200 px-3 py-2"
+    value={periodFilter}
+    onChange={(e) => setPeriodFilter(e.target.value)}
+  >
+    <option value="This Week">This Week</option>
+    <option value="This Month">This Month</option>
+    <option value="All">All</option>
+  </select>
+</div>
 
+<div className="flex flex-wrap gap-2">
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
