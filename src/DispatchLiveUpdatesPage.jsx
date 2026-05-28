@@ -191,7 +191,7 @@ function exportJobsToPDF(jobs) {
               <th>Tech</th>
               <th>Location</th>
               <th>Total Bill</th>
-              <th>Profit</th>
+              ${isAdmin ? "<th>Profit</th>" : ""}
             </tr>
           </thead>
           <tbody>${rows}</tbody>
@@ -935,7 +935,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               >
                 Add Job to Live Board
               </button>
-<div className="mb-4 flex gap-2">
+<div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+  <div className="flex flex-wrap items-center gap-2 overflow-x-auto">
   <select
     className="rounded-xl border border-slate-200 px-3 py-2"
     value={periodFilter}
@@ -948,7 +949,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
   <input
   type="date"
-  className="rounded-xl border border-slate-200 px-3 py-2"
+  className="w-36 rounded-xl border border-slate-200 px-3 py-2 text-sm"
   value={fromDate}
   onChange={(e) => setFromDate(e.target.value)}
 />
@@ -1064,7 +1065,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <Th>Total Bill</Th>
                     <Th>Parts</Th>
                     <Th>Tech Labor</Th>
-                    <Th>Profit</Th>
+                    ${isAdmin ? "<th>Profit</th>" : ""}
                     <Th>Photo</Th>
                     <Th>Actions</Th>
                   </tr>
