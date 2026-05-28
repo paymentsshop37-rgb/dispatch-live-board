@@ -940,7 +940,6 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   </select>
 </div>
 
-<div className="flex flex-wrap gap-2">
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
