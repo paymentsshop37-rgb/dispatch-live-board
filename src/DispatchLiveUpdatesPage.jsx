@@ -937,7 +937,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </button>
 <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
   <div className="flex flex-wrap items-center gap-2 overflow-x-auto">
-  <select
+  
+   <select
     className="rounded-xl border border-slate-200 px-3 py-2"
     value={periodFilter}
     onChange={(e) => setPeriodFilter(e.target.value)}
@@ -953,6 +954,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   value={fromDate}
   onChange={(e) => setFromDate(e.target.value)}
 />
+
+  </div>
+</div>
 
 <input
   type="date"
