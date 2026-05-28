@@ -292,6 +292,8 @@ export default function DispatchLiveUpdatesPage() {
   const [dateFilter, setDateFilter] = useState("All");
   const [periodFilter, setPeriodFilter] = useState("This Week");
   const [cityFilter, setCityFilter] = useState("All");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [dispatchFilter, setDispatchFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
@@ -385,13 +387,18 @@ const matchesPeriod =
     ? isThisMonth
     : true;
 
+  const matchesDateRange =
+  (!fromDate || job.date >= fromDate) &&
+  (!toDate || job.date <= toDate);
+
 return (
   matchesSearch &&
   matchesStatus &&
   matchesDate &&
   matchesCity &&
   matchesDispatch &&
-  matchesPeriod
+  matchesPeriod &&
+  matchesDateRange
 );
       })
       .sort((a, b) => String(a.id).localeCompare(String(b.id)));
@@ -938,6 +945,20 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     <option value="This Month">This Month</option>
     <option value="All">All</option>
   </select>
+
+  <input
+  type="date"
+  className="rounded-xl border border-slate-200 px-3 py-2"
+  value={fromDate}
+  onChange={(e) => setFromDate(e.target.value)}
+/>
+
+<input
+  type="date"
+  className="rounded-xl border border-slate-200 px-3 py-2"
+  value={toDate}
+  onChange={(e) => setToDate(e.target.value)}
+/>
 </div>
 
               <div className="flex flex-wrap gap-2">
@@ -1029,13 +1050,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <Th>#</Th>
                     <Th>Flag</Th>
                     <Th>Date</Th>
+                    <Th>Status</Th>
                     <Th>Time</Th>
                     <Th>Invoice #</Th>
                     <Th>Dispatch</Th>
                     <Th>Company</Th>
                     <Th>Tech</Th>
                     <Th>Location</Th>
-                    <Th>Status</Th>
                     <Th>Invoice</Th>
                     <Th>Payment</Th>
                     <Th>Received</Th>
