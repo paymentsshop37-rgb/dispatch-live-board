@@ -185,11 +185,11 @@ function exportJobsToPDF(jobs) {
           <thead>
             <tr>
               <th>Date</th>
+              <th>Status</th>
               <th>Invoice</th>
               <th>Company</th>
               <th>Tech</th>
               <th>Location</th>
-              <th>Status</th>
               <th>Total Bill</th>
               <th>Profit</th>
             </tr>
