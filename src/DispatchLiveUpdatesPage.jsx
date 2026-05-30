@@ -362,7 +362,7 @@ export default function DispatchLiveUpdatesPage() {
         const matchesCity = cityFilter === "All" || job.location === cityFilter;
         const matchesDispatch = dispatchFilter === "All" || job.dispatch === dispatchFilter;
 const today = new Date();
-const jobDate = new Date(job.date);
+const jobDate = new Date(job.date + " 00:00:00");
 
 const startOfWeek = new Date(today);
 startOfWeek.setHours(0, 0, 0, 0);
