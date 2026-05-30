@@ -1069,7 +1069,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <Th>Total Bill</Th>
                     <Th>Parts</Th>
                     <Th>Tech Labor</Th>
-                    ${showProfit ? "<th>Profit</th>" : ""}
+                    {isAdmin && <Th>Profit</Th>}
                     <Th>Photo</Th>
                     <Th>Actions</Th>
                   </tr>
