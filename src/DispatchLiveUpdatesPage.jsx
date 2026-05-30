@@ -401,7 +401,12 @@ return (
   matchesDateRange
 );
       })
-      .sort((a, b) => String(a.id).localeCompare(String(b.id)));
+      .sort((a, b) => {
+  const dateTimeA = new Date(`${a.date} ${a.time || "00:00"}`);
+  const dateTimeB = new Date(`${b.date} ${b.time || "00:00"}`);
+
+  return dateTimeA - dateTimeB;
+});
   }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, periodFilter, fromDate, toDate]);
 
   const dates = useMemo(
