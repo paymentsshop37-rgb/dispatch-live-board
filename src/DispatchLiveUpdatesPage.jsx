@@ -1107,7 +1107,14 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                           value={job.date}
                           onChange={(e) => updateJob(job.id, "date", e.target.value)}
                         />
-                      </Td>
+                      </Td
+
+                          <Td>
+                        <select
+                          className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[job.status] || ""}`}
+                          value={job.status}
+                          onChange={(e) => updateJob(job.id, "status", e.target.value)}
+                        >
 
                       <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
                       <Td><Editable value={job.reference} onChange={(v) => updateJob(job.id, "reference", v)} /></Td>
@@ -1137,12 +1144,6 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         </div>
                       </Td>
 
-                      <Td>
-                        <select
-                          className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[job.status] || ""}`}
-                          value={job.status}
-                          onChange={(e) => updateJob(job.id, "status", e.target.value)}
-                        >
                           {["New", "In Progress", "Completed", "Canceled", "Dry Run"].map((s) => (
                             <option key={s}>{s}</option>
                           ))}
