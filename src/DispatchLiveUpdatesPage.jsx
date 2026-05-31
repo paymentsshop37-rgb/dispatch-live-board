@@ -374,6 +374,18 @@ endOfWeek.setDate(startOfWeek.getDate() + 6);
 const isThisWeek =
   jobDate >= startOfWeek && jobDate <= endOfWeek;
 
+const startOfLastWeek = new Date(startOfWeek);
+startOfLastWeek.setDate(startOfWeek.getDate() - 7);
+startOfLastWeek.setHours(0, 0, 0, 0);
+
+const endOfLastWeek = new Date(startOfWeek);
+endOfLastWeek.setDate(startOfWeek.getDate() - 1);
+endOfLastWeek.setHours(23, 59, 59, 999);
+
+const isLastWeek =
+  jobDate >= startOfLastWeek &&
+  jobDate <= endOfLastWeek;
+
 const isThisMonth =
   jobDate.getMonth() === today.getMonth() &&
   jobDate.getFullYear() === today.getFullYear();
