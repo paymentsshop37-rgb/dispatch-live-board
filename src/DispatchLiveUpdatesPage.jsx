@@ -791,8 +791,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
             <AnalyticsCard title="Jobs By City" data={chartDataBy(jobs, "location")} />
             <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
-  <h2 className="mb-4 text-xl font-bold">Live GPS Dispatch Map</h2>
-
+ 
   <div className="grid gap-3 md:grid-cols-2">
     {[...new Set(jobs.map((job) => job.location))]
       .filter(Boolean)
