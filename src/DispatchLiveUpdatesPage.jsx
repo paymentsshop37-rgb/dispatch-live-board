@@ -409,6 +409,16 @@ const isLastMonth =
   jobDate >= startOfLastMonth &&
   jobDate <= endOfLastMonth;
 
+const startOfYear = new Date(today.getFullYear(), 0, 1);
+startOfYear.setHours(0, 0, 0, 0);
+
+const endOfYear = new Date(today.getFullYear(), 11, 31);
+endOfYear.setHours(23, 59, 59, 999);
+
+const isThisYear =
+  jobDate >= startOfYear &&
+  jobDate <= endOfYear;
+
 const matchesPeriod =
   periodFilter === "All"
     ? true
