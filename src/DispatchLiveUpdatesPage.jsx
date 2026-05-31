@@ -381,10 +381,16 @@ const isThisMonth =
 const matchesPeriod =
   periodFilter === "All"
     ? true
-    : periodFilter === "This Week"
+    : periodFilter === "ThisWeek"
     ? isThisWeek
-    : periodFilter === "This Month"
+    : periodFilter === "LastWeek"
+    ? isLastWeek
+    : periodFilter === "ThisMonth"
     ? isThisMonth
+    : periodFilter === "LastMonth"
+    ? isLastMonth
+    : periodFilter === "ThisYear"
+    ? isThisYear
     : true;
 
   const matchesDateRange =
@@ -926,8 +932,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     value={periodFilter}
                     onChange={(e) => setPeriodFilter(e.target.value)}
                   >
-                    <option value="This Week">This Week</option>
-                    <option value="This Month">This Month</option>
+                    <option value="ThisWeek">This Week</option>
+                    <option value="LastWeek">Last Week</option>
+                    <option value="ThisMonth">This Month</option>
+                    <option value="LastMonth">Last Month</option>
+                    <option value="ThisYear">This Year</option>
                     <option value="All">All</option>
                   </select>
 
