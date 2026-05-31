@@ -377,6 +377,25 @@ const isThisWeek =
 const isThisMonth =
   jobDate.getMonth() === today.getMonth() &&
   jobDate.getFullYear() === today.getFullYear();
+const startOfLastMonth = new Date(
+  today.getFullYear(),
+  today.getMonth() - 1,
+  1
+);
+
+startOfLastMonth.setHours(0, 0, 0, 0);
+
+const endOfLastMonth = new Date(
+  today.getFullYear(),
+  today.getMonth(),
+  0
+);
+
+endOfLastMonth.setHours(23, 59, 59, 999);
+
+const isLastMonth =
+  jobDate >= startOfLastMonth &&
+  jobDate <= endOfLastMonth;
 
 const matchesPeriod =
   periodFilter === "All"
