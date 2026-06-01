@@ -815,20 +815,31 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   </div>
 </div>
 
-            <AnalyticsCard
-              title="Revenue Analytics"
-              data={[
-                { name: "Revenue", value: stats.revenue || 0 },
-                { name: "Expenses", value: stats.totalExpenses || 0 },
-                { name: "Profit", value: stats.profit || 0 },
-              ]}
-            />
+    <div className="mt-6 grid gap-6 xl:grid-cols-2">
+  <AnalyticsCard
+    title="Financial Overview"
+    data={[
+      { name: "Revenue", value: stats.revenue || 0 },
+      { name: "Expenses", value: stats.totalExpenses || 0 },
+      { name: "Profit", value: stats.profit || 0 },
+    ]}
+  />
 
-            <AnalyticsCard title="Jobs By City" data={chartDataBy(jobs, "location")} />
-            <AnalyticsCard title="Tech Performance" data={chartDataBy(jobs, "tech")} />
-           
-            <AnalyticsCard title="Dispatcher Performance" data={chartDataBy(jobs, "dispatch")} />
+  <AnalyticsCard
+    title="Jobs by Status"
+    data={[
+      { name: "Completed", value: stats.completed },
+      { name: "In Progress", value: stats.inProgress },
+      { name: "Canceled", value: stats.canceled },
+      { name: "Dry Runs", value: stats.dryRuns },
+      { name: "Open Invoices", value: stats.pendingInvoices },
+    ]}
+  />
 
+  <AnalyticsCard title="Dispatcher Performance" data={chartDataBy(filteredJobs, "dispatch")} />
+  <AnalyticsCard title="Tech Performance" data={chartDataBy(filteredJobs, "tech")} />
+  <AnalyticsCard title="Jobs by City" data={chartDataBy(filteredJobs, "location")} />
+</div>
             <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-xl font-bold">Live Activity Log</h2>
 
@@ -1383,18 +1394,61 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 }
 
 function AnalyticsCard({ title, data }) {
-  return (
-    <div className="mt-6 rounded-3xl bg-white p-5 shadow-sm">
-      <h2 className="mb-4 text-xl font-bold">{title}</h2>
+  const total = data.reduce(
+    (sum, item) => sum + Number(item.value || 0),
+    0
+  );
 
-      <div className="h-[320px] w-full">
+  return (
+    <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">
+            {title}
+          </h2>
+
+          <p className="text-xs text-slate-500">
+            Total: {typeof total === "number" ? total.toLocaleString() : total}
+          </p>
+        </div>
+
+        <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+          LIVE
+        </span>
+      </div>
+
+      <div className="h-[350px] w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="name" />
-            <YAxis />
+          <BarChart
+            data={data}
+            margin={{
+              top: 10,
+              right: 20,
+              left: 10,
+              bottom: 40,
+            }}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              vertical={false}
+            />
+
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 11 }}
+              angle={-15}
+              textAnchor="end"
+              height={60}
+            />
+
+            <YAxis tick={{ fontSize: 11 }} />
+
             <Tooltip />
-            <Bar dataKey="value" radius={[10, 10, 0, 0]} />
+
+            <Bar
+              dataKey="value"
+              radius={[12, 12, 0, 0]}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>
