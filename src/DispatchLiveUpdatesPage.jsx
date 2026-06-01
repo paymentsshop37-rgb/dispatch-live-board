@@ -472,28 +472,16 @@ return (
   );
 
   const stats = useMemo(() => {
-    return {
-      total: jobs.length,
-      inProgress: jobs.filter((j) => j.status === "In Progress").length,
-      completed: jobs.filter((j) => j.status === "Completed").length,
-      canceled: jobs.filter((j) => j.status === "Canceled" || j.status === "Cancelled").length,
-      dryRuns: jobs.filter((j) => j.status === "Dry Run").length,
-      weeklyJobs: jobs.filter((job) => {
-        const jobDate = new Date(job.date);
-        const now = new Date();
-        const diff = (now - jobDate) / (1000 * 60 * 60 * 24);
-        return diff <= 7;
-      }).length,
-       monthlyJobs: jobs.filter((job) => {
-      const jobDate = new Date(job.date);
-      const now = new Date();
-
-      return (
-        jobDate.getMonth() === now.getMonth() &&
-        jobDate.getFullYear() === now.getFullYear()
-      );
-    }).length,
-      pendingInvoices: jobs.filter((j) => j.invoice !== "Paid").length,
+   return {
+  total: filteredJobs.length,
+  inProgress: filteredJobs.filter((j) => j.status === "In Progress").length,
+  completed: filteredJobs.filter((j) => j.status === "Completed").length,
+  canceled: filteredJobs.filter((j) => j.status === "Canceled" || j.status === "Cancelled").length,
+  dryRuns: filteredJobs.filter((j) => j.status === "Dry Run").length,
+  weeklyJobs: filteredJobs.length,
+  monthlyJobs: filteredJobs.length,
+     
+     pendingInvoices: jobs.filter((j) => j.invoice !== "Paid").length,
       revenue: jobs.reduce((sum, job) => sum + Number(job.totalBill || 0), 0),
       partsExpense: jobs.reduce((sum, job) => sum + Number(job.parts || 0), 0),
       techLaborExpense: jobs.reduce((sum, job) => sum + Number(job.techLabor || 0), 0),
@@ -506,7 +494,7 @@ return (
         0
       ),
     };
-  }, [jobs]);
+ }, [jobs, filteredJobs]);
 
   async function addJob(e) {
     e.preventDefault();
