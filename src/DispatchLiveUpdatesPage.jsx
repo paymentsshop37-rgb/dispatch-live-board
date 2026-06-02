@@ -864,9 +864,10 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   <AnalyticsCard title="Dispatcher Performance" data={chartDataBy(filteredJobs, "dispatch")} />
   <AnalyticsCard title="Tech Performance" data={chartDataBy(filteredJobs, "tech")} />
   <AnalyticsCard title="Jobs by City" data={chartDataBy(filteredJobs, "location")} />
-</div>
-           
-        )}
+
+    </div>
+    
+    )}
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="rounded-3xl bg-white p-5 shadow-sm">
