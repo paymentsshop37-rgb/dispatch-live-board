@@ -866,6 +866,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   <AnalyticsCard title="Jobs by City" data={chartDataBy(filteredJobs, "location")} />
 
       </div>
+            </div>
       
             )}
 
