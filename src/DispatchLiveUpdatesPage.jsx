@@ -481,18 +481,43 @@ return (
   weeklyJobs: filteredJobs.length,
   monthlyJobs: filteredJobs.length,
      
-     pendingInvoices: jobs.filter((j) => j.invoice !== "Paid").length,
-      revenue: jobs.reduce((sum, job) => sum + Number(job.totalBill || 0), 0),
-      partsExpense: jobs.reduce((sum, job) => sum + Number(job.parts || 0), 0),
-      techLaborExpense: jobs.reduce((sum, job) => sum + Number(job.techLabor || 0), 0),
-      totalExpenses: jobs.reduce(
-        (sum, job) => sum + Number(job.parts || 0) + Number(job.techLabor || 0),
-        0
-      ),
-      profit: jobs.reduce(
-        (sum, job) => sum + (Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0)),
-        0
-      ),
+    pendingInvoices: filteredJobs.filter(
+  (j) => j.invoice !== "Paid"
+).length,
+
+revenue: filteredJobs.reduce(
+  (sum, job) => sum + Number(job.totalBill || 0),
+  0
+),
+
+partsExpense: filteredJobs.reduce(
+  (sum, job) => sum + Number(job.parts || 0),
+  0
+),
+
+techLaborExpense: filteredJobs.reduce(
+  (sum, job) => sum + Number(job.techLabor || 0),
+  0
+),
+
+totalExpenses: filteredJobs.reduce(
+  (sum, job) =>
+    sum +
+    Number(job.parts || 0) +
+    Number(job.techLabor || 0),
+  0
+),
+
+profit: filteredJobs.reduce(
+  (sum, job) =>
+    sum +
+    (
+      Number(job.totalBill || 0) -
+      Number(job.parts || 0) -
+      Number(job.techLabor || 0)
+    ),
+  0
+),
     };
  }, [jobs, filteredJobs]);
 
