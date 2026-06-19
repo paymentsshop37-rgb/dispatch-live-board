@@ -315,16 +315,24 @@ export default function DispatchLiveUpdatesPage() {
   const isAdmin = currentUserRole === "Admin";
 
   function handleLogin() {
-    if (accessCode === ADMIN_PASSWORD) {
-      setCurrentUserRole("Admin");
-      setAccessGranted(true);
-    } else if (accessCode === DISPATCH_PASSWORD) {
-      setCurrentUserRole("Dispatcher");
-      setAccessGranted(true);
-    } else {
-      alert("Invalid access code");
-    }
+  const input = accessCode.trim();
+
+  const userFound = Object.entries(USERS).find(
+    ([username, user]) => input === `${username}/${user.password}`
+  );
+
+  if (userFound) {
+    const [username, user] = userFound;
+
+    setCurrentUserRole(user.role);
+    setAccessGranted(true);
+    localStorage.setItem("currentUser", username);
+    localStorage.setItem("currentUserName", user.name);
+    localStorage.setItem("currentUserRole", user.role);
+  } else {
+    alert("Invalid username or password");
   }
+}
 
   useEffect(() => {
     loadJobs();
