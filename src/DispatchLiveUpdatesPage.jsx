@@ -1455,13 +1455,13 @@ function AnalyticsCard({ title, data }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
   {data.map((item) => (
-   <div
-  key={item.name}
-  className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200"
->
-  <p className="text-sm text-slate-500">{item.name}</p>
+    <div
+      key={item.name}
+      className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200"
+    >
+      <p className="text-sm text-slate-500">{item.name}</p>
       <p className="mt-2 text-5xl font-bold text-slate-900">
         {item.value}
       </p>
@@ -1469,7 +1469,9 @@ function AnalyticsCard({ title, data }) {
   ))}
 </div>
 
+</div>
 );
+}
 function StatCard({ icon, label, value, onClick }) {
   return (
     <motion.div
