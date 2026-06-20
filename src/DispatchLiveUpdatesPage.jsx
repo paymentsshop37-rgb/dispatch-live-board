@@ -827,29 +827,43 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   </div>
 
   <div className="grid gap-4 md:grid-cols-4">
-    <StatCard
-      icon={<Clock />}
-      label="Pending"
-      value={jobs.filter(j => j.invoice === "Pending").length}
-    />
+   <StatCard
+  icon={<Clock />}
+  label="Pending"
+  value={jobs.filter(j => j.invoice === "Pending").length}
+  onClick={() => {
+    setInvoiceFilter("Pending");
+    setShowAdmin(false);
+  }}
+/>
 
-    <StatCard
-      icon={<Bell />}
-      label="Sent"
-      value={jobs.filter(j => j.invoice === "Sent").length}
-    />
-
-    <StatCard
-      icon={<CheckCircle2 />}
-      label="Paid"
-      value={jobs.filter(j => j.invoice === "Paid").length}
-    />
-
-    <StatCard
-      icon={<AlertTriangle />}
-      label="Need Review"
-      value={jobs.filter(j => j.invoice === "Need Review").length}
-    />
+   <StatCard
+  icon={<Bell />}
+  label="Sent"
+  value={jobs.filter(j => j.invoice === "Sent").length}
+  onClick={() => {
+    setInvoiceFilter("Sent");
+    setShowAdmin(false);
+  }}
+/>
+   <StatCard
+  icon={<CheckCircle2 />}
+  label="Paid"
+  value={jobs.filter(j => j.invoice === "Paid").length}
+  onClick={() => {
+    setInvoiceFilter("Paid");
+    setShowAdmin(false);
+  }}
+/>
+   <StatCard
+  icon={<AlertTriangle />}
+  label="Need Review"
+  value={jobs.filter(j => j.invoice === "Need Review").length}
+  onClick={() => {
+    setInvoiceFilter("Need Review");
+    setShowAdmin(false);
+  }}
+/>
   </div>
 </div>
 
@@ -1458,12 +1472,13 @@ function AnalyticsCard({ title, data }) {
 );
 }
 
-function StatCard({ icon, label, value }) {
+function StatCard({ icon, label, value, onClick })
   return (
     <motion.div
+      onClick={onClick}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-3xl bg-white p-5 shadow-sm"
+      className="rounded-3xl bg-white p-5 shadow-sm cursor-pointer hover:shadow-xl hover:scale-105 transition-all"
     >
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
         {React.cloneElement(icon, { className: "h-5 w-5" })}
