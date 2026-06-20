@@ -442,16 +442,18 @@ const isThisYear =
 const matchesPeriod =
   periodFilter === "All"
     ? true
-    : periodFilter === "ThisWeek"
+    : periodFilter === "This Week"
     ? isThisWeek
-    : periodFilter === "LastWeek"
+    : periodFilter === "Last Week"
     ? isLastWeek
-    : periodFilter === "ThisMonth"
+    : periodFilter === "This Month"
     ? isThisMonth
-    : periodFilter === "LastMonth"
+    : periodFilter === "Last Month"
     ? isLastMonth
-    : periodFilter === "ThisYear"
+    : periodFilter === "This Year"
     ? isThisYear
+    : periodFilter === "Last Year"
+    ? isLastYear
     : true;
 
   const matchesDateRange =
