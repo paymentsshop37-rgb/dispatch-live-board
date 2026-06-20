@@ -1470,9 +1470,8 @@ function AnalyticsCard({ title, data }) {
 
  </div>
 );
-}
 
-function StatCard({ icon, label, value, onClick }) {
+  function StatCard({ icon, label, value, onClick }) {
   return (
     <motion.div
       onClick={onClick}
