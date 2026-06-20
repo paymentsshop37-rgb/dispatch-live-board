@@ -1480,7 +1480,7 @@ function StatCard({ icon, label, value, onClick }) {
       className="rounded-3xl bg-white p-5 shadow-sm cursor-pointer hover:shadow-xl hover:scale-105 transition-all"
     >
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-        {React.cloneElement(icon, { className: "h-5 w-5" })}
+        {icon}
       </div>
 
       <p className="text-sm text-slate-500">{label}</p>
