@@ -1552,3 +1552,4 @@ function Th({ children }) {
 function Td({ children, className = "" }) {
   return <td className={`px-4 py-3 ${className}`}>{children}</td>;
 }
+}
