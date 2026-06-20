@@ -356,10 +356,13 @@ export default function DispatchLiveUpdatesPage() {
 
     setJobs((data || []).map(fromDbJob));
 
-    const { data: logsData } = await supabase
-      .from("change_logs")
-      .select("*")
-      .order("created_at", { ascending: false });
+   const currentMonth = new Date().toISOString().slice(0, 7);
+
+const { data: logsData } = await supabase
+  .from("change_logs")
+  .select("*")
+  .eq("month_key", currentMonth)
+  .order("created_at", { ascending: false });
 
     setChangeLogs(logsData || []);
   }
@@ -643,6 +646,7 @@ setActivityLogs((logs) => [activityMessage, ...logs]);
         old_value: String(oldValue ?? ""),
         new_value: String(value ?? ""),
         user_name: currentUserRole || "Dispatcher",
+        month_key: new Date().toISOString().slice(0, 7),
       },
     ]);
   }
