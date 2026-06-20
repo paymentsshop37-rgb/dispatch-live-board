@@ -306,7 +306,6 @@ export default function DispatchLiveUpdatesPage() {
   localStorage.getItem("currentUserName") || ""
 );
   
-
   const isAdmin = currentUserRole === "Admin";
 
   function handleLogin() {
