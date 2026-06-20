@@ -1463,7 +1463,7 @@ function AnalyticsCard({ title, data }) {
     >
       <p className="text-sm text-slate-500">{item.name}</p>
     <p className="mt-2 text-3xl font-bold text-slate-900">
-  {`$${Number(item.value || 0).toLocaleString()}`}
+ {"$" + Number(item.value || 0).toLocaleString()}
 </p>
     </div>
   ))}
