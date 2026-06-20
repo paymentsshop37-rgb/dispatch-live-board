@@ -454,7 +454,7 @@ const matchesPeriod =
     ? isThisYear
     : periodFilter === "Last Year"
     ? isLastYear
-    : true;
+    : false;
 
   const matchesDateRange =
   (!fromDate || job.date >= fromDate) &&
