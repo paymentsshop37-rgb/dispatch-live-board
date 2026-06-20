@@ -1462,15 +1462,14 @@ function AnalyticsCard({ title, data }) {
       className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200"
     >
       <p className="text-sm text-slate-500">{item.name}</p>
-    <p className="mt-2 text-3xl font-bold text-slate-900">
- {"$" + Number(item.value || 0).toLocaleString()}
-</p>
+      <p className="mt-2 text-3xl font-bold text-slate-900">
+        {"$" + Number(item.value || 0).toLocaleString()}
+      </p>
     </div>
   ))}
-
- </div>
+</div>
 );
-
+}
   function StatCard({ icon, label, value, onClick }) {
   return (
     <motion.div
