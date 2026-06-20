@@ -1455,16 +1455,16 @@ function AnalyticsCard({ title, data }) {
         </span>
       </div>
 
-   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+  className="grid grid-cols-1 md:grid-cols-3 gap-6"
   {data.map((item) => (
     <div
       key={item.name}
       className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200"
     >
       <p className="text-sm text-slate-500">{item.name}</p>
-      <p className="mt-2 text-5xl font-bold text-slate-900">
-        {item.value}
-      </p>
+     <p className="mt-2 text-3xl font-bold text-slate-900">
+  ${Number(item.value || 0).toLocaleString()}
+</p>
     </div>
   ))}
 </div>
