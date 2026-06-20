@@ -1467,9 +1467,9 @@ function AnalyticsCard({ title, data }) {
 </p>
     </div>
   ))}
-</div>
+
+ </div>
 );
-}
 
 function StatCard({ icon, label, value, onClick }) {
   return (
