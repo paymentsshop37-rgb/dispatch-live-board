@@ -1431,20 +1431,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   );
 }
 
-function AnalyticsCard({ title, data }) {
-  const total = data.reduce(
-    (sum, item) => sum + Number(item.value || 0),
-    0
-  );
-
+function AnalyticsCard({ title, data, total }) {
   return (
     <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">
-            {title}
-          </h2>
-
+          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
           <p className="text-xs text-slate-500">
             Total: {typeof total === "number" ? total.toLocaleString() : total}
           </p>
@@ -1455,20 +1447,21 @@ function AnalyticsCard({ title, data }) {
         </span>
       </div>
 
- <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-  {data.map((item) => (
-    <div
-      key={item.name}
-      className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200"
-    >
-      <p className="text-sm text-slate-500">{item.name}</p>
-      <p className="mt-2 text-3xl font-bold text-slate-900">
-        {"$" + Number(item.value || 0).toLocaleString()}
-      </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {data.map((item) => (
+          <div
+            key={item.name}
+            className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200"
+          >
+            <p className="text-sm text-slate-500">{item.name}</p>
+            <p className="mt-2 text-3xl font-bold text-slate-900">
+              {"$" + Number(item.value || 0).toLocaleString()}
+            </p>
+          </div>
+        ))}
+      </div>
     </div>
-  ))}
-</div>
-);
+  );
 }
   function StatCard({ icon, label, value, onClick }) {
   return (
