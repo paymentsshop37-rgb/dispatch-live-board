@@ -1461,6 +1461,9 @@ function AnalyticsCard({ title, data }) {
   ))}
 </div>
 
+);
+}
+
 function StatCard({ icon, label, value }) {
   return (
     <motion.div
