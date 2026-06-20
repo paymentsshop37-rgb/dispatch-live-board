@@ -302,6 +302,9 @@ export default function DispatchLiveUpdatesPage() {
   const [jobToDelete, setJobToDelete] = useState(null);
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
+  const [currentUserName, setCurrentUserName] = useState(
+  localStorage.getItem("currentUserName") || ""
+);
 
   const isAdmin = currentUserRole === "Admin";
 
@@ -315,11 +318,13 @@ export default function DispatchLiveUpdatesPage() {
   if (userFound) {
     const [username, user] = userFound;
 
-    setCurrentUserRole(user.role);
-    setAccessGranted(true);
-    localStorage.setItem("currentUser", username);
-    localStorage.setItem("currentUserName", user.name);
-    localStorage.setItem("currentUserRole", user.role);
+setCurrentUserRole(user.role);
+setCurrentUserName(user.name);
+setAccessGranted(true);
+
+localStorage.setItem("currentUser", username);
+localStorage.setItem("currentUserName", user.name);
+localStorage.setItem("currentUserRole", user.role);
   } else {
     alert("Invalid username or password");
   }
@@ -624,7 +629,7 @@ async function uploadPhoto(jobId, file) {
     }
 const activityMessage = {
   id: Date.now(),
-  message: `${currentUserRole || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
+ message: `${currentUserName || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
   time: new Date().toLocaleString(),
 };
 
@@ -632,24 +637,23 @@ setActivityLogs((logs) => [activityMessage, ...logs]);
     setActivityLogs((logs) => [
       {
         id: Date.now(),
-        message: `${currentUserRole || "Dispatcher"} changed ${field} from "${oldValue}" to "${value}"`,
+      message: `${currentUserName || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
         time: new Date().toLocaleString(),
       },
       ...logs,
     ]);
 
     await supabase.from("change_logs").insert([
-      {
-        job_id: id,
-        action: "updated",
-        field_name: field,
-        old_value: String(oldValue ?? ""),
-        new_value: String(value ?? ""),
-        user_name: currentUserRole || "Dispatcher",
-        month_key: new Date().toISOString().slice(0, 7),
-      },
-    ]);
-  }
+  {
+    job_id: id,
+    action: "updated",
+    field_name: field,
+    old_value: String(oldValue ?? ""),
+    new_value: String(value ?? ""),
+    user_name: currentUserName || "Dispatcher",
+    month_key: new Date().toISOString().slice(0, 7),
+  },
+]);
 
   async function deleteJob(id) {
     const deletedJob = jobs.find((job) => job.id === id);
