@@ -35,12 +35,12 @@ import {
 const USERS = {
   admin: { password: "Admin#2026", role: "Admin", name: "Owner Admin" },
 
-  dispatcher01: { password: "Dsp#1001", role: "Dispatcher", name: "Dispatcher 01" },
-  dispatcher02: { password: "Dsp#1002", role: "Dispatcher", name: "Dispatcher 02" },
-  dispatcher03: { password: "Dsp#1003", role: "Dispatcher", name: "Dispatcher 03" },
-  dispatcher04: { password: "Dsp#1004", role: "Dispatcher", name: "Dispatcher 04" },
-  dispatcher05: { password: "Dsp#1005", role: "Dispatcher", name: "Dispatcher 05" },
-  dispatcher06: { password: "Dsp#1006", role: "Dispatcher", name: "Dispatcher 06" },
+  dispatcher01: { password: "Dsp#1001", role: "Dispatcher", name: "DanielDispatcher 01" },
+  dispatcher02: { password: "Dsp#1002", role: "Dispatcher", name: "GonzaloDispatcher 02" },
+  dispatcher03: { password: "Dsp#1003", role: "Dispatcher", name: "JanethDispatcher 03" },
+  dispatcher04: { password: "Dsp#1004", role: "Dispatcher", name: "VictorDispatcher 04" },
+  dispatcher05: { password: "Dsp#1005", role: "Dispatcher", name: "CrisDispatcher 05" },
+  dispatcher06: { password: "Dsp#1006", role: "Dispatcher", name: "MikeDispatcher 06" },
   dispatcher07: { password: "Dsp#1007", role: "Dispatcher", name: "Dispatcher 07" },
   dispatcher08: { password: "Dsp#1008", role: "Dispatcher", name: "Dispatcher 08" },
   dispatcher09: { password: "Dsp#1009", role: "Dispatcher", name: "Dispatcher 09" },
