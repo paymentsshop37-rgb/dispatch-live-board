@@ -442,19 +442,19 @@ const isThisYear =
 const matchesPeriod =
   periodFilter === "All"
     ? true
-    : periodFilter === "This Week"
+    : periodFilter === "This Week" || periodFilter === "ThisWeek"
     ? isThisWeek
-    : periodFilter === "Last Week"
+    : periodFilter === "Last Week" || periodFilter === "LastWeek"
     ? isLastWeek
-    : periodFilter === "This Month"
+    : periodFilter === "This Month" || periodFilter === "ThisMonth"
     ? isThisMonth
-    : periodFilter === "Last Month"
+    : periodFilter === "Last Month" || periodFilter === "LastMonth"
     ? isLastMonth
-    : periodFilter === "This Year"
+    : periodFilter === "This Year" || periodFilter === "ThisYear"
     ? isThisYear
-    : periodFilter === "Last Year"
+    : periodFilter === "Last Year" || periodFilter === "LastYear"
     ? isLastYear
-    : false;
+    : true;
 
   const matchesDateRange =
   (!fromDate || job.date >= fromDate) &&
