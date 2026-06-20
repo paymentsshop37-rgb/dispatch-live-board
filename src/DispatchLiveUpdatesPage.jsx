@@ -1487,7 +1487,7 @@ function StatCard({ icon, label, value, onClick })
       <p className="mt-1 text-2xl font-bold">{value}</p>
     </motion.div>
   );
-}
+};
 
 function Input({ label, value, onChange, type = "text", placeholder = "" }) {
   return (
