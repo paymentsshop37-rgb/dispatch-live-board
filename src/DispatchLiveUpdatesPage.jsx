@@ -1450,45 +1450,18 @@ function AnalyticsCard({ title, data }) {
         </span>
       </div>
 
-      <div className="h-[350px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart
-            data={data}
-            margin={{
-              top: 10,
-              right: 20,
-              left: 10,
-              bottom: 40,
-            }}
-          >
-            <CartesianGrid
-              strokeDasharray="3 3"
-              vertical={false}
-            />
-
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 11 }}
-              angle={-15}
-              textAnchor="end"
-              height={60}
-            />
-
-            <YAxis tick={{ fontSize: 11 }} />
-
-            <Tooltip />
-
-            <Bar
-              dataKey="value"
-              radius={[12, 12, 0, 0]}
-            />
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+  {data.map((item) => (
+    <div key={item.name} className="rounded-2xl bg-white p-6 shadow-lg border border-slate-200"
+      <p className="text-sm text-slate-500">{item.name}</p>
+      <p className="mt-2 text-5xl font-bold text-slate-900">
+        {item.value}
+      </p>
     </div>
+  ))}
+</div>
   );
 }
-
 function StatCard({ icon, label, value }) {
   return (
     <motion.div
