@@ -1455,7 +1455,7 @@ function AnalyticsCard({ title, data }) {
         </span>
       </div>
 
-  className="grid grid-cols-1 md:grid-cols-3 gap-6"
+ <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
   {data.map((item) => (
     <div
       key={item.name}
@@ -1463,15 +1463,14 @@ function AnalyticsCard({ title, data }) {
     >
       <p className="text-sm text-slate-500">{item.name}</p>
      <p className="mt-2 text-3xl font-bold text-slate-900">
-  ${Number(item.value || 0).toLocaleString()}
+  {`$${Number(item.value || 0).toLocaleString()}`}
 </p>
     </div>
   ))}
 </div>
-
-</div>
 );
 }
+
 function StatCard({ icon, label, value, onClick }) {
   return (
     <motion.div
