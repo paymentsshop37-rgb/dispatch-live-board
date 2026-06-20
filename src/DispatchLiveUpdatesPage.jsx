@@ -1470,7 +1470,6 @@ function AnalyticsCard({ title, data }) {
 </div>
 
 );
-}
 
 function StatCard({ icon, label, value, onClick })
   return (
@@ -1483,6 +1482,7 @@ function StatCard({ icon, label, value, onClick })
       <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
         {React.cloneElement(icon, { className: "h-5 w-5" })}
       </div>
+      
       <p className="text-sm text-slate-500">{label}</p>
       <p className="mt-1 text-2xl font-bold">{value}</p>
     </motion.div>
