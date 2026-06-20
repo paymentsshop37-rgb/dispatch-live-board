@@ -663,16 +663,17 @@ const newActivity = {
 };
 
 setActivityLogs((logs) => [newActivity, ...logs]);
-    await supabase.from("change_logs").insert([
-      {
-        job_id: id,
-        action: "deleted",
-        field_name: "job",
-        old_value: deletedJob?.reference || deletedJob?.company || String(id),
-        new_value: "",
-        user_name: currentUserRole || "Dispatcher",
-      },
-    ]);
+  await supabase.from("change_logs").insert([
+  {
+    job_id: id,
+    action: "deleted",
+    field_name: "job",
+    old_value: deletedJob?.reference || deletedJob?.company || String(id),
+    new_value: "",
+    user_name: currentUserRole || "Dispatcher",
+    month_key: new Date().toISOString().slice(0, 7)
+  },
+]);
 
     setActivityLogs((logs) => [
       {
