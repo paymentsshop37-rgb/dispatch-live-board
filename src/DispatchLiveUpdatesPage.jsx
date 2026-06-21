@@ -289,7 +289,9 @@ export default function DispatchLiveUpdatesPage() {
   const [jobs, setJobs] = useState([]);
   const [accessGranted, setAccessGranted] = useState(false);
   const [accessCode, setAccessCode] = useState("");
-  const [currentUserRole, setCurrentUserRole] = useState(null);
+  const [currentUserRole, setCurrentUserRole] = useState(
+    localStorage.getItem("currentUserRole") || null
+  );
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
@@ -298,6 +300,7 @@ export default function DispatchLiveUpdatesPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [dispatchFilter, setDispatchFilter] = useState("All");
+  const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [changeLogs, setChangeLogs] = useState([]);
@@ -380,6 +383,7 @@ const { data: logsData } = await supabase
         const matchesDate = dateFilter === "All" || job.date === dateFilter;
         const matchesCity = cityFilter === "All" || job.location === cityFilter;
         const matchesDispatch = dispatchFilter === "All" || job.dispatch === dispatchFilter;
+        const matchesInvoice = invoiceFilter === "All" || job.invoice === invoiceFilter;
 const today = new Date();
 const jobDate = new Date(job.date + " 00:00:00");
 
@@ -438,6 +442,16 @@ const isThisYear =
   jobDate >= startOfYear &&
   jobDate <= endOfYear;
 
+const startOfLastYear = new Date(today.getFullYear() - 1, 0, 1);
+startOfLastYear.setHours(0, 0, 0, 0);
+
+const endOfLastYear = new Date(today.getFullYear() - 1, 11, 31);
+endOfLastYear.setHours(23, 59, 59, 999);
+
+const isLastYear =
+  jobDate >= startOfLastYear &&
+  jobDate <= endOfLastYear;
+
 const matchesPeriod =
   periodFilter === "All"
     ? true
@@ -465,6 +479,7 @@ return (
   matchesDate &&
   matchesCity &&
   matchesDispatch &&
+  matchesInvoice &&
   matchesPeriod &&
   matchesDateRange
 );
@@ -475,7 +490,7 @@ return (
 
   return dateTimeA - dateTimeB;
 });
-  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, periodFilter, fromDate, toDate]);
+  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, invoiceFilter, periodFilter, fromDate, toDate]);
 
   const dates = useMemo(
     () => [...new Set(jobs.map((job) => job.date).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b)),
@@ -569,10 +584,22 @@ profit: filteredJobs.reduce(
       setActivityLogs((logs) => [
         {
           id: Date.now(),
-          message: `${currentUserRole || "Dispatcher"} added job "${newJob.reference || newJob.company || "New Job"}"`,
+          message: `${currentUserName || "Dispatcher"} added job "${newJob.reference || newJob.company || "New Job"}"`,
           time: new Date().toLocaleString(),
         },
         ...logs,
+      ]);
+
+      await supabase.from("change_logs").insert([
+        {
+          job_id: data.id,
+          action: "created",
+          field_name: "job",
+          old_value: "",
+          new_value: newJob.reference || newJob.company || "New Job",
+          user_name: currentUserName || "Dispatcher",
+          month_key: new Date().toISOString().slice(0, 7),
+        },
       ]);
     }
   }
@@ -600,7 +627,7 @@ async function uploadPhoto(jobId, file) {
    
   const activityMessage = {
   id: Date.now(),
-  message: `${currentUserRole || "Dispatcher"} uploaded photo to job ${jobId}`,
+  message: `${currentUserName || "Dispatcher"} uploaded photo to job ${jobId}`,
   time: new Date().toLocaleString(),
 };
  
@@ -627,33 +654,26 @@ async function uploadPhoto(jobId, file) {
       loadJobs();
       return;
     }
-const activityMessage = {
-  id: Date.now(),
- message: `${currentUserName || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
-  time: new Date().toLocaleString(),
-};
-
-setActivityLogs((logs) => [activityMessage, ...logs]);
-    setActivityLogs((logs) => [
-      {
-        id: Date.now(),
+    const activityMessage = {
+      id: Date.now(),
       message: `${currentUserName || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
-        time: new Date().toLocaleString(),
-      },
-      ...logs,
-    ]);
+      time: new Date().toLocaleString(),
+    };
+
+    setActivityLogs((logs) => [activityMessage, ...logs]);
 
     await supabase.from("change_logs").insert([
-  {
-    job_id: id,
-    action: "updated",
-    field_name: field,
-    old_value: String(oldValue ?? ""),
-    new_value: String(value ?? ""),
-    user_name: currentUserName || "Dispatcher",
-    month_key: new Date().toISOString().slice(0, 7),
-  },
-]);
+      {
+        job_id: id,
+        action: "updated",
+        field_name: field,
+        old_value: String(oldValue ?? ""),
+        new_value: String(value ?? ""),
+        user_name: currentUserName || "Dispatcher",
+        month_key: new Date().toISOString().slice(0, 7),
+      },
+    ]);
+  }
 
   async function deleteJob(id) {
     const deletedJob = jobs.find((job) => job.id === id);
@@ -666,7 +686,7 @@ setActivityLogs((logs) => [activityMessage, ...logs]);
     }
 const newActivity = {
   id: Date.now(),
-  message: `${currentUserRole || "Dispatcher"} deleted job ${deletedJob?.reference || deletedJob?.company || id}`,
+  message: `${currentUserName || "Dispatcher"} deleted job ${deletedJob?.reference || deletedJob?.company || id}`,
   time: new Date().toLocaleString(),
 };
 
@@ -678,19 +698,10 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     field_name: "job",
     old_value: deletedJob?.reference || deletedJob?.company || String(id),
     new_value: "",
-    user_name: currentUserRole || "Dispatcher",
+    user_name: currentUserName || "Dispatcher",
     month_key: new Date().toISOString().slice(0, 7)
   },
 ]);
-
-    setActivityLogs((logs) => [
-      {
-        id: Date.now(),
-        message: `${currentUserRole || "Dispatcher"} deleted job "${deletedJob?.reference || deletedJob?.company || id}"`,
-        time: new Date().toLocaleString(),
-      },
-      ...logs,
-    ]);
 
     setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
     setJobToDelete(null);
@@ -764,6 +775,10 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 setAccessGranted(false);
                 setAccessCode("");
                 setCurrentUserRole(null);
+                setCurrentUserName("");
+                localStorage.removeItem("currentUser");
+                localStorage.removeItem("currentUserName");
+                localStorage.removeItem("currentUserRole");
               }}
               className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
             >
@@ -842,7 +857,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   value={jobs.filter(j => j.invoice === "Pending").length}
   onClick={() => {
     setInvoiceFilter("Pending");
-    setShowAdmin(false);
+    setPeriodFilter("All");
+    setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" }), 0);
   }}
 />
 
@@ -852,7 +868,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   value={jobs.filter(j => j.invoice === "Sent").length}
   onClick={() => {
     setInvoiceFilter("Sent");
-    setShowAdmin(false);
+    setPeriodFilter("All");
+    setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" }), 0);
   }}
 />
    <StatCard
@@ -861,7 +878,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   value={jobs.filter(j => j.invoice === "Paid").length}
   onClick={() => {
     setInvoiceFilter("Paid");
-    setShowAdmin(false);
+    setPeriodFilter("All");
+    setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" }), 0);
   }}
 />
    <StatCard
@@ -870,7 +888,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   value={jobs.filter(j => j.invoice === "Need Review").length}
   onClick={() => {
     setInvoiceFilter("Need Review");
-    setShowAdmin(false);
+    setPeriodFilter("All");
+    setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" }), 0);
   }}
 />
   </div>
@@ -1024,6 +1043,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <option value="ThisMonth">This Month</option>
                     <option value="LastMonth">Last Month</option>
                     <option value="ThisYear">This Year</option>
+                    <option value="LastYear">Last Year</option>
                     <option value="All">All</option>
                   </select>
 
@@ -1065,7 +1085,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             </div>
           </form>
 
-          <div className="rounded-3xl bg-white p-5 shadow-sm">
+          <div id="live-jobs-table" className="rounded-3xl bg-white p-5 shadow-sm">
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <h2 className="text-xl font-bold">Live Jobs Ordered Oldest to Newest</h2>
 
@@ -1097,6 +1117,16 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   {["All", "New", "In Progress", "Completed", "Canceled", "Dry Run"].map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </select>
+
+                <select
+                  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+                  value={invoiceFilter}
+                  onChange={(e) => setInvoiceFilter(e.target.value)}
+                >
+                  {["All", "Pending", "Sent", "Paid", "Need Review"].map((s) => (
                     <option key={s}>{s}</option>
                   ))}
                 </select>
@@ -1551,5 +1581,4 @@ function Th({ children }) {
 
 function Td({ children, className = "" }) {
   return <td className={`px-4 py-3 ${className}`}>{children}</td>;
-}
 }
