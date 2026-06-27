@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
-import { assignTechnicianToJob, getRecommendedTechnicians } from "./modules/technicians/dispatchEngine";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 
 const USERS = {
@@ -83,7 +82,6 @@ const fieldMap = {
   paymentReceiver: "received",
   totalBill: "total_bill",
   techLabor: "tech_labor",
-  requestedService: "requested_service",
 };
 
 function money(value) {
@@ -222,7 +220,6 @@ function fromDbJob(row) {
     tech: row.tech || "",
     technicianId: row.technician_id || "",
     assignedAt: row.assigned_at || "",
-    requestedService: row.requested_service || "",
     location: row.location || "",
     status: row.status || "New",
     rowFlag: row.row_flag || "Normal",
@@ -245,7 +242,6 @@ function toDbJob(job) {
     dispatch: job.dispatch || "",
     company: job.company || "",
     tech: job.tech || "",
-    requested_service: job.requestedService || "",
     location: job.location || "",
     status: job.status || "New",
     row_flag: job.rowFlag || "Normal",
@@ -279,7 +275,6 @@ function emptyForm() {
     reference: "",
     company: "",
     tech: "",
-    requestedService: "",
     location: "",
     status: "New",
     rowFlag: "Normal",
@@ -312,8 +307,13 @@ export default function DispatchLiveUpdatesPage() {
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
-  const [recommendedTechnicians, setRecommendedTechnicians] = useState([]);
   const [dispatchTechnicians, setDispatchTechnicians] = useState([]);
+  const [assignmentFilters, setAssignmentFilters] = useState({
+    city: "",
+    state: "",
+    service: "",
+  });
+  const [jobsSupportsTechnicianId, setJobsSupportsTechnicianId] = useState(false);
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [currentUserName, setCurrentUserName] = useState(
@@ -347,6 +347,7 @@ localStorage.setItem("currentUserRole", user.role);
   useEffect(() => {
     loadJobs();
     loadDispatchTechnicians();
+    checkJobAssignmentSupport();
 
     const channel = supabase
       .channel("live-jobs")
@@ -368,7 +369,6 @@ localStorage.setItem("currentUserRole", user.role);
       .channel("live-dispatch-technicians")
       .on("postgres_changes", { event: "*", schema: "public", table: "technicians" }, () => {
         loadDispatchTechnicians();
-        refreshRecommendations();
       })
       .subscribe();
 
@@ -377,36 +377,18 @@ localStorage.setItem("currentUserRole", user.role);
     };
   }, []);
 
-  useEffect(() => {
-    refreshRecommendations();
-  }, [form.location, form.requestedService, assignmentJob]);
-
   async function loadDispatchTechnicians() {
     try {
-      setDispatchTechnicians(await loadTechnicians());
+      const technicians = await loadTechnicians();
+      setDispatchTechnicians(technicians.filter((technician) => technician.status === "Approved"));
     } catch (error) {
       console.error("Error loading technicians:", error.message);
     }
   }
 
-  async function refreshRecommendations() {
-    const jobForRecommendations =
-      assignmentJob || {
-        ...form,
-        requestedService: form.requestedService,
-      };
-
-    if (!jobForRecommendations.location && !jobForRecommendations.requestedService) {
-      setRecommendedTechnicians([]);
-      return;
-    }
-
-    try {
-      setRecommendedTechnicians(await getRecommendedTechnicians(jobForRecommendations));
-    } catch (error) {
-      console.error("Error loading recommendations:", error.message);
-      setRecommendedTechnicians([]);
-    }
+  async function checkJobAssignmentSupport() {
+    const { error } = await supabase.from("jobs").select("technician_id").limit(0);
+    setJobsSupportsTechnicianId(!error);
   }
 
   async function loadJobs() {
@@ -615,19 +597,25 @@ profit: filteredJobs.reduce(
     };
  }, [jobs, filteredJobs]);
 
-  const dispatchTechStats = useMemo(() => {
-    const approvedTechnicians = dispatchTechnicians.filter((tech) => tech.status === "Approved");
-    const etaValues = approvedTechnicians.map((tech) => Number(tech.averageEta || 0)).filter(Boolean);
+  const assignmentTechnicians = useMemo(() => {
+    const city = assignmentFilters.city.trim().toLowerCase();
+    const state = assignmentFilters.state.trim().toLowerCase();
+    const service = assignmentFilters.service.trim().toLowerCase();
 
-    return {
-      available: approvedTechnicians.filter((tech) => tech.availabilityStatus === "Available").length,
-      busy: approvedTechnicians.filter((tech) => ["Busy", "Traveling", "On Site"].includes(tech.availabilityStatus)).length,
-      averageEta: etaValues.length
-        ? Math.round(etaValues.reduce((sum, eta) => sum + eta, 0) / etaValues.length)
-        : 0,
-      waitingAssignment: filteredJobs.filter((job) => !job.technicianId && !job.tech && job.status !== "Completed").length,
-    };
-  }, [dispatchTechnicians, filteredJobs]);
+    return dispatchTechnicians.filter((technician) => {
+      const services = splitServices(technician.services).join(" ").toLowerCase();
+      const coverage = [technician.coverage, technician.serviceArea].join(" ").toLowerCase();
+
+      const matchesCity =
+        !city ||
+        String(technician.city || "").toLowerCase().includes(city) ||
+        coverage.includes(city);
+      const matchesState = !state || String(technician.state || "").toLowerCase().includes(state);
+      const matchesService = !service || services.includes(service);
+
+      return matchesCity && matchesState && matchesService;
+    });
+  }, [assignmentFilters, dispatchTechnicians]);
 
   async function addJob(e) {
     e.preventDefault();
@@ -784,6 +772,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   }
 
   async function assignRecommendedTechnician(job, technician) {
+    if (!jobsSupportsTechnicianId) {
+      alert("Safe assignment skipped: jobs.technician_id does not exist yet. Apply the assignment migration first.");
+      return;
+    }
+
     if (!job?.id) {
       setForm((current) => ({ ...current, tech: technician.full_name || "" }));
       alert("Technician selected. Save the job first, then assign it from the live board.");
@@ -791,15 +784,27 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     }
 
     try {
-      const assignment = await assignTechnicianToJob(job, technician, currentUserName || "Dispatcher");
+      const assignedAt = new Date().toISOString();
+      const { error } = await supabase
+        .from("jobs")
+        .update({
+          technician_id: technician.id,
+          tech: technician.full_name || "",
+        })
+        .eq("id", job.id);
+
+      if (error) {
+        throw error;
+      }
+
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
           currentJob.id === job.id
             ? {
                 ...currentJob,
                 tech: technician.full_name || "",
-                technicianId: assignment.technicianId,
-                assignedAt: assignment.assignedAt,
+                technicianId: technician.id,
+                assignedAt,
               }
             : currentJob
         )
@@ -923,15 +928,6 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           <StatCard icon={<Truck />} label="Dry Runs" value={stats.dryRuns} />
           {isAdmin && <StatCard icon={<DollarSign />} label="Profit" value={money(stats.profit)} />}
         </div>
-
-        {isAdmin && (
-          <div className="grid gap-4 md:grid-cols-4">
-            <StatCard icon={<Users />} label="Available Technicians" value={dispatchTechStats.available} />
-            <StatCard icon={<Truck />} label="Busy Technicians" value={dispatchTechStats.busy} />
-            <StatCard icon={<Clock />} label="Average ETA" value={dispatchTechStats.averageEta ? `${dispatchTechStats.averageEta} min` : "N/A"} />
-            <StatCard icon={<AlertTriangle />} label="Jobs Waiting Assignment" value={dispatchTechStats.waitingAssignment} />
-          </div>
-        )}
 
         {isAdmin && (
           <div className="rounded-3xl bg-white p-5 shadow-sm">
@@ -1107,7 +1103,6 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <Input label="Company" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
               <Input label="Tech" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
               <Input label="Location" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
-              <Input label="Requested Service" placeholder="Tires, brakes, air leak..." value={form.requestedService} onChange={(v) => setForm({ ...form, requestedService: v })} />
 
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
@@ -1584,8 +1579,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           </div>
 
           <AssignmentPanel
-            job={assignmentJob || { ...form, requestedService: form.requestedService }}
-            technicians={recommendedTechnicians}
+            job={assignmentJob}
+            technicians={assignmentTechnicians}
+            filters={assignmentFilters}
+            onFiltersChange={setAssignmentFilters}
+            supportsAssignment={jobsSupportsTechnicianId}
             onAssign={assignRecommendedTechnician}
             onClear={() => setAssignmentJob(null)}
           />
@@ -1700,14 +1698,14 @@ function MoneyInput({ value, onChange, className = "" }) {
   );
 }
 
-function AssignmentPanel({ job, technicians, onAssign, onClear }) {
+function AssignmentPanel({ job, technicians, filters, onFiltersChange, supportsAssignment, onAssign, onClear }) {
   return (
     <aside className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold">Recommended Technicians</h2>
+          <h2 className="text-xl font-bold">Assign Technician</h2>
           <p className="mt-1 text-xs text-slate-500">
-            {job?.id ? `Job ${job.reference || job.id}` : "New job preview"}
+            {job?.id ? `Selected job ${job.reference || job.id}` : "Approved technicians from Technician Center"}
           </p>
         </div>
         {job?.id && (
@@ -1721,13 +1719,40 @@ function AssignmentPanel({ job, technicians, onAssign, onClear }) {
         )}
       </div>
 
+      {!supportsAssignment && (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
+          Safe mode: jobs.technician_id does not exist yet. Assign will not update the job until the column is added.
+        </div>
+      )}
+
+      <div className="mb-4 grid gap-2">
+        <input
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-500"
+          placeholder="Filter by city"
+          value={filters.city}
+          onChange={(event) => onFiltersChange((current) => ({ ...current, city: event.target.value }))}
+        />
+        <input
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-500"
+          placeholder="Filter by state"
+          value={filters.state}
+          onChange={(event) => onFiltersChange((current) => ({ ...current, state: event.target.value }))}
+        />
+        <input
+          className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-500"
+          placeholder="Filter by service"
+          value={filters.service}
+          onChange={(event) => onFiltersChange((current) => ({ ...current, service: event.target.value }))}
+        />
+      </div>
+
       <div className="grid gap-3">
         {technicians.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-            Enter a location and requested service, or click Match on a job.
+            No approved technicians match the current filters.
           </div>
         ) : (
-          technicians.slice(0, 8).map((technician) => (
+          technicians.map((technician) => (
             <div key={technician.id} className="rounded-2xl border border-slate-200 p-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-sm font-bold text-slate-600">
@@ -1745,12 +1770,10 @@ function AssignmentPanel({ job, technicians, onAssign, onClear }) {
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <MiniMetric label="Distance" value={technician.matchDistance === 0 ? "Same city" : `${technician.matchDistance} mi`} />
+                <MiniMetric label="Services" value={formatServices(technician.services)} />
                 <MiniMetric label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
-                <MiniMetric label="ETA" value={technician.averageEta ? `${technician.averageEta} min` : "N/A"} />
                 <MiniMetric label="Compliance" value={`${technicianCompliance(technician)}%`} />
-                <MiniMetric label="Status" value={technician.availabilityStatus || "Available"} />
-                <MiniMetric label="Jobs" value={technician.completedJobs || 0} />
+                <MiniMetric label="Availability" value={technician.availabilityStatus || "Available"} />
               </div>
 
               <button
@@ -1797,6 +1820,22 @@ function technicianCompliance(technician) {
     technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature,
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+}
+
+function splitServices(services) {
+  if (Array.isArray(services)) {
+    return services.map((service) => String(service).trim()).filter(Boolean);
+  }
+
+  return String(services || "")
+    .split(/[,\n\r]+/)
+    .map((service) => service.trim())
+    .filter(Boolean);
+}
+
+function formatServices(services) {
+  const serviceList = splitServices(services);
+  return serviceList.length ? serviceList.join(", ") : "No services";
 }
 
 function Th({ children }) {
