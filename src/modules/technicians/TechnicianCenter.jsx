@@ -34,6 +34,7 @@ import {
   loadInvitations,
   registrationLinkForInvite,
 } from "./technicianInvitationService";
+import { getPermissions } from "../permissions";
 
 const emptyTechnician = {
   full_name: "",
@@ -70,8 +71,10 @@ export default function TechnicianCenter() {
   const [inviteError, setInviteError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
 
-  const currentUserRole = localStorage.getItem("currentUserRole") || "Dispatcher";
-  const isAdmin = currentUserRole === "Admin";
+  const currentUserRole = localStorage.getItem("currentUserRole") || "dispatcher";
+  const permissions = getPermissions(currentUserRole);
+  const canApproveTechnicians = permissions.canApproveTechnicians;
+  const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
   const knownColumns = useMemo(() => getKnownColumns(technicians), [technicians]);
   const registrationLink = `${window.location.origin}/technician-registration`;
 
@@ -88,7 +91,7 @@ export default function TechnicianCenter() {
       setLoading(false);
     }
 
-    if (isAdmin) {
+    if (permissions.canApproveTechnicians) {
       try {
         setInvitations(await loadInvitations());
       } catch (loadInviteError) {
@@ -103,9 +106,9 @@ export default function TechnicianCenter() {
   }, []);
 
   const safeTechnicians = useMemo(() => {
-    if (isAdmin) return technicians;
+    if (canViewPrivateTechnicianData) return technicians;
     return technicians.filter((technician) => isApproved(technician.status));
-  }, [isAdmin, technicians]);
+  }, [canViewPrivateTechnicianData, technicians]);
 
   const serviceOptions = useMemo(() => {
     const services = safeTechnicians.flatMap((technician) =>
@@ -341,7 +344,7 @@ export default function TechnicianCenter() {
             </p>
           )}
 
-          {!isAdmin && (
+          {!canViewPrivateTechnicianData && (
             <p className="mt-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">
               Dispatcher-safe mode is active. Only approved technicians are visible.
             </p>
@@ -370,7 +373,7 @@ export default function TechnicianCenter() {
           onOpen={setSelectedTechnician}
         />
 
-        {isAdmin && (
+        {canApproveTechnicians && (
           <InvitationsPanel
             invitations={invitations}
             onCopy={copyInviteLink}
@@ -384,14 +387,14 @@ export default function TechnicianCenter() {
           </div>
         )}
 
-        {isAdmin && inviteError && (
+        {canApproveTechnicians && inviteError && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
             Invitation system: {inviteError}
           </div>
         )}
 
         <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-          {isAdmin && (
+          {canApproveTechnicians && (
             <form onSubmit={addTechnician} className="rounded-3xl bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-xl font-bold">Add Technician</h2>
@@ -422,7 +425,7 @@ export default function TechnicianCenter() {
             </form>
           )}
 
-          <section className={`rounded-3xl bg-white p-5 shadow-sm ${isAdmin ? "" : "xl:col-span-2"}`}>
+          <section className={`rounded-3xl bg-white p-5 shadow-sm ${canApproveTechnicians ? "" : "xl:col-span-2"}`}>
             <div className="mb-4 flex flex-col gap-3">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <h2 className="text-xl font-bold">{activeTab === "Dashboard" ? "Technician List" : activeTab}</h2>
@@ -511,7 +514,7 @@ export default function TechnicianCenter() {
                             >
                               View
                             </button>
-                            {isAdmin && activeTab === "Pending" && technician.status === "Pending" && (
+                            {canApproveTechnicians && activeTab === "Pending" && technician.status === "Pending" && (
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -523,7 +526,7 @@ export default function TechnicianCenter() {
                                 Approve
                               </button>
                             )}
-                            {isAdmin && (
+                            {canApproveTechnicians && (
                               <div onClick={(event) => event.stopPropagation()}>
                                 <AdminActions
                                   technician={technician}
@@ -543,8 +546,8 @@ export default function TechnicianCenter() {
           </section>
         </div>
 
-        {activeTab === "Documents" && <DocumentsPanel technicians={filteredTechnicians} isAdmin={isAdmin} />}
-        {activeTab === "Performance" && <PerformancePanel technicians={filteredTechnicians} isAdmin={isAdmin} />}
+        {activeTab === "Documents" && <DocumentsPanel technicians={filteredTechnicians} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />}
+        {activeTab === "Performance" && <PerformancePanel technicians={filteredTechnicians} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />}
       </div>
 
       {selectedTechnician && (
@@ -556,7 +559,8 @@ export default function TechnicianCenter() {
               invitation.phone === selectedTechnician.phone ||
               invitation.email === selectedTechnician.email
           )}
-          isAdmin={isAdmin}
+          canApproveTechnicians={canApproveTechnicians}
+          canViewPrivateTechnicianData={canViewPrivateTechnicianData}
           onClose={() => setSelectedTechnician(null)}
           onSaveNotes={(notes) => saveTechnician(selectedTechnician.id, { notes })}
           onStatus={(status) => updateTechnicianStatus(selectedTechnician, status)}
@@ -638,7 +642,7 @@ function TechnicianCardGrid({ technicians, onOpen }) {
   );
 }
 
-function DocumentsPanel({ technicians, isAdmin }) {
+function DocumentsPanel({ technicians, canViewPrivateTechnicianData }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
       <h2 className="text-xl font-bold">Documents</h2>
@@ -652,7 +656,7 @@ function DocumentsPanel({ technicians, isAdmin }) {
               </div>
               <CompliancePill score={complianceScore(technician)} />
             </div>
-            <DocumentChecklist technician={technician} isAdmin={isAdmin} />
+            <DocumentChecklist technician={technician} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />
           </div>
         ))}
       </div>
@@ -660,7 +664,7 @@ function DocumentsPanel({ technicians, isAdmin }) {
   );
 }
 
-function PerformancePanel({ technicians, isAdmin }) {
+function PerformancePanel({ technicians, canViewPrivateTechnicianData }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
       <h2 className="text-xl font-bold">Performance</h2>
@@ -671,7 +675,7 @@ function PerformancePanel({ technicians, isAdmin }) {
               <Th>Technician</Th>
               <Th>Rating</Th>
               <Th>Completed Jobs</Th>
-              {isAdmin && <Th>Total Paid</Th>}
+              {canViewPrivateTechnicianData && <Th>Total Paid</Th>}
               <Th>Status</Th>
             </tr>
           </thead>
@@ -681,7 +685,7 @@ function PerformancePanel({ technicians, isAdmin }) {
                 <Td>{technician.full_name || "Unnamed technician"}</Td>
                 <Td>{Number(technician.rating || 0).toFixed(1)}</Td>
                 <Td>{technician.completedJobs || 0}</Td>
-                {isAdmin && <Td>{money(technician.totalPaid)}</Td>}
+                {canViewPrivateTechnicianData && <Td>{money(technician.totalPaid)}</Td>}
                 <Td>
                   <StatusBadge status={technician.status} />
                 </Td>
@@ -864,7 +868,16 @@ function InviteTechnicianModal({ saving, error, onClose, onSubmit }) {
   );
 }
 
-function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onSaveNotes, onStatus, onDelete }) {
+function TechnicianProfileModal({
+  technician,
+  invitations,
+  canApproveTechnicians,
+  canViewPrivateTechnicianData,
+  onClose,
+  onSaveNotes,
+  onStatus,
+  onDelete,
+}) {
   const [notes, setNotes] = useState(technician.notes || "");
 
   return (
@@ -882,7 +895,7 @@ function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onS
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {isAdmin && (
+            {canApproveTechnicians && (
               <AdminActions technician={technician} onStatus={onStatus} onDelete={onDelete} />
             )}
             <button
@@ -921,7 +934,7 @@ function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onS
           </ProfileSection>
 
           <ProfileSection title="Documents">
-            <DocumentChecklist technician={technician} isAdmin={isAdmin} />
+            <DocumentChecklist technician={technician} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />
           </ProfileSection>
 
           <ProfileSection title="Compliance Score">
@@ -931,7 +944,7 @@ function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onS
             </div>
           </ProfileSection>
 
-          {isAdmin && (
+          {canViewPrivateTechnicianData && (
             <ProfileSection title="Payment Information">
               <Detail label="Method" value={technician.paymentMethod} />
               <Detail label="Bank / Zelle" value={technician.bankZelleInfo || technician.paymentDetails} />
@@ -942,7 +955,7 @@ function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onS
           <ProfileSection title="Performance">
             <Detail label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
             <Detail label="Completed jobs" value={technician.completedJobs || 0} />
-            {isAdmin && <Detail label="Total paid" value={money(technician.totalPaid)} />}
+            {canViewPrivateTechnicianData && <Detail label="Total paid" value={money(technician.totalPaid)} />}
           </ProfileSection>
 
           <ProfileSection title="Invitation History">
@@ -970,7 +983,7 @@ function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onS
         <div className="mt-5 rounded-2xl border border-slate-200 p-4">
           <div className="mb-2 flex items-center justify-between gap-3">
             <h3 className="font-bold">Notes</h3>
-            {isAdmin && (
+            {canApproveTechnicians && (
               <button
                 type="button"
                 onClick={() => onSaveNotes(notes)}
@@ -980,7 +993,7 @@ function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onS
               </button>
             )}
           </div>
-          {isAdmin ? (
+          {canApproveTechnicians ? (
             <textarea
               className="min-h-28 w-full rounded-xl border border-slate-200 p-3 outline-none focus:border-slate-500"
               value={notes}
@@ -1046,16 +1059,26 @@ function AdminActions({ technician, onStatus, onDelete }) {
   );
 }
 
-function DocumentChecklist({ technician, isAdmin }) {
+function DocumentChecklist({ technician, canViewPrivateTechnicianData }) {
   const documents = [
     { label: "Driver License", complete: Boolean(technician.driverLicenseUrl) },
-    { label: "Insurance", complete: Boolean(technician.insuranceUrl) },
-    { label: "W9", complete: Boolean(technician.w9Url) },
     { label: "DOT Certificate", complete: Boolean(technician.dotCertificateUrl) },
     { label: "Profile Photo", complete: Boolean(technician.profilePhotoUrl) },
-    { label: "Bank / Zelle Information", complete: Boolean(technician.bankZelleInfo || technician.paymentMethod) },
     { label: "Signed Agreement", complete: Boolean(technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature) },
   ];
+
+  if (canViewPrivateTechnicianData) {
+    documents.splice(
+      1,
+      0,
+      { label: "Insurance", complete: Boolean(technician.insuranceUrl) },
+      { label: "W9", complete: Boolean(technician.w9Url) }
+    );
+    documents.push({
+      label: "Bank / Zelle Information",
+      complete: Boolean(technician.bankZelleInfo || technician.paymentMethod),
+    });
+  }
 
   return (
     <div className="mt-3 grid gap-2">

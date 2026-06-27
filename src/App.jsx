@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { ClipboardList, UserPlus, Users } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
 import { TechnicianCenter, TechnicianPortal, TechnicianRegistrationPortal } from "./modules/technicians";
+import { getPermissions } from "./modules/permissions";
 
 const views = [
   { id: "dispatch", label: "Dispatch Board", icon: ClipboardList },
@@ -13,6 +14,11 @@ export default function App() {
   const [activeView, setActiveView] = useState("dispatch");
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isTechnicianPortal = window.location.pathname === "/technician-portal";
+  const permissions = getPermissions(localStorage.getItem("currentUserRole"));
+  const visibleViews = views.filter((view) => {
+    if (view.id === "technicians") return permissions.canViewTechnicianCenter;
+    return true;
+  });
 
   if (isPublicRegistration) {
     return <TechnicianRegistrationPortal />;
@@ -32,7 +38,7 @@ export default function App() {
           </div>
 
           <div className="flex gap-2 overflow-x-auto">
-            {views.map((view) => {
+            {visibleViews.map((view) => {
               const Icon = view.icon;
               const isActive = activeView === view.id;
 
@@ -57,7 +63,7 @@ export default function App() {
       </nav>
 
       {activeView === "dispatch" && <DispatchLiveUpdatesPage />}
-      {activeView === "technicians" && <TechnicianCenter />}
+      {activeView === "technicians" && permissions.canViewTechnicianCenter && <TechnicianCenter />}
       {activeView === "registration" && <TechnicianRegistrationPortal />}
     </div>
   );
