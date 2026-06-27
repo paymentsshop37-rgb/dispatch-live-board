@@ -36,21 +36,22 @@ import {
 } from "./technicianInvitationService";
 
 const emptyTechnician = {
-  name: "",
+  full_name: "",
   phone: "",
   email: "",
-  company: "",
+  company_name: "",
   city: "",
   state: "",
   serviceArea: "",
-  specialties: "",
+  services: "",
   status: "Approved",
   notes: "",
 };
 
 const tabs = ["Dashboard", "Pending", "Approved", "Inactive", "Documents", "Performance"];
-const statuses = ["All", "Pending", "Approved", "Active", "Inactive", "Rejected", "Do Not Use"];
+const statuses = ["All", "Pending", "Approved", "Rejected", "Inactive", "Missing Documents"];
 const sortOptions = ["Newest", "Rating", "Completed Jobs"];
+const availabilityOptions = ["Available", "Busy", "Off Duty", "Offline"];
 
 export default function TechnicianCenter() {
   const [technicians, setTechnicians] = useState([]);
@@ -108,10 +109,7 @@ export default function TechnicianCenter() {
 
   const serviceOptions = useMemo(() => {
     const services = safeTechnicians.flatMap((technician) =>
-      String(technician.specialties || "")
-        .split(",")
-        .map((service) => service.trim())
-        .filter(Boolean)
+      splitServices(technician.services)
     );
 
     return ["All", ...new Set(services)].sort();
@@ -120,8 +118,8 @@ export default function TechnicianCenter() {
   const tabTechnicians = useMemo(() => {
     return safeTechnicians.filter((technician) => {
       if (activeTab === "Pending") return technician.status === "Pending";
-      if (activeTab === "Approved") return isApproved(technician.status);
-      if (activeTab === "Inactive") return ["Inactive", "Rejected", "Do Not Use"].includes(technician.status);
+      if (activeTab === "Approved") return technician.status === "Approved";
+      if (activeTab === "Inactive") return ["Inactive", "Rejected", "Missing Documents"].includes(technician.status);
       if (activeTab === "Documents") return complianceScore(technician) < 100;
       return true;
     });
@@ -133,11 +131,13 @@ export default function TechnicianCenter() {
     return tabTechnicians
       .filter((technician) => {
         const searchText = [
-          technician.name,
+          technician.full_name,
           technician.phone,
-          technician.company,
+          technician.company_name,
           technician.city,
           technician.state,
+          technician.coverage,
+          technician.serviceArea,
         ]
           .join(" ")
           .toLowerCase();
@@ -145,7 +145,9 @@ export default function TechnicianCenter() {
         const matchesStatus = statusFilter === "All" || technician.status === statusFilter;
         const matchesService =
           serviceFilter === "All" ||
-          String(technician.specialties || "").toLowerCase().includes(serviceFilter.toLowerCase());
+          splitServices(technician.services).some((service) =>
+            service.toLowerCase().includes(serviceFilter.toLowerCase())
+          );
 
         return matchesSearch && matchesStatus && matchesService;
       })
@@ -164,7 +166,7 @@ export default function TechnicianCenter() {
       total: technicians.length,
       pending: technicians.filter((technician) => technician.status === "Pending").length,
       approved: approved.length,
-      inactive: technicians.filter((technician) => ["Inactive", "Rejected", "Do Not Use"].includes(technician.status)).length,
+      inactive: technicians.filter((technician) => ["Inactive", "Rejected", "Missing Documents"].includes(technician.status)).length,
       missingDocuments: technicians.filter((technician) => complianceScore(technician) < 100).length,
       averageRating: ratings.length
         ? (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1)
@@ -210,6 +212,39 @@ export default function TechnicianCenter() {
     }
   }
 
+  function buildStatusPatch(status) {
+    const now = new Date().toISOString();
+
+    if (status === "Approved") {
+      return {
+        status,
+        approvedAt: now,
+        approvedBy: localStorage.getItem("currentUserName") || currentUserRole,
+      };
+    }
+
+    if (status === "Rejected") {
+      return {
+        status,
+        rejectedAt: now,
+        rejectedReason: window.prompt("Reason for rejection?", "") || "",
+      };
+    }
+
+    if (status === "Inactive") {
+      return {
+        status,
+        inactiveAt: now,
+      };
+    }
+
+    return { status };
+  }
+
+  function updateTechnicianStatus(technician, status) {
+    saveTechnician(technician.id, buildStatusPatch(status));
+  }
+
   async function removeTechnician(id) {
     if (!window.confirm("Delete this technician from the technicians table?")) return;
 
@@ -231,6 +266,11 @@ export default function TechnicianCenter() {
     }
   }
 
+  function shareRegistrationBySms() {
+    const message = `Hello, this is NTTR - National Truck Trailer Repair. Please complete your technician registration using this secure link:\n${registrationLink}`;
+    window.location.href = `sms:?&body=${encodeURIComponent(message)}`;
+  }
+
   async function copyInviteLink(link) {
     try {
       await navigator.clipboard.writeText(link);
@@ -244,10 +284,6 @@ export default function TechnicianCenter() {
     window.open(`https://wa.me/?text=${encodeURIComponent(inviteMessage(link))}`, "_blank", "noopener,noreferrer");
   }
 
-  function shareInviteBySms(link) {
-    window.location.href = `sms:?&body=${encodeURIComponent(inviteMessage(link))}`;
-  }
-
   async function submitInvitation(inviteForm) {
     setSaving(true);
     setInviteError("");
@@ -258,10 +294,11 @@ export default function TechnicianCenter() {
         invitedBy: localStorage.getItem("currentUserName") || currentUserRole,
       });
       setInvitations((current) => [invitation, ...current]);
-      setInviteModalOpen(false);
       setCopyMessage(`Invitation created: ${registrationLinkForInvite(invitation.inviteCode)}`);
+      return invitation;
     } catch (createError) {
       setInviteError(createError.message || "Unable to create invitation.");
+      return null;
     } finally {
       setSaving(false);
     }
@@ -289,14 +326,11 @@ export default function TechnicianCenter() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              {isAdmin && (
-                <>
-                  <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />
-                  <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />
-                  <ActionButton onClick={() => setInviteModalOpen(true)} icon={<Send />} label="Invite Technician" />
-                </>
-              )}
+            <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
+              <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />
+              <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />
+              <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />
+              <ActionButton onClick={shareRegistrationBySms} icon={<Smartphone />} label="SMS Invite" tone="blue" />
               <ActionButton onClick={refreshTechnicians} icon={<RefreshCw className={loading ? "animate-spin" : ""} />} label="Refresh" />
             </div>
           </div>
@@ -329,14 +363,18 @@ export default function TechnicianCenter() {
           ))}
         </div>
 
-        {activeTab === "Dashboard" && <Dashboard stats={stats} />}
+          {activeTab === "Dashboard" && <Dashboard stats={stats} />}
+
+        <TechnicianCardGrid
+          technicians={filteredTechnicians}
+          onOpen={setSelectedTechnician}
+        />
 
         {isAdmin && (
           <InvitationsPanel
             invitations={invitations}
             onCopy={copyInviteLink}
             onWhatsApp={shareInviteOnWhatsApp}
-            onSms={shareInviteBySms}
           />
         )}
 
@@ -361,14 +399,14 @@ export default function TechnicianCenter() {
               </div>
 
               <div className="grid gap-3">
-                <Field label="Full Name" value={form.name} onChange={(value) => updateForm("name", value)} required />
+                <Field label="Full Name" value={form.full_name} onChange={(value) => updateForm("full_name", value)} required />
                 <Field label="Phone" value={form.phone} onChange={(value) => updateForm("phone", value)} required />
-                <Field label="Company" value={form.company} onChange={(value) => updateForm("company", value)} />
+                <Field label="Company" value={form.company_name} onChange={(value) => updateForm("company_name", value)} />
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="City" value={form.city} onChange={(value) => updateForm("city", value)} />
                   <Field label="State" value={form.state} onChange={(value) => updateForm("state", value)} />
                 </div>
-                <Field label="Services" value={form.specialties} onChange={(value) => updateForm("specialties", value)} />
+                <Field label="Services" value={form.services} onChange={(value) => updateForm("services", value)} />
                 <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => updateForm("status", value)} />
                 <TextArea label="Notes" value={form.notes} onChange={(value) => updateForm("notes", value)} />
               </div>
@@ -422,16 +460,23 @@ export default function TechnicianCenter() {
                     </tr>
                   ) : (
                     filteredTechnicians.map((technician) => (
-                      <tr key={technician.id} className="border-t border-slate-200 align-top hover:bg-slate-50">
+                      <tr
+                        key={technician.id}
+                        onClick={() => setSelectedTechnician(technician)}
+                        className="cursor-pointer border-t border-slate-200 align-top hover:bg-slate-50"
+                      >
                         <Td>
                           <button
                             type="button"
-                            onClick={() => setSelectedTechnician(technician)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedTechnician(technician);
+                            }}
                             className="text-left font-bold text-slate-950 hover:text-blue-700"
                           >
-                            {technician.name || "Unnamed technician"}
+                            {technician.full_name || "Unnamed technician"}
                           </button>
-                          <p className="mt-1 text-xs text-slate-500">{technician.company || "No company listed"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{technician.company_name || "No company listed"}</p>
                         </Td>
                         <Td>
                           <InfoLine icon={<Phone />} value={technician.phone} />
@@ -442,7 +487,7 @@ export default function TechnicianCenter() {
                           <p className="mt-1 text-xs text-slate-500">{technician.serviceArea || "No coverage area"}</p>
                         </Td>
                         <Td>
-                          <p className="max-w-56 text-sm">{technician.specialties || "No services listed"}</p>
+                          <p className="max-w-56 text-sm">{formatServices(technician.services)}</p>
                         </Td>
                         <Td>
                           <StatusBadge status={technician.status} />
@@ -458,17 +503,34 @@ export default function TechnicianCenter() {
                           <div className="flex flex-wrap gap-2">
                             <button
                               type="button"
-                              onClick={() => setSelectedTechnician(technician)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedTechnician(technician);
+                              }}
                               className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
                             >
                               View
                             </button>
+                            {isAdmin && activeTab === "Pending" && technician.status === "Pending" && (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  updateTechnicianStatus(technician, "Approved");
+                                }}
+                                className="rounded-xl bg-emerald-100 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-200"
+                              >
+                                Approve
+                              </button>
+                            )}
                             {isAdmin && (
-                              <AdminActions
-                                technician={technician}
-                                onStatus={(status) => saveTechnician(technician.id, { status })}
-                                onDelete={() => removeTechnician(technician.id)}
-                              />
+                              <div onClick={(event) => event.stopPropagation()}>
+                                <AdminActions
+                                  technician={technician}
+                                onStatus={(status) => updateTechnicianStatus(technician, status)}
+                                  onDelete={() => removeTechnician(technician.id)}
+                                />
+                              </div>
                             )}
                           </div>
                         </Td>
@@ -488,10 +550,16 @@ export default function TechnicianCenter() {
       {selectedTechnician && (
         <TechnicianProfileModal
           technician={selectedTechnician}
+          invitations={invitations.filter(
+            (invitation) =>
+              invitation.technicianId === selectedTechnician.id ||
+              invitation.phone === selectedTechnician.phone ||
+              invitation.email === selectedTechnician.email
+          )}
           isAdmin={isAdmin}
           onClose={() => setSelectedTechnician(null)}
           onSaveNotes={(notes) => saveTechnician(selectedTechnician.id, { notes })}
-          onStatus={(status) => saveTechnician(selectedTechnician.id, { status })}
+          onStatus={(status) => updateTechnicianStatus(selectedTechnician, status)}
           onDelete={() => removeTechnician(selectedTechnician.id)}
         />
       )}
@@ -521,6 +589,55 @@ function Dashboard({ stats }) {
   );
 }
 
+function TechnicianCardGrid({ technicians, onOpen }) {
+  return (
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {technicians.map((technician) => (
+        <button
+          key={technician.id}
+          type="button"
+          onClick={() => onOpen(technician)}
+          className="rounded-3xl bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+        >
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-lg font-bold text-slate-600">
+              {technician.profilePhotoUrl ? (
+                <img src={technician.profilePhotoUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                initials(technician.full_name)
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="font-bold text-slate-950">{technician.full_name || "Unnamed technician"}</p>
+                <StatusBadge status={technician.status} />
+                <AvailabilityBadge status={technician.availabilityStatus} />
+              </div>
+              <p className="mt-1 text-sm text-slate-500">
+                {[technician.city, technician.state].filter(Boolean).join(", ") || "No location"} · {technician.phone || "No phone"}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+            <MiniStat label="Compliance" value={`${complianceScore(technician)}%`} />
+            <MiniStat label="Jobs Completed" value={technician.completedJobs || 0} />
+            <MiniStat label="Acceptance Rate" value={`${Number(technician.acceptanceRate || 0).toFixed(0)}%`} />
+            <MiniStat label="Average ETA" value={technician.averageEta ? `${technician.averageEta} min` : "Not set"} />
+            <MiniStat label="Average Rating" value={Number(technician.rating || 0).toFixed(1)} />
+            <MiniStat label="Coverage" value={technician.coverage || technician.serviceArea || "Not set"} />
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs font-bold uppercase text-slate-400">Services</p>
+            <p className="mt-1 text-sm text-slate-700">{formatServices(technician.services)}</p>
+          </div>
+        </button>
+      ))}
+    </section>
+  );
+}
+
 function DocumentsPanel({ technicians, isAdmin }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
@@ -530,8 +647,8 @@ function DocumentsPanel({ technicians, isAdmin }) {
           <div key={technician.id} className="rounded-2xl border border-slate-200 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="font-bold">{technician.name || "Unnamed technician"}</p>
-                <p className="text-xs text-slate-500">{technician.company || "No company listed"}</p>
+                <p className="font-bold">{technician.full_name || "Unnamed technician"}</p>
+                <p className="text-xs text-slate-500">{technician.company_name || "No company listed"}</p>
               </div>
               <CompliancePill score={complianceScore(technician)} />
             </div>
@@ -561,7 +678,7 @@ function PerformancePanel({ technicians, isAdmin }) {
           <tbody>
             {technicians.map((technician) => (
               <tr key={technician.id} className="border-t border-slate-200">
-                <Td>{technician.name || "Unnamed technician"}</Td>
+                <Td>{technician.full_name || "Unnamed technician"}</Td>
                 <Td>{Number(technician.rating || 0).toFixed(1)}</Td>
                 <Td>{technician.completedJobs || 0}</Td>
                 {isAdmin && <Td>{money(technician.totalPaid)}</Td>}
@@ -577,7 +694,7 @@ function PerformancePanel({ technicians, isAdmin }) {
   );
 }
 
-function InvitationsPanel({ invitations, onCopy, onWhatsApp, onSms }) {
+function InvitationsPanel({ invitations, onCopy, onWhatsApp }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -633,7 +750,6 @@ function InvitationsPanel({ invitations, onCopy, onWhatsApp, onSms }) {
                       <div className="flex flex-wrap gap-2">
                         <IconAction label="Copy Link" icon={<Clipboard />} onClick={() => onCopy(link)} />
                         <IconAction label="WhatsApp" icon={<MessageCircle />} onClick={() => onWhatsApp(link)} />
-                        <IconAction label="SMS" icon={<Smartphone />} onClick={() => onSms(link)} />
                       </div>
                     </Td>
                   </tr>
@@ -654,14 +770,31 @@ function InviteTechnicianModal({ saving, error, onClose, onSubmit }) {
     email: "",
     notes: "",
   });
+  const [createdInvitation, setCreatedInvitation] = useState(null);
+  const createdLink = createdInvitation ? registrationLinkForInvite(createdInvitation.inviteCode) : "";
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
-    onSubmit(form);
+    const invitation = await onSubmit(form);
+    if (invitation) {
+      setCreatedInvitation(invitation);
+    }
+  }
+
+  async function copyCreatedLink() {
+    await navigator.clipboard.writeText(createdLink);
+  }
+
+  function shareCreatedOnWhatsApp() {
+    window.open(`https://wa.me/?text=${encodeURIComponent(inviteMessage(createdLink))}`, "_blank", "noopener,noreferrer");
+  }
+
+  function shareCreatedBySms() {
+    window.location.href = `sms:?&body=${encodeURIComponent(inviteMessage(createdLink))}`;
   }
 
   return (
@@ -683,17 +816,32 @@ function InviteTechnicianModal({ saving, error, onClose, onSubmit }) {
           </button>
         </div>
 
-        <div className="mt-5 grid gap-4">
-          <Field
-            label="Technician Name"
-            value={form.technicianName}
-            onChange={(value) => updateField("technicianName", value)}
-            required
-          />
-          <Field label="Phone" value={form.phone} onChange={(value) => updateField("phone", value)} required />
-          <Field label="Email Optional" type="email" value={form.email} onChange={(value) => updateField("email", value)} />
-          <TextArea label="Notes Optional" value={form.notes} onChange={(value) => updateField("notes", value)} />
-        </div>
+        {createdInvitation ? (
+          <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <p className="text-sm font-bold text-emerald-800">Invitation Created</p>
+            <p className="mt-1 text-xs font-semibold text-emerald-700">{createdInvitation.inviteCode}</p>
+            <div className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-700 break-all">
+              {createdLink}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <IconAction label="Copy Link" icon={<Clipboard />} onClick={copyCreatedLink} />
+              <IconAction label="WhatsApp Share" icon={<MessageCircle />} onClick={shareCreatedOnWhatsApp} />
+              <IconAction label="SMS Invite" icon={<Smartphone />} onClick={shareCreatedBySms} />
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 grid gap-4">
+            <Field
+              label="Technician Name"
+              value={form.technicianName}
+              onChange={(value) => updateField("technicianName", value)}
+              required
+            />
+            <Field label="Phone" value={form.phone} onChange={(value) => updateField("phone", value)} required />
+            <Field label="Email Optional" type="email" value={form.email} onChange={(value) => updateField("email", value)} />
+            <TextArea label="Notes Optional" value={form.notes} onChange={(value) => updateField("notes", value)} />
+          </div>
+        )}
 
         {error && (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
@@ -701,20 +849,22 @@ function InviteTechnicianModal({ saving, error, onClose, onSubmit }) {
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-        >
-          <Send className="h-5 w-5" />
-          {saving ? "Creating Invitation..." : "Create Invitation"}
-        </button>
+        {!createdInvitation && (
+          <button
+            type="submit"
+            disabled={saving}
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+          >
+            <Send className="h-5 w-5" />
+            {saving ? "Creating Invitation..." : "Create Invitation"}
+          </button>
+        )}
       </form>
     </div>
   );
 }
 
-function TechnicianProfileModal({ technician, isAdmin, onClose, onSaveNotes, onStatus, onDelete }) {
+function TechnicianProfileModal({ technician, invitations, isAdmin, onClose, onSaveNotes, onStatus, onDelete }) {
   const [notes, setNotes] = useState(technician.notes || "");
 
   return (
@@ -722,11 +872,12 @@ function TechnicianProfileModal({ technician, isAdmin, onClose, onSaveNotes, onS
       <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
         <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold">{technician.name || "Technician Profile"}</h2>
-            <p className="mt-1 text-sm text-slate-500">{technician.company || "No company listed"}</p>
+            <h2 className="text-2xl font-bold">{technician.full_name || "Technician Profile"}</h2>
+            <p className="mt-1 text-sm text-slate-500">{technician.company_name || "No company listed"}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <StatusBadge status={technician.status} />
               <CompliancePill score={complianceScore(technician)} />
+              <AvailabilityBadge status={technician.availabilityStatus} />
             </div>
           </div>
 
@@ -746,33 +897,45 @@ function TechnicianProfileModal({ technician, isAdmin, onClose, onSaveNotes, onS
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <ProfileSection title="Personal Information">
-            <Detail label="Name" value={technician.name} />
+            <Detail label="Name" value={technician.full_name} />
             <Detail label="Phone" value={technician.phone} />
             <Detail label="Email" value={technician.email} />
-            <Detail label="City" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
+            <Detail label="City / State" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
+            <Detail label="Availability" value={technician.availabilityStatus} />
           </ProfileSection>
 
           <ProfileSection title="Business Information">
-            <Detail label="Company" value={technician.company} />
-            <Detail label="Coverage" value={technician.serviceArea} />
-            <Detail label="Services" value={technician.specialties} />
+            <Detail label="Company" value={technician.company_name} />
+            <Detail label="Status" value={technician.status} />
+            <Detail label="Created" value={dateTime(technician.createdAt)} />
           </ProfileSection>
 
-          {isAdmin && (
-            <ProfileSection title="Tax Information">
-              <Detail label="Tax ID" value={technician.taxId} />
-              <Detail label="W9" value={docStatus(technician.w9Url)} />
-            </ProfileSection>
-          )}
+          <ProfileSection title="Services">
+            <ServiceList services={technician.services} />
+          </ProfileSection>
+
+          <ProfileSection title="Coverage">
+            <Detail label="Primary market" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
+            <Detail label="ZIP" value={technician.zip_code} />
+            <Detail label="Coverage" value={technician.coverage || technician.serviceArea} />
+          </ProfileSection>
 
           <ProfileSection title="Documents">
             <DocumentChecklist technician={technician} isAdmin={isAdmin} />
           </ProfileSection>
 
+          <ProfileSection title="Compliance Score">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <p className="text-4xl font-bold text-slate-950">{complianceScore(technician)}%</p>
+              <p className="mt-1 text-sm text-slate-500">Based on agreement, signature, license, W9, and insurance.</p>
+            </div>
+          </ProfileSection>
+
           {isAdmin && (
-            <ProfileSection title="Payment Method">
+            <ProfileSection title="Payment Information">
               <Detail label="Method" value={technician.paymentMethod} />
-              <Detail label="Details" value={technician.paymentDetails} />
+              <Detail label="Bank / Zelle" value={technician.bankZelleInfo || technician.paymentDetails} />
+              <Detail label="Total paid" value={money(technician.totalPaid)} />
             </ProfileSection>
           )}
 
@@ -780,6 +943,27 @@ function TechnicianProfileModal({ technician, isAdmin, onClose, onSaveNotes, onS
             <Detail label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
             <Detail label="Completed jobs" value={technician.completedJobs || 0} />
             {isAdmin && <Detail label="Total paid" value={money(technician.totalPaid)} />}
+          </ProfileSection>
+
+          <ProfileSection title="Invitation History">
+            {invitations.length === 0 ? (
+              <p className="text-sm text-slate-500">No linked invitation history.</p>
+            ) : (
+              <div className="grid gap-3">
+                {invitations.map((invitation) => (
+                  <div key={invitation.id} className="rounded-xl bg-slate-50 p-3 text-sm">
+                    <p className="font-bold">{invitation.inviteCode}</p>
+                    <p className="text-slate-500">{invitation.status}</p>
+                    <p className="text-xs text-slate-500">Opened: {dateTime(invitation.openedAt)}</p>
+                    <p className="text-xs text-slate-500">Completed: {dateTime(invitation.completedAt)}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ProfileSection>
+
+          <ProfileSection title="Technician Detail Timeline">
+            <Timeline technician={technician} invitations={invitations} />
           </ProfileSection>
         </div>
 
@@ -838,7 +1022,16 @@ function AdminActions({ technician, onStatus, onDelete }) {
           onClick={() => onStatus("Inactive")}
           className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
         >
-          Deactivate
+          Inactive
+        </button>
+      )}
+      {technician.status !== "Missing Documents" && (
+        <button
+          type="button"
+          onClick={() => onStatus("Missing Documents")}
+          className="rounded-xl bg-orange-100 px-3 py-2 text-xs font-bold text-orange-700 hover:bg-orange-200"
+        >
+          Mark Missing Documents
         </button>
       )}
       <button
@@ -855,17 +1048,14 @@ function AdminActions({ technician, onStatus, onDelete }) {
 
 function DocumentChecklist({ technician, isAdmin }) {
   const documents = [
-    { label: "Agreement accepted", complete: technician.agreementAccepted },
-    { label: "Digital signature", complete: Boolean(technician.digitalSignature) },
-    { label: "Driver license", complete: Boolean(technician.driverLicenseUrl) },
+    { label: "Driver License", complete: Boolean(technician.driverLicenseUrl) },
+    { label: "Insurance", complete: Boolean(technician.insuranceUrl) },
+    { label: "W9", complete: Boolean(technician.w9Url) },
+    { label: "DOT Certificate", complete: Boolean(technician.dotCertificateUrl) },
+    { label: "Profile Photo", complete: Boolean(technician.profilePhotoUrl) },
+    { label: "Bank / Zelle Information", complete: Boolean(technician.bankZelleInfo || technician.paymentMethod) },
+    { label: "Signed Agreement", complete: Boolean(technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature) },
   ];
-
-  if (isAdmin) {
-    documents.push(
-      { label: "W9", complete: Boolean(technician.w9Url) },
-      { label: "Insurance", complete: Boolean(technician.insuranceUrl) }
-    );
-  }
 
   return (
     <div className="mt-3 grid gap-2">
@@ -877,7 +1067,7 @@ function DocumentChecklist({ technician, isAdmin }) {
               document.complete ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
             }`}
           >
-            {document.complete ? "On file" : "Missing"}
+            {document.complete ? "Uploaded" : "Missing"}
           </span>
         </div>
       ))}
@@ -887,11 +1077,13 @@ function DocumentChecklist({ technician, isAdmin }) {
 
 function complianceScore(technician) {
   const items = [
-    technician.agreementAccepted,
-    technician.digitalSignature,
     technician.driverLicenseUrl,
-    technician.w9Url,
     technician.insuranceUrl,
+    technician.w9Url,
+    technician.dotCertificateUrl,
+    technician.profilePhotoUrl,
+    technician.bankZelleInfo || technician.paymentMethod,
+    technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature,
   ];
   const completed = items.filter(Boolean).length;
   return Math.round((completed / items.length) * 100);
@@ -905,6 +1097,40 @@ function docStatus(value) {
   return value ? "On file" : "Missing";
 }
 
+function ServiceList({ services }) {
+  const serviceList = splitServices(services);
+
+  if (serviceList.length === 0) {
+    return <p className="text-sm text-slate-500">No services listed.</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {serviceList.map((service) => (
+        <span key={service} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+          {service}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function splitServices(services) {
+  if (Array.isArray(services)) {
+    return services.map((service) => String(service).trim()).filter(Boolean);
+  }
+
+  return String(services || "")
+    .split(/[,\n\r]+/)
+    .map((service) => service.trim())
+    .filter(Boolean);
+}
+
+function formatServices(services) {
+  const serviceList = splitServices(services);
+  return serviceList.length ? serviceList.join(", ") : "No services listed";
+}
+
 function money(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
 }
@@ -916,7 +1142,8 @@ function dateTime(value) {
 function statusClass(status) {
   if (isApproved(status)) return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "Pending") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (status === "Rejected" || status === "Do Not Use") return "border-red-200 bg-red-50 text-red-700";
+  if (status === "Rejected") return "border-red-200 bg-red-50 text-red-700";
+  if (status === "Missing Documents") return "border-orange-200 bg-orange-50 text-orange-700";
   return "border-slate-200 bg-slate-100 text-slate-700";
 }
 
@@ -994,12 +1221,88 @@ function Detail({ label, value }) {
   );
 }
 
+function Timeline({ technician, invitations }) {
+  const events = [
+    ...invitations.flatMap((invitation) => [
+      { label: "Invitation created", time: invitation.createdAt },
+      { label: "Invitation opened", time: invitation.openedAt },
+      { label: "Registration completed", time: invitation.completedAt },
+    ]),
+    { label: "Approved", time: technician.approvedAt },
+    { label: "Documents uploaded", time: latestDocumentTime(technician) },
+    technician.completedJobs > 0 ? { label: "Jobs completed", time: technician.updatedAt || technician.createdAt } : null,
+    technician.completedJobs > 0 ? { label: "Jobs assigned", time: technician.createdAt } : null,
+  ]
+    .filter((event) => event && event.time)
+    .sort((a, b) => new Date(b.time) - new Date(a.time));
+
+  if (events.length === 0) {
+    return <p className="text-sm text-slate-500">No timeline activity yet.</p>;
+  }
+
+  return (
+    <div className="grid gap-3">
+      {events.map((event, index) => (
+        <div key={`${event.label}-${event.time}-${index}`} className="rounded-xl bg-slate-50 p-3">
+          <p className="text-sm font-bold text-slate-800">{event.label}</p>
+          <p className="text-xs text-slate-500">{dateTime(event.time)}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function latestDocumentTime(technician) {
+  const hasDocuments =
+    technician.driverLicenseUrl ||
+    technician.insuranceUrl ||
+    technician.w9Url ||
+    technician.dotCertificateUrl ||
+    technician.profilePhotoUrl ||
+    technician.signedAgreementUrl;
+
+  return hasDocuments ? technician.updatedAt || technician.createdAt : "";
+}
+
 function InfoLine({ icon, value }) {
   return (
     <div className="flex items-center gap-2 text-sm text-slate-700">
       {React.cloneElement(icon, { className: "h-4 w-4 text-slate-400" })}
       <span>{value || "Not set"}</span>
     </div>
+  );
+}
+
+function MiniStat({ label, value }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 p-3">
+      <p className="text-xs font-bold uppercase text-slate-400">{label}</p>
+      <p className="mt-1 truncate text-sm font-bold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function initials(name) {
+  return String(name || "T")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function AvailabilityBadge({ status }) {
+  const styles = {
+    Available: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    Busy: "border-amber-200 bg-amber-50 text-amber-700",
+    "Off Duty": "border-slate-200 bg-slate-100 text-slate-700",
+    Offline: "border-red-200 bg-red-50 text-red-700",
+  };
+
+  return (
+    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${styles[status] || styles.Available}`}>
+      {status || "Available"}
+    </span>
   );
 }
 
@@ -1022,6 +1325,7 @@ function ActionButton({ icon, label, onClick, tone = "slate" }) {
     slate: "bg-slate-950 hover:bg-slate-800",
     emerald: "bg-emerald-600 hover:bg-emerald-700",
     green: "bg-green-600 hover:bg-green-700",
+    blue: "bg-blue-600 hover:bg-blue-700",
   };
 
   return (

@@ -1,12 +1,12 @@
 import { supabase } from "../../lib/supabase";
 
 export function generateInviteCode() {
-  const randomValues = new Uint32Array(2);
+  const randomValues = new Uint8Array(4);
   window.crypto.getRandomValues(randomValues);
-  return `nttr-${Date.now().toString(36)}-${Array.from(randomValues)
-    .map((value) => value.toString(36))
+  return `NTTR-${Array.from(randomValues)
+    .map((value) => value.toString(36).toUpperCase().padStart(2, "0"))
     .join("")
-    .slice(0, 10)}`;
+    .slice(0, 6)}`;
 }
 
 export function registrationLinkForInvite(inviteCode) {

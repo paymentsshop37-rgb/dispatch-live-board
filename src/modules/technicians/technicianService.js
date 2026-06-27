@@ -1,29 +1,58 @@
 import { supabase } from "../../lib/supabase";
 
 const DEFAULT_COLUMNS = [
-  "name",
+  "id",
+  "created_at",
+  "full_name",
   "phone",
   "email",
+  "company_name",
   "city",
   "state",
-  "service_area",
-  "specialties",
+  "zip_code",
+  "services",
   "status",
   "notes",
+  "ssn_last4",
+  "w9_url",
+  "insurance_url",
+  "driver_license_url",
+  "payment_method",
+  "agreement_accepted",
+  "digital_signature",
+  "rating",
+  "completed_jobs",
+  "total_paid",
+  "approved_at",
+  "approved_by",
+  "rejected_at",
+  "rejected_reason",
+  "inactive_at",
+  "availability_status",
+  "availability",
+  "current_job_id",
+  "profile_photo_url",
+  "coverage",
+  "acceptance_rate",
+  "average_eta",
+  "dot_certificate_url",
+  "bank_zelle_info",
+  "signed_agreement_url",
 ];
 
 const fieldAliases = {
-  name: ["name", "full_name", "technician_name"],
+  full_name: ["full_name"],
   phone: ["phone", "phone_number", "mobile"],
   email: ["email"],
-  company: ["company", "company_name", "business_name"],
+  company_name: ["company_name"],
   city: ["city"],
   state: ["state"],
+  zip_code: ["zip_code"],
   serviceArea: ["service_area", "serviceArea", "coverage_area", "area"],
-  specialties: ["specialties", "skills", "services"],
+  services: ["services"],
   status: ["status"],
   notes: ["notes"],
-  taxId: ["tax_id", "taxId", "ein", "ssn_last4"],
+  taxId: ["ssn_last4", "tax_id", "taxId", "ein"],
   w9Url: ["w9_url", "w9Url", "w9", "w9_uploaded"],
   insuranceUrl: ["insurance_url", "insuranceUrl", "insurance", "insurance_uploaded"],
   driverLicenseUrl: ["driver_license_url", "driverLicenseUrl", "driver_license", "license_uploaded"],
@@ -34,6 +63,20 @@ const fieldAliases = {
   rating: ["rating", "average_rating", "avg_rating"],
   completedJobs: ["completed_jobs", "completedJobs", "jobs_completed"],
   totalPaid: ["total_paid", "totalPaid", "paid_total"],
+  approvedAt: ["approved_at"],
+  approvedBy: ["approved_by"],
+  rejectedAt: ["rejected_at"],
+  rejectedReason: ["rejected_reason"],
+  inactiveAt: ["inactive_at"],
+  availabilityStatus: ["availability", "availability_status"],
+  currentJobId: ["current_job_id"],
+  profilePhotoUrl: ["profile_photo_url"],
+  coverage: ["coverage", "coverage_area"],
+  acceptanceRate: ["acceptance_rate"],
+  averageEta: ["average_eta"],
+  dotCertificateUrl: ["dot_certificate_url"],
+  bankZelleInfo: ["bank_zelle_info"],
+  signedAgreementUrl: ["signed_agreement_url"],
 };
 
 function firstValue(row, aliases, fallback = "") {
@@ -59,14 +102,15 @@ export function normalizeTechnician(row) {
   return {
     raw: row,
     id: row.id,
-    name: firstValue(row, fieldAliases.name),
+    full_name: firstValue(row, fieldAliases.full_name),
     phone: firstValue(row, fieldAliases.phone),
     email: firstValue(row, fieldAliases.email),
-    company: firstValue(row, fieldAliases.company),
+    company_name: firstValue(row, fieldAliases.company_name),
     city: firstValue(row, fieldAliases.city),
     state: firstValue(row, fieldAliases.state),
+    zip_code: firstValue(row, fieldAliases.zip_code),
     serviceArea: firstValue(row, fieldAliases.serviceArea),
-    specialties: firstValue(row, fieldAliases.specialties),
+    services: firstValue(row, fieldAliases.services),
     status: firstValue(row, fieldAliases.status, "Active"),
     notes,
     taxId: firstValue(row, fieldAliases.taxId),
@@ -80,6 +124,20 @@ export function normalizeTechnician(row) {
     rating: Number(firstValue(row, fieldAliases.rating, 0) || 0),
     completedJobs: Number(firstValue(row, fieldAliases.completedJobs, 0) || 0),
     totalPaid: Number(firstValue(row, fieldAliases.totalPaid, 0) || 0),
+    approvedAt: firstValue(row, fieldAliases.approvedAt),
+    approvedBy: firstValue(row, fieldAliases.approvedBy),
+    rejectedAt: firstValue(row, fieldAliases.rejectedAt),
+    rejectedReason: firstValue(row, fieldAliases.rejectedReason),
+    inactiveAt: firstValue(row, fieldAliases.inactiveAt),
+    availabilityStatus: firstValue(row, fieldAliases.availabilityStatus, "Available"),
+    currentJobId: firstValue(row, fieldAliases.currentJobId),
+    profilePhotoUrl: firstValue(row, fieldAliases.profilePhotoUrl),
+    coverage: firstValue(row, fieldAliases.coverage),
+    acceptanceRate: Number(firstValue(row, fieldAliases.acceptanceRate, 0) || 0),
+    averageEta: Number(firstValue(row, fieldAliases.averageEta, 0) || 0),
+    dotCertificateUrl: firstValue(row, fieldAliases.dotCertificateUrl),
+    bankZelleInfo: firstValue(row, fieldAliases.bankZelleInfo),
+    signedAgreementUrl: firstValue(row, fieldAliases.signedAgreementUrl),
     createdAt: row.created_at || row.createdAt || "",
     updatedAt: row.updated_at || row.updatedAt || "",
   };
@@ -95,8 +153,8 @@ function buildPayload(technician, knownColumns = DEFAULT_COLUMNS) {
 
   Object.keys(fieldAliases).forEach((field) => {
     const column = resolveColumn(field, knownColumns);
-    if (knownColumns.includes(column)) {
-      payload[column] = technician[field] ?? "";
+    if (knownColumns.includes(column) && Object.prototype.hasOwnProperty.call(technician, field)) {
+      payload[column] = technician[field];
     }
   });
 
@@ -107,7 +165,7 @@ export async function loadTechnicians() {
   const { data, error } = await supabase
     .from("technicians")
     .select("*")
-    .order("name", { ascending: true });
+    .order("created_at", { ascending: false });
 
   if (error) {
     throw error;
@@ -170,4 +228,39 @@ export function getKnownColumns(technicians) {
   });
 
   return [...columns];
+}
+
+function splitServices(services) {
+  if (Array.isArray(services)) {
+    return services.map((service) => String(service).trim()).filter(Boolean);
+  }
+
+  return String(services || "")
+    .split(/[,\n\r]+/)
+    .map((service) => service.trim())
+    .filter(Boolean);
+}
+
+export async function getAvailableTechnicians(city, service) {
+  const technicians = await loadTechnicians();
+  const requestedCity = String(city || "").trim().toLowerCase();
+  const requestedService = String(service || "").trim().toLowerCase();
+
+  return technicians.filter((technician) => {
+    const cityMatches =
+      !requestedCity ||
+      String(technician.city || "").toLowerCase() === requestedCity ||
+      String(technician.coverage || "").toLowerCase().includes(requestedCity) ||
+      String(technician.serviceArea || "").toLowerCase().includes(requestedCity);
+    const serviceMatches =
+      !requestedService ||
+      splitServices(technician.services).some((item) => item.toLowerCase().includes(requestedService));
+
+    return (
+      technician.status === "Approved" &&
+      technician.availabilityStatus === "Available" &&
+      cityMatches &&
+      serviceMatches
+    );
+  });
 }

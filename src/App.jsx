@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { ClipboardList, UserPlus, Users } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
-import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
+import { TechnicianCenter, TechnicianPortal, TechnicianRegistrationPortal } from "./modules/technicians";
 
 const views = [
   { id: "dispatch", label: "Dispatch Board", icon: ClipboardList },
@@ -12,9 +12,14 @@ const views = [
 export default function App() {
   const [activeView, setActiveView] = useState("dispatch");
   const isPublicRegistration = window.location.pathname === "/technician-registration";
+  const isTechnicianPortal = window.location.pathname === "/technician-portal";
 
   if (isPublicRegistration) {
     return <TechnicianRegistrationPortal />;
+  }
+
+  if (isTechnicianPortal) {
+    return <TechnicianPortal />;
   }
 
   return (

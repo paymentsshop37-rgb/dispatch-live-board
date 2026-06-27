@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
+import { assignTechnicianToJob, getRecommendedTechnicians } from "./modules/technicians/dispatchEngine";
+import { loadTechnicians } from "./modules/technicians/technicianService";
 
 const USERS = {
   admin: { password: "Admin#2026", role: "Admin", name: "Owner Admin" },
@@ -81,6 +83,7 @@ const fieldMap = {
   paymentReceiver: "received",
   totalBill: "total_bill",
   techLabor: "tech_labor",
+  requestedService: "requested_service",
 };
 
 function money(value) {
@@ -217,6 +220,9 @@ function fromDbJob(row) {
     dispatch: row.dispatch || "",
     company: row.company || "",
     tech: row.tech || "",
+    technicianId: row.technician_id || "",
+    assignedAt: row.assigned_at || "",
+    requestedService: row.requested_service || "",
     location: row.location || "",
     status: row.status || "New",
     rowFlag: row.row_flag || "Normal",
@@ -239,6 +245,7 @@ function toDbJob(job) {
     dispatch: job.dispatch || "",
     company: job.company || "",
     tech: job.tech || "",
+    requested_service: job.requestedService || "",
     location: job.location || "",
     status: job.status || "New",
     row_flag: job.rowFlag || "Normal",
@@ -272,6 +279,7 @@ function emptyForm() {
     reference: "",
     company: "",
     tech: "",
+    requestedService: "",
     location: "",
     status: "New",
     rowFlag: "Normal",
@@ -303,6 +311,9 @@ export default function DispatchLiveUpdatesPage() {
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
+  const [assignmentJob, setAssignmentJob] = useState(null);
+  const [recommendedTechnicians, setRecommendedTechnicians] = useState([]);
+  const [dispatchTechnicians, setDispatchTechnicians] = useState([]);
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [currentUserName, setCurrentUserName] = useState(
@@ -335,6 +346,7 @@ localStorage.setItem("currentUserRole", user.role);
 
   useEffect(() => {
     loadJobs();
+    loadDispatchTechnicians();
 
     const channel = supabase
       .channel("live-jobs")
@@ -350,6 +362,52 @@ localStorage.setItem("currentUserRole", user.role);
       supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("live-dispatch-technicians")
+      .on("postgres_changes", { event: "*", schema: "public", table: "technicians" }, () => {
+        loadDispatchTechnicians();
+        refreshRecommendations();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    refreshRecommendations();
+  }, [form.location, form.requestedService, assignmentJob]);
+
+  async function loadDispatchTechnicians() {
+    try {
+      setDispatchTechnicians(await loadTechnicians());
+    } catch (error) {
+      console.error("Error loading technicians:", error.message);
+    }
+  }
+
+  async function refreshRecommendations() {
+    const jobForRecommendations =
+      assignmentJob || {
+        ...form,
+        requestedService: form.requestedService,
+      };
+
+    if (!jobForRecommendations.location && !jobForRecommendations.requestedService) {
+      setRecommendedTechnicians([]);
+      return;
+    }
+
+    try {
+      setRecommendedTechnicians(await getRecommendedTechnicians(jobForRecommendations));
+    } catch (error) {
+      console.error("Error loading recommendations:", error.message);
+      setRecommendedTechnicians([]);
+    }
+  }
 
   async function loadJobs() {
     const { data, error } = await supabase
@@ -557,6 +615,20 @@ profit: filteredJobs.reduce(
     };
  }, [jobs, filteredJobs]);
 
+  const dispatchTechStats = useMemo(() => {
+    const approvedTechnicians = dispatchTechnicians.filter((tech) => tech.status === "Approved");
+    const etaValues = approvedTechnicians.map((tech) => Number(tech.averageEta || 0)).filter(Boolean);
+
+    return {
+      available: approvedTechnicians.filter((tech) => tech.availabilityStatus === "Available").length,
+      busy: approvedTechnicians.filter((tech) => ["Busy", "Traveling", "On Site"].includes(tech.availabilityStatus)).length,
+      averageEta: etaValues.length
+        ? Math.round(etaValues.reduce((sum, eta) => sum + eta, 0) / etaValues.length)
+        : 0,
+      waitingAssignment: filteredJobs.filter((job) => !job.technicianId && !job.tech && job.status !== "Completed").length,
+    };
+  }, [dispatchTechnicians, filteredJobs]);
+
   async function addJob(e) {
     e.preventDefault();
 
@@ -711,6 +783,35 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     setJobToDelete(job);
   }
 
+  async function assignRecommendedTechnician(job, technician) {
+    if (!job?.id) {
+      setForm((current) => ({ ...current, tech: technician.full_name || "" }));
+      alert("Technician selected. Save the job first, then assign it from the live board.");
+      return;
+    }
+
+    try {
+      const assignment = await assignTechnicianToJob(job, technician, currentUserName || "Dispatcher");
+      setJobs((currentJobs) =>
+        currentJobs.map((currentJob) =>
+          currentJob.id === job.id
+            ? {
+                ...currentJob,
+                tech: technician.full_name || "",
+                technicianId: assignment.technicianId,
+                assignedAt: assignment.assignedAt,
+              }
+            : currentJob
+        )
+      );
+      setAssignmentJob(null);
+      await loadDispatchTechnicians();
+      await loadJobs();
+    } catch (error) {
+      alert("Error assigning technician: " + error.message);
+    }
+  }
+
   if (!accessGranted) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
@@ -822,6 +923,15 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           <StatCard icon={<Truck />} label="Dry Runs" value={stats.dryRuns} />
           {isAdmin && <StatCard icon={<DollarSign />} label="Profit" value={money(stats.profit)} />}
         </div>
+
+        {isAdmin && (
+          <div className="grid gap-4 md:grid-cols-4">
+            <StatCard icon={<Users />} label="Available Technicians" value={dispatchTechStats.available} />
+            <StatCard icon={<Truck />} label="Busy Technicians" value={dispatchTechStats.busy} />
+            <StatCard icon={<Clock />} label="Average ETA" value={dispatchTechStats.averageEta ? `${dispatchTechStats.averageEta} min` : "N/A"} />
+            <StatCard icon={<AlertTriangle />} label="Jobs Waiting Assignment" value={dispatchTechStats.waitingAssignment} />
+          </div>
+        )}
 
         {isAdmin && (
           <div className="rounded-3xl bg-white p-5 shadow-sm">
@@ -982,7 +1092,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+        <div className="grid gap-6 lg:grid-cols-[380px_1fr] xl:grid-cols-[360px_minmax(0,1fr)_340px]">
           <form onSubmit={addJob} className="rounded-3xl bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-xl font-bold">Add New Job</h2>
@@ -997,6 +1107,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <Input label="Company" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
               <Input label="Tech" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
               <Input label="Location" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
+              <Input label="Requested Service" placeholder="Tires, brakes, air leak..." value={form.requestedService} onChange={(v) => setForm({ ...form, requestedService: v })} />
 
               <div className="grid grid-cols-2 gap-3">
                 <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
@@ -1396,6 +1507,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
                       <Td>
                         <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setAssignmentJob(job)}
+                            className="rounded-xl bg-blue-100 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-200"
+                          >
+                            Match
+                          </button>
                           <button type="button" title="Auto Saved" className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
                             <Save className="h-4 w-4" />
                           </button>
@@ -1464,6 +1582,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               All changes save automatically in the live cloud database. Jobs can still be deleted manually if someone entered a wrong work order.
             </p>
           </div>
+
+          <AssignmentPanel
+            job={assignmentJob || { ...form, requestedService: form.requestedService }}
+            technicians={recommendedTechnicians}
+            onAssign={assignRecommendedTechnician}
+            onClear={() => setAssignmentJob(null)}
+          />
         </div>
       </div>
     </div>
@@ -1573,6 +1698,105 @@ function MoneyInput({ value, onChange, className = "" }) {
       onChange={(e) => onChange(e.target.value)}
     />
   );
+}
+
+function AssignmentPanel({ job, technicians, onAssign, onClear }) {
+  return (
+    <aside className="rounded-3xl bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-bold">Recommended Technicians</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            {job?.id ? `Job ${job.reference || job.id}` : "New job preview"}
+          </p>
+        </div>
+        {job?.id && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <div className="grid gap-3">
+        {technicians.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+            Enter a location and requested service, or click Match on a job.
+          </div>
+        ) : (
+          technicians.slice(0, 8).map((technician) => (
+            <div key={technician.id} className="rounded-2xl border border-slate-200 p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-sm font-bold text-slate-600">
+                  {technician.profilePhotoUrl ? (
+                    <img src={technician.profilePhotoUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    initials(technician.full_name)
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-slate-950">{technician.full_name || "Unnamed technician"}</p>
+                  <p className="text-xs text-slate-500">{technician.phone || "No phone"}</p>
+                  <p className="text-xs text-slate-500">{[technician.city, technician.state].filter(Boolean).join(", ") || "No city"}</p>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <MiniMetric label="Distance" value={technician.matchDistance === 0 ? "Same city" : `${technician.matchDistance} mi`} />
+                <MiniMetric label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
+                <MiniMetric label="ETA" value={technician.averageEta ? `${technician.averageEta} min` : "N/A"} />
+                <MiniMetric label="Compliance" value={`${technicianCompliance(technician)}%`} />
+                <MiniMetric label="Status" value={technician.availabilityStatus || "Available"} />
+                <MiniMetric label="Jobs" value={technician.completedJobs || 0} />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => onAssign(job, technician)}
+                className="mt-3 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800"
+              >
+                Assign
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function MiniMetric({ label, value }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-2">
+      <p className="font-bold uppercase text-slate-400">{label}</p>
+      <p className="mt-1 font-semibold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function initials(name) {
+  return String(name || "T")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+}
+
+function technicianCompliance(technician) {
+  const checks = [
+    technician.driverLicenseUrl,
+    technician.insuranceUrl,
+    technician.w9Url,
+    technician.dotCertificateUrl,
+    technician.profilePhotoUrl,
+    technician.bankZelleInfo || technician.paymentMethod,
+    technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature,
+  ];
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
 function Th({ children }) {

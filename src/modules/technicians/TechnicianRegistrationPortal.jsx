@@ -8,13 +8,13 @@ import {
 } from "./technicianInvitationService";
 
 const emptyRegistration = {
-  name: "",
+  full_name: "",
   phone: "",
   email: "",
   city: "",
   state: "",
   serviceArea: "",
-  specialties: "",
+  services: "",
   agreement: false,
   digitalSignature: "",
   status: "Pending",
@@ -45,7 +45,7 @@ export default function TechnicianRegistrationPortal() {
         setInvitation(activeInvite);
         setForm((current) => ({
           ...current,
-          name: activeInvite.technicianName || current.name,
+          full_name: activeInvite.technicianName || current.full_name,
           phone: activeInvite.phone || current.phone,
           email: activeInvite.email || current.email,
         }));
@@ -67,6 +67,17 @@ export default function TechnicianRegistrationPortal() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
+  function normalizeServices(value) {
+    if (Array.isArray(value)) {
+      return value.map((service) => String(service).trim()).filter(Boolean);
+    }
+
+    return String(value || "")
+      .split(/[,\n\r]+/)
+      .map((service) => service.trim())
+      .filter(Boolean);
+  }
+
   async function submitRegistration(event) {
     event.preventDefault();
     setSaving(true);
@@ -75,6 +86,8 @@ export default function TechnicianRegistrationPortal() {
     try {
       const technician = await createTechnician({
         ...form,
+        services: normalizeServices(form.services),
+        agreementAccepted: form.agreement,
         notes: [
           form.notes,
           invitation?.inviteCode ? `Invitation code: ${invitation.inviteCode}` : "",
@@ -145,7 +158,7 @@ export default function TechnicianRegistrationPortal() {
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field label="Full Name" value={form.name} onChange={(value) => updateField("name", value)} required />
+            <Field label="Full Name" value={form.full_name} onChange={(value) => updateField("full_name", value)} required />
             <Field label="Phone" value={form.phone} onChange={(value) => updateField("phone", value)} required />
             <Field label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} />
             <Field label="City" value={form.city} onChange={(value) => updateField("city", value)} required />
@@ -163,8 +176,8 @@ export default function TechnicianRegistrationPortal() {
             <textarea
               required
               className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
-              value={form.specialties}
-              onChange={(event) => updateField("specialties", event.target.value)}
+              value={form.services}
+              onChange={(event) => updateField("services", event.target.value)}
               placeholder="Tires, trailer repair, jump starts, air leaks..."
             />
           </label>
