@@ -3,7 +3,62 @@ import { createClient } from "@supabase/supabase-js";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey
-);
+console.log("[Supabase env check]", {
+  VITE_SUPABASE_URL: supabaseUrl,
+  VITE_SUPABASE_ANON_KEY: supabaseAnonKey,
+});
+
+const missingVariables = [
+  !supabaseUrl && "VITE_SUPABASE_URL",
+  !supabaseAnonKey && "VITE_SUPABASE_ANON_KEY",
+].filter(Boolean);
+
+function createMissingConfigError() {
+  return new Error(
+    `Missing Supabase environment variable${missingVariables.length > 1 ? "s" : ""}: ${missingVariables.join(
+      ", "
+    )}. Add them to a Vite .env file or deployment environment.`
+  );
+}
+
+function createDisabledQuery() {
+  const query = {
+    select: () => query,
+    order: () => query,
+    eq: () => query,
+    insert: () => query,
+    update: () => query,
+    delete: () => query,
+    single: () => query,
+    then: (resolve, reject) =>
+      Promise.resolve({ data: null, error: createMissingConfigError() }).then(resolve, reject),
+  };
+
+  return query;
+}
+
+function createDisabledSupabaseClient() {
+  console.error(createMissingConfigError().message);
+
+  return {
+    from: () => createDisabledQuery(),
+    channel: () => ({
+      on: () => ({
+        subscribe: () => null,
+      }),
+    }),
+    removeChannel: () => {},
+    storage: {
+      from: () => ({
+        upload: async () => ({ data: null, error: createMissingConfigError() }),
+        remove: async () => ({ data: null, error: createMissingConfigError() }),
+        getPublicUrl: () => ({ data: { publicUrl: "" } }),
+      }),
+    },
+  };
+}
+
+export const supabase =
+  missingVariables.length === 0
+    ? createClient(supabaseUrl, supabaseAnonKey)
+    : createDisabledSupabaseClient();
