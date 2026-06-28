@@ -1,6 +1,7 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useRef, useState, useEffect } from "react";
 import {
   Search,
+  Menu,
   Truck,
   Plus,
   Upload,
@@ -14,10 +15,16 @@ import {
   Save,
   RefreshCw,
   Columns3,
+  Filter,
   Edit3,
   Eye,
+  MoreHorizontal,
   HelpCircle,
+  MapPin,
+  MessageCircle,
   Moon,
+  Phone,
+  Star,
   Users,
   Database,
   Crown,
@@ -320,6 +327,8 @@ function emptyForm() {
 }
 
 export default function DispatchLiveUpdatesPage() {
+  const formRef = useRef(null);
+  const searchInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
   const [accessGranted, setAccessGranted] = useState(false);
   const [accessCode, setAccessCode] = useState("");
@@ -339,6 +348,7 @@ export default function DispatchLiveUpdatesPage() {
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
+  const [dispatchViewMode, setDispatchViewMode] = useState("cockpit");
   const [dispatchTechnicians, setDispatchTechnicians] = useState([]);
   const [assignmentFilters, setAssignmentFilters] = useState({
     city: "",
@@ -357,6 +367,7 @@ export default function DispatchLiveUpdatesPage() {
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [jobContextMenu, setJobContextMenu] = useState(null);
   const [currentUserName, setCurrentUserName] = useState(
   localStorage.getItem("currentUserName") || ""
 );
@@ -438,6 +449,53 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
 
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleKeyboard(event) {
+      const targetTag = event.target?.tagName?.toLowerCase();
+      const isTyping = ["input", "textarea", "select"].includes(targetTag);
+
+      if (event.key === "Escape") {
+        setJobContextMenu(null);
+        setAssignmentJob(null);
+        return;
+      }
+
+      if (!event.ctrlKey) return;
+
+      const key = event.key.toLowerCase();
+      if (key === "n") {
+        event.preventDefault();
+        setForm(emptyForm());
+        setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      }
+      if (key === "s") {
+        event.preventDefault();
+        formRef.current?.requestSubmit();
+      }
+      if (key === "f") {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (key === "r") {
+        event.preventDefault();
+        loadJobs();
+        loadDispatchTechnicians();
+      }
+    }
+
+    function closeContextMenu() {
+      setJobContextMenu(null);
+    }
+
+    window.addEventListener("keydown", handleKeyboard);
+    window.addEventListener("click", closeContextMenu);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyboard);
+      window.removeEventListener("click", closeContextMenu);
     };
   }, []);
 
@@ -651,14 +709,31 @@ return (
     [jobs]
   );
 
+  const recentCompanies = useMemo(() => recentValues(jobs, "company"), [jobs]);
+  const recentLocations = useMemo(() => recentValues(jobs, "location"), [jobs]);
+  const recentTechnicians = useMemo(
+    () => [
+      ...new Set([
+        ...jobs.map((job) => job.tech).filter(Boolean),
+        ...dispatchTechnicians.map((technician) => technician.full_name).filter(Boolean),
+      ]),
+    ].slice(0, 8),
+    [jobs, dispatchTechnicians]
+  );
+  const recentDispatchers = useMemo(() => recentValues(jobs, "dispatch"), [jobs]);
+
   const stats = useMemo(() => {
    return {
   total: filteredJobs.length,
+  activeJobs: filteredJobs.filter((j) => !["Completed", "Canceled", "Cancelled", "Paid"].includes(j.status)).length,
+  pendingJobs: filteredJobs.filter((j) => ["New", "Pending"].includes(j.status)).length,
   newJobs: filteredJobs.filter((j) => j.status === "New").length,
   assigned: filteredJobs.filter((j) => j.status === "Assigned").length,
   enRoute: filteredJobs.filter((j) => j.status === "En Route").length,
   working: filteredJobs.filter((j) => j.status === "Working").length,
   completedToday: filteredJobs.filter((j) => j.status === "Completed" && j.date === new Date().toISOString().slice(0, 10)).length,
+  revenueToday: filteredJobs.filter((j) => j.date === new Date().toISOString().slice(0, 10)).reduce((sum, job) => sum + Number(job.totalBill || 0), 0),
+  averageEta: averageEta(filteredJobs),
   inProgress: filteredJobs.filter((j) => j.status === "In Progress").length,
   completed: filteredJobs.filter((j) => j.status === "Completed").length,
   canceled: filteredJobs.filter((j) => j.status === "Canceled" || j.status === "Cancelled").length,
@@ -1035,6 +1110,74 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     await loadDispatchTechnicians();
   }
 
+  function openJobContextMenu(event, job) {
+    event.preventDefault();
+    setJobContextMenu({ x: event.clientX, y: event.clientY, job });
+  }
+
+  function handleJobContextAction(action, job) {
+    setJobContextMenu(null);
+    if (!job) return;
+
+    if (action === "edit") {
+      setAssignmentJob(job);
+      setDispatchViewMode("table");
+      return;
+    }
+    if (action === "assign") {
+      setAssignmentJob(job);
+      return;
+    }
+    if (action === "copy") {
+      navigator.clipboard?.writeText(formatJobForClipboard(job));
+      setToastMessage("Job copied");
+      window.setTimeout(() => setToastMessage(""), 2500);
+      return;
+    }
+    if (action === "duplicate") {
+      setForm({
+        ...emptyForm(),
+        date: job.date || new Date().toISOString().slice(0, 10),
+        time: job.time || "",
+        reference: `${job.reference || ""} COPY`.trim(),
+        dispatch: job.dispatch || "",
+        company: job.company || "",
+        tech: job.tech || "",
+        location: job.location || "",
+        status: "New",
+        rowFlag: job.rowFlag || "Normal",
+        invoice: job.invoice || "Pending",
+        paymentMethod: job.paymentMethod || "Pending",
+        paymentReceiver: job.paymentReceiver || "A",
+        updates: job.updates || "",
+        parts: job.parts || "",
+        totalBill: job.totalBill || "",
+        techLabor: job.techLabor || "",
+      });
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (action === "complete") {
+      updateJob(job.id, "status", "Completed");
+      return;
+    }
+    if (action === "cancel") {
+      updateJob(job.id, "status", "Canceled");
+      return;
+    }
+    if (action === "maps") {
+      window.open(mapLink(job.location), "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (action === "call") {
+      alert("Customer phone is not stored on this job yet.");
+      return;
+    }
+    if (action === "whatsapp") {
+      window.open(customerWhatsAppLink(job), "_blank", "noopener,noreferrer");
+    }
+  }
+
   if (!accessGranted) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
@@ -1066,61 +1209,81 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   }
 
   return (
-    <div className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden bg-slate-100 p-4 text-slate-900 md:p-6 xl:p-8">
+    <div className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden bg-slate-100 text-slate-900">
       {toastMessage && (
         <div className="fixed right-6 top-6 z-50 rounded-xl border border-emerald-200 bg-white px-5 py-3 text-sm font-bold text-emerald-700 shadow-xl">
           {toastMessage}
         </div>
       )}
-      <div className="w-full max-w-none min-w-0 space-y-6">
+      <div className="w-full max-w-none min-w-0 space-y-6 p-4 md:p-6 xl:p-8">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm"
+          className="rounded-2xl border border-slate-800 bg-[#0b1628] p-4 text-white shadow-sm"
         >
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-blue-600 p-3 text-white">
-                <Truck className="h-6 w-6" />
-              </div>
+            <div className="flex flex-wrap items-center gap-4">
+              <button type="button" className="rounded-xl bg-white/10 p-3 text-slate-200 hover:bg-white/15" title="Menu">
+                <Menu className="h-5 w-5" />
+              </button>
 
               <div>
-                <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                <div className="hidden">
                   <span>Home</span><span>&gt;</span><span>Dispatch Center</span><span>&gt;</span><span className="text-blue-700">Live Jobs</span>
                 </div>
-                <h1 className="text-3xl font-bold tracking-tight text-slate-950">Dispatch Center</h1>
-                <p className="text-sm text-slate-500">
+                <h1 className="text-2xl font-bold tracking-tight text-white">Dispatch Cockpit</h1>
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-300">
                   Secure live dispatch system · Truck & Trailer Road Service
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
+              <button type="button" className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/15">
+                Shortcuts
+              </button>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <input
-                  className="w-72 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500"
-                  placeholder="Search dispatch..."
+                  ref={searchInputRef}
+                  className="w-80 rounded-xl border border-white/10 bg-white/10 py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-blue-400"
+                  placeholder="Search jobs, invoices, companies..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
-              <button type="button" className="rounded-xl bg-slate-100 p-3 text-slate-700 hover:bg-slate-200" title="Notifications">
+              <button type="button" className="rounded-xl bg-white/10 p-3 text-slate-200 hover:bg-white/15" title="Notifications">
                 <Bell className="h-4 w-4" />
               </button>
-              <button type="button" className="rounded-xl bg-slate-100 p-3 text-slate-700 hover:bg-slate-200" title="Help">
+              <button type="button" className="rounded-xl bg-white/10 p-3 text-slate-200 hover:bg-white/15" title="Help">
                 <HelpCircle className="h-4 w-4" />
               </button>
               <button
                 type="button"
                 onClick={() => document.documentElement.classList.toggle("dark")}
-                className="rounded-xl bg-slate-100 p-3 text-slate-700 hover:bg-slate-200"
+                className="rounded-xl bg-white/10 p-3 text-slate-200 hover:bg-white/15"
                 title="Dark mode"
               >
                 <Moon className="h-4 w-4" />
               </button>
-              <div className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold capitalize text-white">
+              <div className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold capitalize text-white">
                 {currentUserName || "PRESTIGE T"} · {normalizeRole(currentUserRole) || "administrator"}
+              </div>
+              <div className="hidden gap-2 lg:flex">
+                {["cockpit", "table"].map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setDispatchViewMode(mode)}
+                    className={`rounded-xl px-4 py-2 text-sm font-bold ${
+                      dispatchViewMode === mode
+                        ? "bg-blue-600 text-white"
+                        : "bg-white/10 text-slate-200 hover:bg-white/15"
+                    }`}
+                  >
+                    {mode === "cockpit" ? "Cockpit View" : "Table View"}
+                  </button>
+                ))}
               </div>
             </div>
           </div>
@@ -1192,15 +1355,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           )}
         </div>
 
-        <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-8">
-          <StatCard icon={<ClipboardList />} label="Total Jobs" value={stats.total} />
-          <StatCard icon={<Plus />} label="New Jobs" value={stats.newJobs} />
-          <StatCard icon={<Users />} label="Assigned" value={stats.assigned} />
-          <StatCard icon={<Truck />} label="En Route" value={stats.enRoute} />
-          <StatCard icon={<Clock />} label="Working" value={stats.working} />
+        <div className="sticky top-0 z-30 grid gap-4 rounded-xl border border-slate-200 bg-slate-100/95 p-2 backdrop-blur md:grid-cols-3 xl:grid-cols-6">
+          <StatCard icon={<ClipboardList />} label="Active Jobs" value={stats.activeJobs} />
+          <StatCard icon={<AlertTriangle />} label="Pending Jobs" value={stats.pendingJobs} />
+          <StatCard icon={<Users />} label="Assigned Jobs" value={stats.assigned} />
           <StatCard icon={<CheckCircle2 />} label="Completed Today" value={stats.completedToday} />
-          <StatCard icon={<AlertTriangle />} label="Open Invoices" value={stats.pendingInvoices} />
-          {isAdmin && <StatCard icon={<DollarSign />} label="Profit" value={money(stats.profit)} />}
+          <StatCard icon={<DollarSign />} label="Revenue Today" value={money(stats.revenueToday)} />
+          <StatCard icon={<Clock />} label="Average ETA" value={stats.averageEta ? `${stats.averageEta} min` : "0"} />
         </div>
 
         {isAdmin && (
@@ -1363,7 +1524,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
         </div>
 
         <div className="grid w-full min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <form onSubmit={addJob} className="w-full max-w-none rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <form ref={formRef} onSubmit={addJob} className="w-full max-w-none rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-slate-950">Add New Job</h2>
@@ -1376,10 +1537,10 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <Input label="Date" type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
               <Input label="Time" placeholder="10:45 AM" value={form.time} onChange={(v) => setForm({ ...form, time: v })} />
               <Input label="Invoice #" value={form.reference} onChange={(v) => setForm({ ...form, reference: v })} />
-              <Input label="Dispatch" value={form.dispatch} onChange={(v) => setForm({ ...form, dispatch: v })} />
-              <Input label="Company" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
-              <Input label="Tech" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
-              <Input label="Location" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
+              <Input label="Dispatch" list="dispatcher-suggestions" value={form.dispatch} onChange={(v) => setForm({ ...form, dispatch: v })} />
+              <Input label="Company" list="company-suggestions" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
+              <Input label="Tech" list="technician-suggestions" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
+              <Input label="Location" list="location-suggestions" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
               <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
               <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={jobStatusOptions} />
               <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={["Pending", "Sent", "Paid", "Need Review"]} />
@@ -1454,8 +1615,65 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </button>
               </div>
             </div>
+            <datalist id="company-suggestions">
+              {recentCompanies.map((company) => <option key={company} value={company} />)}
+            </datalist>
+            <datalist id="location-suggestions">
+              {recentLocations.map((location) => <option key={location} value={location} />)}
+            </datalist>
+            <datalist id="technician-suggestions">
+              {recentTechnicians.map((technician) => <option key={technician} value={technician} />)}
+            </datalist>
+            <datalist id="dispatcher-suggestions">
+              {recentDispatchers.map((dispatcher) => <option key={dispatcher} value={dispatcher} />)}
+            </datalist>
           </form>
 
+          <div className="order-2 col-span-full flex flex-wrap justify-end gap-2">
+            {["cockpit", "table"].map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setDispatchViewMode(mode)}
+                className={`rounded-xl px-4 py-2 text-sm font-bold ${
+                  dispatchViewMode === mode
+                    ? "bg-blue-600 text-white"
+                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {mode === "cockpit" ? "Cockpit View" : "Table View"}
+              </button>
+            ))}
+          </div>
+
+          {dispatchViewMode === "cockpit" && (
+            <DispatchCockpit
+              jobs={filteredJobs}
+              selectedJob={assignmentJob || filteredJobs[0]}
+              technicians={assignmentTechnicians}
+              notifications={notifications}
+              activityLogs={activityLogs}
+              changeLogs={changeLogs}
+              filters={assignmentFilters}
+              onSelectJob={setAssignmentJob}
+              onFiltersChange={setAssignmentFilters}
+              onAssign={assignRecommendedTechnician}
+              onUpdateJob={updateJob}
+              onOpenTable={() => setDispatchViewMode("table")}
+              onContextMenu={openJobContextMenu}
+            />
+          )}
+
+          {jobContextMenu && (
+            <JobContextMenu
+              x={jobContextMenu.x}
+              y={jobContextMenu.y}
+              job={jobContextMenu.job}
+              onAction={handleJobContextAction}
+            />
+          )}
+
+          {dispatchViewMode === "table" && (
           <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
               <div>
@@ -1578,7 +1796,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
             <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-slate-200">
               <table className="min-w-[1600px] table-auto border-collapse whitespace-nowrap text-left text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <Th>#</Th>
                     <Th>Flag</Th>
@@ -1607,6 +1825,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   {filteredJobs.map((job, index) => (
                     <tr
                       key={job.id}
+                      onContextMenu={(event) => openJobContextMenu(event, job)}
                       className={`border-t border-slate-200 align-top hover:brightness-[0.98] ${
                         job.rowFlag === "Problem" || job.status === "Dry Run"
                           ? "bg-red-300 border-l-8 border-red-800 shadow-lg"
@@ -1820,6 +2039,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
                       <Td>
                         <div className="flex gap-2">
+                          <button type="button" title="Call Customer" onClick={() => handleJobContextAction("call", job)} className="rounded-xl bg-slate-100 px-2 py-2 text-xs hover:bg-slate-200">📞</button>
+                          <button type="button" title="WhatsApp Customer" onClick={() => handleJobContextAction("whatsapp", job)} className="rounded-xl bg-emerald-100 px-2 py-2 text-xs hover:bg-emerald-200">💬</button>
+                          <button type="button" title="Open Maps" onClick={() => handleJobContextAction("maps", job)} className="rounded-xl bg-blue-100 px-2 py-2 text-xs hover:bg-blue-200">📍</button>
+                          <button type="button" title="Edit Job" onClick={() => handleJobContextAction("edit", job)} className="rounded-xl bg-slate-100 px-2 py-2 text-xs hover:bg-slate-200">✏️</button>
+                          <button type="button" title="Copy Job" onClick={() => handleJobContextAction("copy", job)} className="rounded-xl bg-slate-100 px-2 py-2 text-xs hover:bg-slate-200">📄</button>
+                          <button type="button" title="Assign Technician" onClick={() => handleJobContextAction("assign", job)} className="rounded-xl bg-indigo-100 px-2 py-2 text-xs hover:bg-indigo-200">🚚</button>
                           <button
                             type="button"
                             onClick={() => setAssignmentJob(job)}
@@ -1917,8 +2142,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               All changes save automatically in the live cloud database. Jobs can still be deleted manually if someone entered a wrong work order.
             </p>
           </div>
+          )}
 
-          {permissions.canAssignTechnicians && (
+          {dispatchViewMode === "table" && permissions.canAssignTechnicians && (
             <AssignmentPanel
               job={assignmentJob}
               jobs={jobs}
@@ -1933,6 +2159,237 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function DispatchCockpit({
+  jobs,
+  selectedJob,
+  technicians,
+  notifications,
+  activityLogs,
+  changeLogs,
+  filters,
+  onSelectJob,
+  onFiltersChange,
+  onAssign,
+  onUpdateJob,
+  onOpenTable,
+  onContextMenu,
+}) {
+  const selected = selectedJob || jobs[0];
+  const activity = buildCockpitActivity(selected, notifications, activityLogs, changeLogs, jobs);
+
+  return (
+    <div className="order-3 col-span-full grid w-full gap-4 xl:grid-cols-[1.1fr_1.2fr_1.1fr] lg:grid-cols-2">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Live Jobs</h2>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{jobs.length} visible jobs</p>
+          </div>
+          <button type="button" className="rounded-xl bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" title="Filter">
+            <Filter className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <input className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500" placeholder="Search live jobs" />
+        </div>
+        <div className="max-h-[680px] space-y-3 overflow-y-auto pr-1">
+          {jobs.map((job) => (
+            <button
+              key={job.id}
+              type="button"
+              onClick={() => onSelectJob(job)}
+              onContextMenu={(event) => onContextMenu(event, job)}
+              className={`w-full rounded-2xl border p-4 text-left transition ${
+                selected?.id === job.id ? "border-blue-500 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-slate-950">{job.reference || "No invoice"}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-700">{job.company || "No company"}</p>
+                  <p className="mt-1 truncate text-xs text-slate-500">{job.location || "No location"}</p>
+                  <p className="mt-2 text-xs text-slate-500">{[job.date, job.time].filter(Boolean).join(" · ") || "No date/time"}</p>
+                </div>
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-bold ${statusStyles[job.status] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                  {job.status || "New"}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <span className="rounded-lg bg-slate-100 p-2 text-xs font-bold text-slate-700" title="View"><Eye className="h-3.5 w-3.5" /></span>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    alert("Customer phone is not stored on this job yet.");
+                  }}
+                  className="rounded-lg bg-slate-100 p-2 text-xs font-bold text-slate-700"
+                >
+                  <Phone className="h-3.5 w-3.5" />
+                </button>
+                <a
+                  href={customerWhatsAppLink(job)}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(event) => event.stopPropagation()}
+                  className="rounded-lg bg-emerald-100 p-2 text-xs font-bold text-emerald-700"
+                >
+                  <MessageCircle className="h-3.5 w-3.5" />
+                </a>
+                <a
+                  href={mapLink(job.location)}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(event) => event.stopPropagation()}
+                  className="rounded-lg bg-blue-100 p-2 text-xs font-bold text-blue-700"
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                </a>
+                <span className="rounded-lg bg-slate-100 p-2 text-slate-700"><MoreHorizontal className="h-3.5 w-3.5" /></span>
+              </div>
+            </button>
+          ))}
+        </div>
+        <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-semibold text-slate-500">
+          <span>Showing 1 to {Math.min(50, jobs.length)} of {jobs.length} jobs</span>
+          <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-slate-700 hover:bg-slate-200">Load More</button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        {selected ? (
+          <>
+            <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Job Details</p>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-2xl font-bold text-slate-950">{selected.company || "No company"}</h2>
+                </div>
+                <p className="mt-1 text-sm text-slate-500">Customer since: optional · {selected.location || "No location"}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[selected.status] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                  {selected.status || "New"}
+                </span>
+                <button type="button" className="rounded-xl bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" title="More">
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <CockpitDetail label="Location" value={selected.location} />
+              <CockpitDetail label="Date / Time" value={[selected.date, selected.time].filter(Boolean).join(" · ")} />
+              <CockpitDetail label="Invoice #" value={selected.reference} />
+              <CockpitDetail label="Reference #" value={selected.reference} />
+              <CockpitDetail label="Payment Method" value={selected.paymentMethod} />
+              <CockpitDetail label="Invoice Status" value={selected.invoice} />
+              <CockpitDetail label="Dispatch" value={selected.dispatch} />
+              <CockpitDetail label="Technician" value={selected.tech} />
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <FinancialCard label="Total Bill" value={money(selected.totalBill)} />
+              <FinancialCard label="Parts" value={money(selected.parts)} />
+              <FinancialCard label="Tech Labor" value={money(selected.techLabor)} />
+              <FinancialCard label="Profit" value={money(Number(selected.totalBill || 0) - Number(selected.parts || 0) - Number(selected.techLabor || 0))} accent />
+            </div>
+
+            <div className="mt-4 rounded-xl bg-slate-50 p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Updates / Notes</p>
+                <button type="button" onClick={onOpenTable} className="text-xs font-bold text-blue-700 hover:text-blue-800">Edit</button>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{selected.updates || "No updates yet."}</p>
+              <JobTimeline job={selected} />
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <a href={customerWhatsAppLink(selected)} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">WhatsApp Customer</a>
+              <button type="button" onClick={() => alert("Customer phone is not stored on this job yet.")} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">Call Customer</button>
+              <a href={mapLink(selected.location)} target="_blank" rel="noreferrer" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Open Maps</a>
+              <button type="button" onClick={onOpenTable} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">Edit Job</button>
+              <button type="button" onClick={() => document.getElementById("cockpit-technicians")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">Assign Technician</button>
+              <button type="button" onClick={() => onUpdateJob(selected.id, "status", "Completed")} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Mark Completed</button>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">No job selected.</div>
+        )}
+      </section>
+
+      <aside className="space-y-6 lg:col-span-2 xl:col-span-1">
+        <section id="cockpit-technicians" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Recommended Technicians</h2>
+            <p className="text-xs text-slate-500">Approved technicians matched by city, state, and service when available.</p>
+          </div>
+          <div className="mb-4 grid gap-2 md:grid-cols-3 xl:grid-cols-1">
+            <input className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="City" value={filters.city} onChange={(event) => onFiltersChange((current) => ({ ...current, city: event.target.value }))} />
+            <input className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="State" value={filters.state} onChange={(event) => onFiltersChange((current) => ({ ...current, state: event.target.value }))} />
+            <input className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="Service" value={filters.service} onChange={(event) => onFiltersChange((current) => ({ ...current, service: event.target.value }))} />
+          </div>
+          <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
+            {technicians.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No matching approved technicians.</div>
+            ) : (
+              technicians.map((technician) => (
+                <div key={technician.id} className="rounded-2xl border border-slate-200 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-black text-blue-700">
+                        {initials(technician.full_name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-slate-950">{technician.full_name || "Unnamed technician"}</p>
+                        <p className="text-xs font-semibold text-amber-500">★ {Number(technician.rating || 0).toFixed(1)}</p>
+                        <p className="text-xs text-slate-500">{technician.phone || "No phone"}</p>
+                        <p className="text-xs text-slate-500">{[technician.city, technician.state].filter(Boolean).join(", ") || "No location"} · Distance N/A</p>
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700">{technician.availabilityStatus || "Available"}</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    <MiniMetric label="Services" value={formatServices(technician.services)} />
+                    <MiniMetric label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
+                    <MiniMetric label="Compliance" value={`${technicianCompliance(technician)}%`} />
+                    <MiniMetric label="Availability" value={technician.availabilityStatus || "Available"} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    <a href={technician.phone ? `tel:${technician.phone}` : undefined} className="flex justify-center rounded-xl bg-slate-100 px-3 py-2 text-slate-700 hover:bg-slate-200" title="Call">
+                      <Phone className="h-4 w-4" />
+                    </a>
+                    <a href={whatsappLink(selected, technician, filters.service)} target="_blank" rel="noreferrer" className="flex justify-center rounded-xl bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700" title="WhatsApp">
+                      <MessageCircle className="h-4 w-4" />
+                    </a>
+                    <button type="button" onClick={() => onAssign(selected, technician)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Assign</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Activity Feed</h2>
+          <div className="mt-4 max-h-[300px] space-y-3 overflow-y-auto pr-1">
+            {activity.map((item) => (
+              <div key={item.id} className="flex gap-3 rounded-xl bg-slate-50 p-3 text-sm">
+                <div className="mt-1 h-3 w-3 shrink-0 rounded-full bg-blue-600" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-slate-400">{item.time || "Now"}</p>
+                  <p className="font-bold text-slate-800">{item.title}</p>
+                  <p className="text-xs text-slate-500">by {item.by || item.detail || "System"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      </aside>
     </div>
   );
 }
@@ -1971,25 +2428,72 @@ function AnalyticsCard({ title, data, total }) {
     </div>
   );
 }
+
+function JobContextMenu({ x, y, job, onAction }) {
+  const actions = [
+    ["edit", "Edit"],
+    ["assign", "Assign Technician"],
+    ["copy", "Copy Job"],
+    ["duplicate", "Duplicate"],
+    ["complete", "Complete"],
+    ["cancel", "Cancel"],
+    ["maps", "Open Maps"],
+    ["call", "Call Customer"],
+    ["whatsapp", "WhatsApp Customer"],
+  ];
+
+  return (
+    <div
+      className="fixed z-[80] w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-2 text-sm shadow-2xl"
+      style={{ left: Math.min(x, window.innerWidth - 240), top: Math.min(y, window.innerHeight - 360) }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="border-b border-slate-100 px-3 py-2">
+        <p className="font-bold text-slate-950">{job?.reference || "Job"}</p>
+        <p className="truncate text-xs text-slate-500">{job?.company}</p>
+      </div>
+      {actions.map(([action, label]) => (
+        <button
+          key={action}
+          type="button"
+          onClick={() => onAction(action, job)}
+          className="block w-full px-3 py-2 text-left font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
   function StatCard({ icon, label, value, onClick }) {
   return (
     <motion.div
       onClick={onClick}
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-3xl bg-white p-5 shadow-sm cursor-pointer hover:shadow-xl hover:scale-105 transition-all"
+      className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
     >
-      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
-        {icon}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+          {icon}
+        </div>
+        <div className="flex h-8 w-16 items-end gap-1">
+          <span className="h-3 flex-1 rounded-t bg-blue-100" />
+          <span className="h-5 flex-1 rounded-t bg-blue-200" />
+          <span className="h-4 flex-1 rounded-t bg-blue-300" />
+          <span className="h-7 flex-1 rounded-t bg-blue-500" />
+        </div>
       </div>
 
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold">{value}</p>
+      <p className="mt-4 text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-black text-slate-950">{value}</p>
+      <p className="mt-1 text-xs font-semibold text-slate-400">Realtime dispatch metric</p>
     </motion.div>
   );
 }
 
-function Input({ label, value, onChange, type = "text", placeholder = "" }) {
+function Input({ label, value, onChange, type = "text", placeholder = "", list = "" }) {
   return (
     <label className="space-y-1 text-sm font-medium">
       {label}
@@ -1997,6 +2501,7 @@ function Input({ label, value, onChange, type = "text", placeholder = "" }) {
         type={type}
         className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
         placeholder={placeholder}
+        list={list || undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />
@@ -2227,6 +2732,26 @@ function MiniMetric({ label, value }) {
   );
 }
 
+function CockpitDetail({ label, value }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</p>
+      <div className="mt-1 flex items-center gap-2">
+        <p className="font-semibold text-slate-800">{value || "Not provided"}</p>
+      </div>
+    </div>
+  );
+}
+
+function FinancialCard({ label, value, accent = false }) {
+  return (
+    <div className={`rounded-xl border p-3 ${accent ? "border-emerald-200 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+      <p className="text-xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className={`mt-1 text-lg font-black ${accent ? "text-emerald-700" : "text-slate-950"}`}>{value}</p>
+    </div>
+  );
+}
+
 function DetailLine({ label, value }) {
   return (
     <div>
@@ -2259,6 +2784,29 @@ function whatsappLink(job, technician, requestedService) {
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 }
 
+function customerWhatsAppLink(job) {
+  const message = [
+    "NTTR Dispatch",
+    "",
+    "Customer:",
+    job?.company || "",
+    "",
+    "Location:",
+    job?.location || "",
+    "",
+    "Reference:",
+    job?.reference || "",
+    "",
+    "Please contact NTTR Dispatch for your job update.",
+  ].join("\n");
+
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+}
+
+function mapLink(location) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location || "")}`;
+}
+
 function extractService(job) {
   const updates = String(job?.updates || "");
   const serviceLine = updates
@@ -2277,6 +2825,64 @@ function lastTechnicianJob(jobs, technician) {
   if (!lastJob) return "None";
 
   return [lastJob.company, lastJob.location].filter(Boolean).join(" - ") || lastJob.reference || "Recent job";
+}
+
+function buildCockpitActivity(selectedJob, notifications, activityLogs, changeLogs, jobs) {
+  const feed = [
+    ...notifications.map((item) => ({
+      id: `notification-${item.id}`,
+      title: item.message,
+      detail: `${item.detail || ""} ${item.time || ""}`.trim(),
+      time: item.time || "Live",
+      by: "System",
+    })),
+    ...activityLogs.map((item) => ({
+      id: `activity-${item.id}`,
+      title: item.message || "Activity",
+      detail: item.time || "Live update",
+      time: item.time || "Live",
+      by: "Dispatcher",
+    })),
+    ...changeLogs.slice(0, 8).map((item) => ({
+      id: `change-${item.id}`,
+      title: `${item.action || "Updated"} ${item.field_name || "job"}`,
+      detail: `${item.user_name || "Dispatcher"} · ${item.created_at ? new Date(item.created_at).toLocaleString() : "Recent"}`,
+      time: item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Recent",
+      by: item.user_name || "Dispatcher",
+    })),
+  ];
+
+  if (feed.length > 0) return feed.slice(0, 12);
+
+  return (selectedJob ? [selectedJob] : jobs.slice(0, 6)).map((job) => ({
+    id: `fallback-${job.id}`,
+    title: `${job.status || "Job"} · ${job.company || "No company"}`,
+    detail: [job.reference, job.location, job.date].filter(Boolean).join(" · ") || "Recent dispatch activity",
+    time: job.time || "Recent",
+    by: job.dispatch || "Dispatcher",
+  }));
+}
+
+function recentValues(jobs, key) {
+  const values = [];
+  [...jobs].reverse().forEach((job) => {
+    const value = job[key];
+    if (value && !values.includes(value)) values.push(value);
+  });
+  return values.slice(0, 8);
+}
+
+function formatJobForClipboard(job) {
+  return [
+    `Invoice: ${job.reference || ""}`,
+    `Company: ${job.company || ""}`,
+    `Location: ${job.location || ""}`,
+    `Status: ${job.status || ""}`,
+    `Dispatch: ${job.dispatch || ""}`,
+    `Tech: ${job.tech || ""}`,
+    `Total: ${money(job.totalBill)}`,
+    `Updates: ${job.updates || ""}`,
+  ].join("\n");
 }
 
 function initials(name) {
@@ -2323,6 +2929,19 @@ function parseLocation(location) {
 function formatServices(services) {
   const serviceList = splitServices(services);
   return serviceList.length ? serviceList.join(", ") : "No services";
+}
+
+function averageEta(jobs) {
+  const etaValues = jobs
+    .map((job) => {
+      const eta = extractEta(job.updates);
+      const match = String(eta).match(/\d+/);
+      return match ? Number(match[0]) : 0;
+    })
+    .filter(Boolean);
+
+  if (etaValues.length === 0) return 0;
+  return Math.round(etaValues.reduce((sum, value) => sum + value, 0) / etaValues.length);
 }
 
 function Th({ children }) {
