@@ -31,6 +31,8 @@ import {
 } from "./technicianService";
 import {
   createInvitation,
+  cancelInvitation,
+  deleteInvitation,
   inviteMessage,
   loadInvitations,
   registrationLink as buildRegistrationLink,
@@ -67,6 +69,7 @@ export default function TechnicianCenter() {
   const [sortBy, setSortBy] = useState("Newest");
   const [selectedTechnician, setSelectedTechnician] = useState(null);
   const [technicianToDelete, setTechnicianToDelete] = useState(null);
+  const [invitationToDelete, setInvitationToDelete] = useState(null);
   const [invitations, setInvitations] = useState([]);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -352,6 +355,31 @@ export default function TechnicianCenter() {
     }
   }
 
+  async function cancelTechnicianInvitation(invitation) {
+    setInviteError("");
+    try {
+      await cancelInvitation(invitation.id);
+      setCopyMessage("Invitation cancelled.");
+      setInvitations(await loadInvitations());
+    } catch (cancelError) {
+      setInviteError(cancelError.message || "Unable to cancel invitation.");
+    }
+  }
+
+  async function confirmDeleteInvitation() {
+    if (!invitationToDelete) return;
+
+    setInviteError("");
+    try {
+      await deleteInvitation(invitationToDelete.id);
+      setInvitationToDelete(null);
+      setCopyMessage("Invitation deleted.");
+      setInvitations(await loadInvitations());
+    } catch (deleteError) {
+      setInviteError(deleteError.message || "Unable to delete invitation.");
+    }
+  }
+
   function shareRegistrationOnWhatsApp() {
     const message = `Hello, this is NTTR - National Truck Trailer Repair. Please complete your technician registration using this secure link:\n${registrationLink}`;
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
@@ -423,6 +451,8 @@ export default function TechnicianCenter() {
             invitations={invitations}
             onCopy={copyInviteLink}
             onWhatsApp={shareInviteOnWhatsApp}
+            onCancel={cancelTechnicianInvitation}
+            onDelete={setInvitationToDelete}
           />
         )}
 
@@ -621,6 +651,14 @@ export default function TechnicianCenter() {
         />
       )}
 
+      {invitationToDelete && (
+        <DeleteInvitationModal
+          invitation={invitationToDelete}
+          onCancel={() => setInvitationToDelete(null)}
+          onConfirm={confirmDeleteInvitation}
+        />
+      )}
+
       {inviteModalOpen && (
         <InviteTechnicianModal
           saving={saving}
@@ -751,7 +789,7 @@ function PerformancePanel({ technicians, canViewPrivateTechnicianData }) {
   );
 }
 
-function InvitationsPanel({ invitations, onCopy, onWhatsApp }) {
+function InvitationsPanel({ invitations, onCopy, onWhatsApp, onCancel, onDelete }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -787,6 +825,7 @@ function InvitationsPanel({ invitations, onCopy, onWhatsApp }) {
             ) : (
               invitations.map((invitation) => {
                 const link = registrationLinkForInvite(invitation.inviteCode);
+                const inactive = ["Cancelled", "Deleted", "Completed"].includes(invitation.status);
 
                 return (
                   <tr key={invitation.id} className="border-t border-slate-200 align-top">
@@ -805,8 +844,14 @@ function InvitationsPanel({ invitations, onCopy, onWhatsApp }) {
                     <Td>{dateTime(invitation.completedAt)}</Td>
                     <Td>
                       <div className="flex flex-wrap gap-2">
-                        <IconAction label="Copy Link" icon={<Clipboard />} onClick={() => onCopy(link)} />
-                        <IconAction label="WhatsApp" icon={<MessageCircle />} onClick={() => onWhatsApp(link)} />
+                        {!inactive && (
+                          <>
+                            <IconAction label="Copy Link" icon={<Clipboard />} onClick={() => onCopy(link)} />
+                            <IconAction label="WhatsApp" icon={<MessageCircle />} onClick={() => onWhatsApp(link)} />
+                            <IconAction label="Cancel" icon={<Ban />} onClick={() => onCancel(invitation)} />
+                          </>
+                        )}
+                        <IconAction label="Delete" icon={<Trash2 />} onClick={() => onDelete(invitation)} />
                       </div>
                     </Td>
                   </tr>
@@ -1128,6 +1173,44 @@ function DeleteTechnicianModal({ technician, onCancel, onConfirm }) {
           <Detail label="Phone" value={technician.phone} />
           <Detail label="Company" value={technician.company_name} />
           <Detail label="City / State" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteInvitationModal({ invitation, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold text-slate-950">Delete Invitation</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Are you sure you want to permanently delete this technician invitation link?
+        </p>
+
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+          <Detail label="Invite code" value={invitation.inviteCode} />
+          <Detail label="Technician" value={invitation.technicianName} />
+          <Detail label="Phone" value={invitation.phone} />
+          <Detail label="Email" value={invitation.email} />
+          <Detail label="Status" value={invitation.status} />
         </div>
 
         <div className="mt-6 flex justify-end gap-3">

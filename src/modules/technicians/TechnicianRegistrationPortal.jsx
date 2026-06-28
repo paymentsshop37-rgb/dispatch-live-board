@@ -38,6 +38,9 @@ export default function TechnicianRegistrationPortal() {
     async function loadInvitation() {
       try {
         const invite = await getInvitationByCode(inviteCode);
+        if (["Cancelled", "Deleted"].includes(invite.status)) {
+          throw new Error("This invitation link is no longer active.");
+        }
         const openedInvite = await markInvitationOpened(invite);
 
         if (!mounted) return;

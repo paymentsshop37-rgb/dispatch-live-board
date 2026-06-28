@@ -108,6 +108,9 @@ export async function getInvitationByCode(inviteCode) {
 
 export async function markInvitationOpened(invitation) {
   if (!invitation || invitation.openedAt || invitation.completedAt) return invitation;
+  if (["Cancelled", "Deleted"].includes(invitation.status)) {
+    throw new Error("This invitation link is no longer active.");
+  }
 
   const { data, error } = await supabase
     .from("technician_invitations")
@@ -124,6 +127,32 @@ export async function markInvitationOpened(invitation) {
   }
 
   return normalizeInvitation(data);
+}
+
+export async function cancelInvitation(invitationId) {
+  const { data, error } = await supabase
+    .from("technician_invitations")
+    .update({ status: "Cancelled" })
+    .eq("id", invitationId)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeInvitation(data);
+}
+
+export async function deleteInvitation(invitationId) {
+  const { error } = await supabase
+    .from("technician_invitations")
+    .delete()
+    .eq("id", invitationId);
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function markInvitationCompleted(invitationId, technicianId) {
