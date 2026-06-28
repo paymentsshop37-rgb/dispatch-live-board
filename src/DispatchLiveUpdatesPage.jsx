@@ -36,6 +36,7 @@ import {
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
 import { AUTH_USERS, clearAuthSession } from "./authUsers";
+import { logActivity } from "./modules/activity";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 
@@ -906,6 +907,13 @@ profit: filteredJobs.reduce(
           month_key: new Date().toISOString().slice(0, 7),
         },
       ]);
+      await logActivity({
+        entityType: "job",
+        entityId: data.id,
+        action: "Job Created",
+        description: `${currentUserName || "Dispatcher"} created job ${newJob.reference || newJob.company || data.id}`,
+        createdBy: currentUserName || "Dispatcher",
+      });
     }
   }
 async function uploadPhoto(jobId, file) {
@@ -978,6 +986,14 @@ async function uploadPhoto(jobId, file) {
         month_key: new Date().toISOString().slice(0, 7),
       },
     ]);
+    await logActivity({
+      entityType: "job",
+      entityId: id,
+      action: "Job Updated",
+      description: `${currentUserName || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
+      createdBy: currentUserName || "Dispatcher",
+      metadata: { field, oldValue, value },
+    });
   }
 
   async function updateTechPaymentStatus(job, value) {
@@ -1068,6 +1084,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     month_key: new Date().toISOString().slice(0, 7)
   },
 ]);
+await logActivity({
+  entityType: "job",
+  entityId: id,
+  action: "Job Deleted",
+  description: `${currentUserName || "Dispatcher"} deleted job ${deletedJob?.reference || deletedJob?.company || id}`,
+  createdBy: currentUserName || "Dispatcher",
+});
 
     setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
     setJobToDelete(null);
@@ -1147,24 +1170,20 @@ setActivityLogs((logs) => [newActivity, ...logs]);
         }
       }
 
-      if (supportsActivityLog) {
-        const assignedDate = new Date(assignedAt);
-        await supabase.from("activity_log").insert([
-          {
-            entity_type: "job",
-            entity_id: String(job.id),
-            action: "Job Assigned",
-            description: [
-              `Job ID: ${job.id}`,
-              `Technician: ${technician.full_name || "Technician"}`,
-              `Dispatcher: ${dispatcher}`,
-              `Date: ${assignedDate.toLocaleDateString()}`,
-              `Time: ${assignedDate.toLocaleTimeString()}`,
-            ].join(" | "),
-            created_by: dispatcher,
-          },
-        ]);
-      }
+      const assignedDate = new Date(assignedAt);
+      await logActivity({
+        entityType: "job",
+        entityId: job.id,
+        action: "Job Assigned",
+        description: [
+          `Job ID: ${job.id}`,
+          `Technician: ${technician.full_name || "Technician"}`,
+          `Dispatcher: ${dispatcher}`,
+          `Date: ${assignedDate.toLocaleDateString()}`,
+          `Time: ${assignedDate.toLocaleTimeString()}`,
+        ].join(" | "),
+        createdBy: dispatcher,
+      });
 
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>

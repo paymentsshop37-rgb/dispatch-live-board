@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
+  Activity,
   ClipboardList,
   Cloud,
   CreditCard,
@@ -17,6 +18,7 @@ import {
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
 import { AUTH_USERS, clearAuthSession } from "./authUsers";
+import { ActivityLogPage, logActivity } from "./modules/activity";
 import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard } from "./modules/billing";
 import { CustomerCRM } from "./modules/customers";
@@ -33,6 +35,7 @@ const sidebarItems = [
   { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "users", label: "Users", icon: Users, adminOnly: true },
+  { id: "activity", label: "Activity Log", icon: Activity, adminOnly: true },
   { id: "reports", label: "Reports", icon: BarChart3, adminOnly: true },
   { id: "settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
@@ -61,6 +64,7 @@ const sidebarSections = [
     items: [
       { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
       { id: "users", label: "Users", icon: Users, adminOnly: true },
+      { id: "activity", label: "Activity Log", icon: Activity, adminOnly: true },
       { id: "settings", label: "Settings", icon: Settings, target: "administration", adminOnly: true },
     ],
   },
@@ -238,6 +242,7 @@ export default function App() {
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
+        {canAccessActiveView && activeView === "activity" && <ActivityLogPage />}
       </main>
     </div>
   );
@@ -254,7 +259,7 @@ function canAccessView(view, role, permissions) {
   if (view === "dispatch") return true;
   if (view === "dashboard") return role === "admin" || role === "dispatcher";
   if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
-  if (["customers", "billing", "administration", "users", "reports", "settings"].includes(view)) {
+  if (["customers", "billing", "administration", "users", "activity", "reports", "settings"].includes(view)) {
     return role === "admin";
   }
   return false;
@@ -297,6 +302,7 @@ function viewTitle(view) {
     billing: "Billing",
     administration: "Administration",
     users: "Users",
+    activity: "Activity Log",
   };
 
   return titles[view] || "Dispatch Center";
@@ -312,6 +318,13 @@ function LoginScreen() {
     );
 
     if (!userFound) {
+      logActivity({
+        entityType: "auth",
+        entityId: "login",
+        action: "Login Failed",
+        description: "Invalid access code attempt",
+        createdBy: "Unknown",
+      });
       alert("Invalid username or password");
       return;
     }
@@ -320,6 +333,14 @@ function LoginScreen() {
     localStorage.setItem("currentUser", username);
     localStorage.setItem("currentUserName", user.name);
     localStorage.setItem("currentUserRole", user.role);
+    logActivity({
+      entityType: "auth",
+      entityId: username,
+      action: "Login Success",
+      description: `${user.name} signed in`,
+      createdBy: user.name,
+      metadata: { role: user.role },
+    });
     window.dispatchEvent(new Event("nttr-auth-changed"));
   }
 

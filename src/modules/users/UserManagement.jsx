@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { KeyRound, Plus, RefreshCw, RotateCcw, ShieldCheck, UserCog, Users } from "lucide-react";
+import { getRecentActivity, logActivity } from "../activity";
 import { supabase } from "../../lib/supabase";
 
 const userTable = "app_users";
@@ -53,17 +54,8 @@ export default function UserManagement({ currentUser }) {
     const normalizedUsers = (data || []).map(normalizeUser).sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
     setUsers(normalizedUsers);
 
-    const { data: activityData, error: activityError } = await supabase
-      .from("activity_log")
-      .select("*")
-      .eq("entity_type", "user");
-
-    if (activityError) {
-      nextWarnings.push(`Safe mode: user activity log is not available yet (${activityError.message}).`);
-      setActivity([]);
-    } else {
-      setActivity((activityData || []).sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || ""))));
-    }
+    const activityData = await getRecentActivity({ limit: 100 });
+    setActivity(activityData.filter((item) => item.entity_type === "user"));
 
     setWarnings(nextWarnings);
     setLoading(false);
@@ -131,15 +123,13 @@ export default function UserManagement({ currentUser }) {
   }
 
   async function logUserActivity(entityId, action, description) {
-    await supabase.from("activity_log").insert([
-      {
-        entity_type: "user",
-        entity_id: String(entityId || ""),
-        action,
-        description,
-        created_by: currentUser?.name || currentUser?.username || "Administrator",
-      },
-    ]);
+    await logActivity({
+      entityType: "user",
+      entityId,
+      action,
+      description,
+      createdBy: currentUser?.name || currentUser?.username || "Administrator",
+    });
   }
 
   return (

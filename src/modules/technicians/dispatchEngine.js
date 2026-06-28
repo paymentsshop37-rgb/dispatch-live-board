@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import { logActivity } from "../activity";
 import { loadTechnicians } from "./technicianService";
 
 function splitServices(services) {
@@ -95,15 +96,13 @@ export async function assignTechnicianToJob(job, technician, assignedBy = "Dispa
     .eq("id", technician.id);
   if (technicianError) throw technicianError;
 
-  await supabase.from("activity_log").insert([
-    {
-      entity_type: "job",
-      entity_id: job.id,
-      action: "technician_assigned",
-      description: `${technician.full_name || "Technician"} assigned to ${job.reference || job.id}`,
-      created_by: assignedBy,
-    },
-  ]);
+  await logActivity({
+    entityType: "job",
+    entityId: job.id,
+    action: "technician_assigned",
+    description: `${technician.full_name || "Technician"} assigned to ${job.reference || job.id}`,
+    createdBy: assignedBy,
+  });
 
   return {
     assignedAt,
@@ -119,13 +118,11 @@ export async function updateTechnicianJobStatus(technicianId, availability, acti
 
   if (error) throw error;
 
-  await supabase.from("activity_log").insert([
-    {
-      entity_type: "technician",
-      entity_id: technicianId,
-      action,
-      description,
-      created_by: "Technician",
-    },
-  ]);
+  await logActivity({
+    entityType: "technician",
+    entityId: technicianId,
+    action,
+    description,
+    createdBy: "Technician",
+  });
 }

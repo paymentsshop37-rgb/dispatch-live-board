@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { CheckCircle2, ClipboardCheck, Send, Wrench } from "lucide-react";
 import { createTechnician } from "./technicianService";
+import { logActivity } from "../activity";
 import {
   getInvitationByCode,
   markInvitationCompleted,
@@ -101,6 +102,15 @@ export default function TechnicianRegistrationPortal() {
       if (invitation?.id) {
         await markInvitationCompleted(invitation.id, technician.id);
       }
+
+      await logActivity({
+        entityType: "technician",
+        entityId: technician.id,
+        action: "Technician Registered",
+        description: `${technician.full_name || form.full_name || "Technician"} submitted registration`,
+        createdBy: "Public Registration",
+        metadata: { inviteCode: invitation?.inviteCode || "" },
+      });
 
       setForm(emptyRegistration);
       setSubmitted(true);

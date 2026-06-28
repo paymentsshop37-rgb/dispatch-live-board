@@ -36,6 +36,7 @@ import {
   registrationLink as buildRegistrationLink,
   registrationLinkForInvite,
 } from "./technicianInvitationService";
+import { logActivity } from "../activity";
 import { getPermissions } from "../permissions";
 
 const emptyTechnician = {
@@ -249,6 +250,15 @@ export default function TechnicianCenter() {
 
   function updateTechnicianStatus(technician, status) {
     saveTechnician(technician.id, buildStatusPatch(status));
+    if (status === "Approved") {
+      logActivity({
+        entityType: "technician",
+        entityId: technician.id,
+        action: "Technician Approved",
+        description: `${technician.full_name || "Technician"} approved`,
+        createdBy: localStorage.getItem("currentUserName") || currentUserRole,
+      });
+    }
   }
 
   function requestDeleteTechnician(technician) {
@@ -275,6 +285,13 @@ export default function TechnicianCenter() {
       setSelectedTechnician(null);
       setTechnicianToDelete(null);
       setCopyMessage("Technician deleted successfully.");
+      await logActivity({
+        entityType: "technician",
+        entityId: technicianToDelete.id,
+        action: "Technician Deleted",
+        description: `${technicianToDelete.full_name || "Technician"} deleted`,
+        createdBy: localStorage.getItem("currentUserName") || currentUserRole,
+      });
       await refreshTechnicians();
     } catch (deleteError) {
       setError(deleteError.message || "Unable to delete technician.");
@@ -319,6 +336,13 @@ export default function TechnicianCenter() {
       });
       setInvitations((current) => [invitation, ...current]);
       setCopyMessage(`Invitation created: ${registrationLinkForInvite(invitation.inviteCode)}`);
+      await logActivity({
+        entityType: "technician_invitation",
+        entityId: invitation.id,
+        action: "Technician Invited",
+        description: `Invitation ${invitation.inviteCode} sent to ${invitation.phone || invitation.email || invitation.technicianName}`,
+        createdBy: localStorage.getItem("currentUserName") || currentUserRole,
+      });
       return invitation;
     } catch (createError) {
       setInviteError(createError.message || "Unable to create invitation.");

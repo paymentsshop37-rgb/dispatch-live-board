@@ -1,0 +1,78 @@
+import { supabase } from "../../lib/supabase";
+
+const ACTIVITY_TABLE = "activity_log";
+
+function warnActivity(error) {
+  console.warn("Activity log safe mode:", error?.message || error);
+}
+
+export async function logActivity({ entityType, entityId, action, description, createdBy, metadata } = {}) {
+  try {
+    const payload = {
+      entity_type: entityType || "system",
+      entity_id: entityId ? String(entityId) : "",
+      action: action || "Activity",
+      description: description || "",
+      created_by: createdBy || "",
+      metadata: metadata || null,
+    };
+
+    const { error } = await supabase.from(ACTIVITY_TABLE).insert([payload]);
+    if (!error) return true;
+
+    if (String(error.message || "").toLowerCase().includes("metadata")) {
+      const { metadata: _metadata, ...fallbackPayload } = payload;
+      const { error: fallbackError } = await supabase.from(ACTIVITY_TABLE).insert([fallbackPayload]);
+      if (!fallbackError) return true;
+      warnActivity(fallbackError);
+      return false;
+    }
+
+    warnActivity(error);
+    return false;
+  } catch (error) {
+    warnActivity(error);
+    return false;
+  }
+}
+
+export async function getRecentActivity({ limit = 100 } = {}) {
+  try {
+    const { data, error } = await supabase
+      .from(ACTIVITY_TABLE)
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      warnActivity(error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    warnActivity(error);
+    return [];
+  }
+}
+
+export async function getActivityByEntity(entityType, entityId) {
+  try {
+    const { data, error } = await supabase
+      .from(ACTIVITY_TABLE)
+      .select("*")
+      .eq("entity_type", entityType)
+      .eq("entity_id", String(entityId || ""))
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      warnActivity(error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    warnActivity(error);
+    return [];
+  }
+}
