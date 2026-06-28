@@ -164,8 +164,8 @@ export default function App() {
 
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Signed In</p>
-            <p className="mt-2 truncate text-sm font-bold">{session.name || "PRESTIGE T"}</p>
-            <p className="mt-1 text-xs capitalize text-slate-400">{role === "admin" ? "Administrator" : role || "Administrator"}</p>
+            <p className="mt-2 truncate text-sm font-bold">{session.name || "Not signed in"}</p>
+            <p className="mt-1 text-xs capitalize text-slate-400">{role === "admin" ? "Administrator" : role || "Access required"}</p>
             <div className="mt-3 flex items-center gap-2 text-xs font-bold text-emerald-300">
               <span className="h-2 w-2 rounded-full bg-emerald-400" />
               Online

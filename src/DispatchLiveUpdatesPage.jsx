@@ -102,6 +102,19 @@ const paymentMethods = ["EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire
 const paymentReceivers = ["A", "B"];
 const jobPipeline = ["New", "Assigned", "Tech Accepted", "En Route", "On Site", "Working", "Completed", "Invoiced", "Paid"];
 const jobStatusOptions = [...jobPipeline, "Declined", "Canceled", "Dry Run"];
+const techPaymentStatusOptions = ["Pending", "Paid", "Hold", "Not Required"];
+const techPaymentStatusStyles = {
+  Paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  Pending: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  Hold: "bg-red-100 text-red-800 border-red-200",
+  "Not Required": "bg-slate-100 text-slate-700 border-slate-200",
+};
+const techPaymentFieldAliases = {
+  status: ["tech_payment_status", "technician_payment_status", "tech_paid_status"],
+  method: ["tech_payment_method", "technician_payment_method"],
+  paidDate: ["tech_paid_date", "technician_paid_date", "tech_payment_paid_at"],
+  notes: ["tech_payment_notes", "technician_payment_notes"],
+};
 
 const fieldMap = {
   photo_url: "photo_url",
@@ -140,6 +153,7 @@ function exportJobsToCSV(jobs) {
     "Total Bill",
     "Parts",
     "Tech Labor",
+    "Tech Payment",
     "Profit",
   ];
 
@@ -159,6 +173,7 @@ function exportJobsToCSV(jobs) {
     job.totalBill,
     job.parts,
     job.techLabor,
+    job.techPaymentStatus || "Pending",
     Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0),
   ]);
 
@@ -265,6 +280,10 @@ function fromDbJob(row) {
     totalBill: Number(row.total_bill || 0),
     parts: Number(row.parts || 0),
     techLabor: Number(row.tech_labor || 0),
+    techPaymentStatus: readFirstColumn(row, techPaymentFieldAliases.status) || "Pending",
+    techPaymentMethod: readFirstColumn(row, techPaymentFieldAliases.method) || "",
+    techPaidDate: readFirstColumn(row, techPaymentFieldAliases.paidDate) || "",
+    techPaymentNotes: readFirstColumn(row, techPaymentFieldAliases.notes) || "",
   };
 }
 
@@ -288,6 +307,11 @@ function toDbJob(job) {
     parts: Number(job.parts || 0),
     tech_labor: Number(job.techLabor || 0),
   };
+}
+
+function readFirstColumn(row, aliases) {
+  const column = aliases.find((alias) => row?.[alias] !== undefined && row?.[alias] !== null);
+  return column ? row[column] : "";
 }
 
 function chartDataBy(jobs, key) {
@@ -348,6 +372,7 @@ export default function DispatchLiveUpdatesPage() {
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
+  const [techPaymentJob, setTechPaymentJob] = useState(null);
   const [dispatchViewMode, setDispatchViewMode] = useState("cockpit");
   const [dispatchTechnicians, setDispatchTechnicians] = useState([]);
   const [assignmentFilters, setAssignmentFilters] = useState({
@@ -360,6 +385,12 @@ export default function DispatchLiveUpdatesPage() {
   const [jobsSupportsAssignedBy, setJobsSupportsAssignedBy] = useState(false);
   const [jobsSupportsPreviousTechnician, setJobsSupportsPreviousTechnician] = useState(false);
   const [jobsSupportsReassignedCount, setJobsSupportsReassignedCount] = useState(false);
+  const [techPaymentColumns, setTechPaymentColumns] = useState({
+    status: "",
+    method: "",
+    paidDate: "",
+    notes: "",
+  });
   const [technicianAvailabilityColumn, setTechnicianAvailabilityColumn] = useState("");
   const [techniciansSupportCurrentJobId, setTechniciansSupportCurrentJobId] = useState(false);
   const [supportsActivityLog, setSupportsActivityLog] = useState(false);
@@ -544,6 +575,28 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     setTechnicianAvailabilityColumn(!technicianAvailabilityError ? "availability" : !technicianAvailabilityStatusError ? "availability_status" : "");
     setTechniciansSupportCurrentJobId(!technicianCurrentJobIdError);
     setSupportsActivityLog(!activityLogError);
+    const [statusColumn, methodColumn, paidDateColumn, notesColumn] = await Promise.all([
+      detectJobsColumn(techPaymentFieldAliases.status),
+      detectJobsColumn(techPaymentFieldAliases.method),
+      detectJobsColumn(techPaymentFieldAliases.paidDate),
+      detectJobsColumn(techPaymentFieldAliases.notes),
+    ]);
+
+    setTechPaymentColumns({
+      status: statusColumn,
+      method: methodColumn,
+      paidDate: paidDateColumn,
+      notes: notesColumn,
+    });
+  }
+
+  async function detectJobsColumn(aliases) {
+    for (const alias of aliases) {
+      const { error } = await supabase.from("jobs").select(alias).limit(0);
+      if (!error) return alias;
+    }
+
+    return "";
   }
 
   async function loadJobs() {
@@ -894,7 +947,7 @@ async function uploadPhoto(jobId, file) {
   setActivityLogs((logs) => [ activityMessage, ...logs,]);
   }
     
-    async function updateJob(id, field, value) {
+  async function updateJob(id, field, value) {
     const oldJob = jobs.find((job) => job.id === id);
     const oldValue = oldJob ? oldJob[field] : "";
 
@@ -933,6 +986,67 @@ async function uploadPhoto(jobId, file) {
         month_key: new Date().toISOString().slice(0, 7),
       },
     ]);
+  }
+
+  async function updateTechPaymentStatus(job, value) {
+    if (!techPaymentColumns.status) {
+      alert("Tech payment columns are not available yet.");
+      setJobs((currentJobs) =>
+        currentJobs.map((currentJob) =>
+          currentJob.id === job.id ? { ...currentJob, techPaymentStatus: value } : currentJob
+        )
+      );
+      return;
+    }
+
+    await saveTechPaymentDetails(job.id, { techPaymentStatus: value });
+  }
+
+  async function saveTechPaymentDetails(jobId, details) {
+    if (!techPaymentColumns.status) {
+      alert("Tech payment columns are not available yet.");
+      return false;
+    }
+
+    const update = {};
+    if (techPaymentColumns.status && details.techPaymentStatus !== undefined) {
+      update[techPaymentColumns.status] = details.techPaymentStatus || "Pending";
+    }
+    if (techPaymentColumns.method && details.techPaymentMethod !== undefined) {
+      update[techPaymentColumns.method] = details.techPaymentMethod || "";
+    }
+    if (techPaymentColumns.paidDate && details.techPaidDate !== undefined) {
+      update[techPaymentColumns.paidDate] = details.techPaidDate || null;
+    }
+    if (techPaymentColumns.notes && details.techPaymentNotes !== undefined) {
+      update[techPaymentColumns.notes] = details.techPaymentNotes || "";
+    }
+
+    if (Object.keys(update).length === 0) {
+      alert("Tech payment columns are not available yet.");
+      return false;
+    }
+
+    const { error } = await supabase.from("jobs").update(update).eq("id", jobId);
+
+    if (error) {
+      alert("Error updating tech payment: " + error.message);
+      loadJobs();
+      return false;
+    }
+
+    setJobs((currentJobs) =>
+      currentJobs.map((job) => (job.id === jobId ? { ...job, ...details } : job))
+    );
+    setActivityLogs((logs) => [
+      {
+        id: Date.now(),
+        message: `${currentUserName || "Dispatcher"} updated tech payment for job ${jobId}`,
+        time: new Date().toLocaleString(),
+      },
+      ...logs,
+    ]);
+    return true;
   }
 
   async function deleteJob(id) {
@@ -1267,7 +1381,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 <Moon className="h-4 w-4" />
               </button>
               <div className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold capitalize text-white">
-                {currentUserName || "PRESTIGE T"} · {normalizeRole(currentUserRole) || "administrator"}
+                {currentUserName || "Not signed in"} · {normalizeRole(currentUserRole) || "access required"}
               </div>
               <div className="hidden gap-2 lg:flex">
                 {["cockpit", "table"].map((mode) => (
@@ -1795,7 +1909,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             </div>
 
             <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-[1600px] table-auto border-collapse whitespace-nowrap text-left text-sm">
+              <table className="min-w-[1800px] table-auto border-collapse whitespace-nowrap text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <Th>#</Th>
@@ -1815,6 +1929,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <Th>Total Bill</Th>
                     <Th>Parts</Th>
                     <Th>Tech Labor</Th>
+                    <Th>Tech Payment</Th>
                     {isAdmin && <Th>Profit</Th>}
                     <Th>Photo</Th>
                     <Th>Actions</Th>
@@ -1975,6 +2090,30 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         />
                       </Td>
 
+                      <Td>
+                        <div className="grid gap-2">
+                          <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${techPaymentStatusStyles[job.techPaymentStatus] || techPaymentStatusStyles.Pending}`}>
+                            {job.techPaymentStatus || "Pending"}
+                          </span>
+                          <select
+                            className="w-36 rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold outline-none focus:border-slate-500"
+                            value={job.techPaymentStatus || "Pending"}
+                            onChange={(e) => updateTechPaymentStatus(job, e.target.value)}
+                          >
+                            {techPaymentStatusOptions.map((status) => (
+                              <option key={status}>{status}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => setTechPaymentJob(job)}
+                            className="w-fit rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                          >
+                            Tech Payment
+                          </button>
+                        </div>
+                      </Td>
+
                       {isAdmin && (
                         <Td>
                           <div
@@ -2089,6 +2228,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       </Td>
                     </tr>
                   ))}
+                  {filteredJobs.length === 0 && (
+                    <tr>
+                      <td colSpan={isAdmin ? 21 : 20} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
+                        No live jobs yet.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2124,6 +2270,20 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   </div>
                 </div>
               </div>
+            )}
+
+            {techPaymentJob && (
+              <TechPaymentModal
+                job={techPaymentJob}
+                columnsAvailable={Boolean(techPaymentColumns.status)}
+                onClose={() => setTechPaymentJob(null)}
+                onSave={async (details) => {
+                  const saved = await saveTechPaymentDetails(techPaymentJob.id, details);
+                  if (saved) {
+                    setTechPaymentJob(null);
+                  }
+                }}
+              />
             )}
 
             <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
@@ -2198,7 +2358,12 @@ function DispatchCockpit({
           <input className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500" placeholder="Search live jobs" />
         </div>
         <div className="max-h-[680px] space-y-3 overflow-y-auto pr-1">
-          {jobs.map((job) => (
+          {jobs.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm font-semibold text-slate-500">
+              No live jobs yet.
+            </div>
+          ) : (
+            jobs.map((job) => (
             <button
               key={job.id}
               type="button"
@@ -2252,11 +2417,12 @@ function DispatchCockpit({
                 <span className="rounded-lg bg-slate-100 p-2 text-slate-700"><MoreHorizontal className="h-3.5 w-3.5" /></span>
               </div>
             </button>
-          ))}
+            ))
+          )}
         </div>
         <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-semibold text-slate-500">
-          <span>Showing 1 to {Math.min(50, jobs.length)} of {jobs.length} jobs</span>
-          <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-slate-700 hover:bg-slate-200">Load More</button>
+          <span>{jobs.length ? `Showing 1 to ${Math.min(50, jobs.length)} of ${jobs.length} jobs` : "Showing 0 jobs"}</span>
+          {jobs.length > 50 && <button type="button" className="rounded-lg bg-slate-100 px-3 py-2 text-slate-700 hover:bg-slate-200">Load More</button>}
         </div>
       </section>
 
@@ -2269,7 +2435,7 @@ function DispatchCockpit({
                 <div className="flex items-center gap-2">
                   <h2 className="text-2xl font-bold text-slate-950">{selected.company || "No company"}</h2>
                 </div>
-                <p className="mt-1 text-sm text-slate-500">Customer since: optional · {selected.location || "No location"}</p>
+                <p className="mt-1 text-sm text-slate-500">{selected.location || "No location"}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[selected.status] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
@@ -2377,7 +2543,12 @@ function DispatchCockpit({
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Activity Feed</h2>
           <div className="mt-4 max-h-[300px] space-y-3 overflow-y-auto pr-1">
-            {activity.map((item) => (
+            {activity.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm font-semibold text-slate-500">
+                No activity yet.
+              </div>
+            ) : (
+              activity.map((item) => (
               <div key={item.id} className="flex gap-3 rounded-xl bg-slate-50 p-3 text-sm">
                 <div className="mt-1 h-3 w-3 shrink-0 rounded-full bg-blue-600" />
                 <div className="min-w-0">
@@ -2386,10 +2557,120 @@ function DispatchCockpit({
                   <p className="text-xs text-slate-500">by {item.by || item.detail || "System"}</p>
                 </div>
               </div>
-            ))}
+              ))
+            )}
           </div>
         </section>
       </aside>
+    </div>
+  );
+}
+
+function TechPaymentModal({ job, columnsAvailable, onClose, onSave }) {
+  const [details, setDetails] = useState({
+    techPaymentStatus: job.techPaymentStatus || "Pending",
+    techPaymentMethod: job.techPaymentMethod || job.paymentMethod || "",
+    techPaidDate: job.techPaidDate || "",
+    techPaymentNotes: job.techPaymentNotes || "",
+  });
+  const amountOwed = Number(job.techLabor || 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-600">Tech Payment</p>
+            <h3 className="mt-1 text-2xl font-black text-slate-950">{job.tech || "No technician assigned"}</h3>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Job / Invoice #: {job.reference || job.id || "N/A"}</p>
+          </div>
+          <span className={`w-fit rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${techPaymentStatusStyles[details.techPaymentStatus] || techPaymentStatusStyles.Pending}`}>
+            {details.techPaymentStatus || "Pending"}
+          </span>
+        </div>
+
+        {!columnsAvailable && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+            Tech payment columns are not available yet.
+          </div>
+        )}
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <PaymentDetail label="Technician name" value={job.tech || "Not assigned"} />
+          <PaymentDetail label="Job / Invoice #" value={job.reference || job.id || "N/A"} />
+          <PaymentDetail label="Total Bill" value={money(job.totalBill)} />
+          <PaymentDetail label="Parts" value={money(job.parts)} />
+          <PaymentDetail label="Tech Labor" value={money(job.techLabor)} />
+          <PaymentDetail label="Amount owed to technician" value={money(amountOwed)} highlight />
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <label className="grid gap-2 text-sm font-bold text-slate-600">
+            Tech Payment Status
+            <select
+              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              value={details.techPaymentStatus}
+              onChange={(event) => setDetails((current) => ({ ...current, techPaymentStatus: event.target.value }))}
+            >
+              {techPaymentStatusOptions.map((status) => (
+                <option key={status}>{status}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-2 text-sm font-bold text-slate-600">
+            Payment Method
+            <select
+              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              value={details.techPaymentMethod}
+              onChange={(event) => setDetails((current) => ({ ...current, techPaymentMethod: event.target.value }))}
+            >
+              <option value="">Not set</option>
+              {paymentMethods.map((method) => (
+                <option key={method}>{method}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="grid gap-2 text-sm font-bold text-slate-600">
+            Paid Date
+            <input
+              type="date"
+              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              value={details.techPaidDate || ""}
+              onChange={(event) => setDetails((current) => ({ ...current, techPaidDate: event.target.value }))}
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-bold text-slate-600 md:col-span-2">
+            Notes
+            <textarea
+              className="min-h-24 rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              value={details.techPaymentNotes}
+              onChange={(event) => setDetails((current) => ({ ...current, techPaymentNotes: event.target.value }))}
+              placeholder="Payment confirmation, hold reason, check number, or dispatcher notes"
+            />
+          </label>
+        </div>
+
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button type="button" onClick={() => onSave(details)} className="rounded-xl bg-blue-600 px-4 py-2 font-bold text-white hover:bg-blue-700">
+            Save Tech Payment
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PaymentDetail({ label, value, highlight = false }) {
+  return (
+    <div className={`rounded-2xl border p-4 ${highlight ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-slate-50"}`}>
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`mt-2 text-lg font-black ${highlight ? "text-blue-800" : "text-slate-950"}`}>{value || "Not set"}</p>
     </div>
   );
 }
@@ -2854,13 +3135,7 @@ function buildCockpitActivity(selectedJob, notifications, activityLogs, changeLo
 
   if (feed.length > 0) return feed.slice(0, 12);
 
-  return (selectedJob ? [selectedJob] : jobs.slice(0, 6)).map((job) => ({
-    id: `fallback-${job.id}`,
-    title: `${job.status || "Job"} · ${job.company || "No company"}`,
-    detail: [job.reference, job.location, job.date].filter(Boolean).join(" · ") || "Recent dispatch activity",
-    time: job.time || "Recent",
-    by: job.dispatch || "Dispatcher",
-  }));
+  return [];
 }
 
 function recentValues(jobs, key) {
