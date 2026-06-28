@@ -220,6 +220,33 @@ export async function deleteTechnician(id) {
   }
 }
 
+export async function markTechnicianInvitationsDeleted(technicianId) {
+  if (!technicianId) return;
+
+  const baseUpdate = { status: "Deleted" };
+  const withDeletedAt = { ...baseUpdate, deleted_at: new Date().toISOString() };
+  const { error } = await supabase
+    .from("technician_invitations")
+    .update(withDeletedAt)
+    .eq("technician_id", technicianId);
+
+  if (!error) return;
+
+  if (String(error.message || "").toLowerCase().includes("deleted_at")) {
+    const { error: fallbackError } = await supabase
+      .from("technician_invitations")
+      .update(baseUpdate)
+      .eq("technician_id", technicianId);
+
+    if (fallbackError) {
+      throw fallbackError;
+    }
+    return;
+  }
+
+  throw error;
+}
+
 export function getKnownColumns(technicians) {
   const columns = new Set(DEFAULT_COLUMNS);
 

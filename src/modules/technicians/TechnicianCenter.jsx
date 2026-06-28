@@ -25,6 +25,7 @@ import {
   deleteTechnician,
   getKnownColumns,
   loadTechnicians,
+  markTechnicianInvitationsDeleted,
   subscribeToTechnicians,
   updateTechnician,
 } from "./technicianService";
@@ -64,6 +65,7 @@ export default function TechnicianCenter() {
   const [serviceFilter, setServiceFilter] = useState("All");
   const [sortBy, setSortBy] = useState("Newest");
   const [selectedTechnician, setSelectedTechnician] = useState(null);
+  const [technicianToDelete, setTechnicianToDelete] = useState(null);
   const [invitations, setInvitations] = useState([]);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -249,13 +251,31 @@ export default function TechnicianCenter() {
     saveTechnician(technician.id, buildStatusPatch(status));
   }
 
-  async function removeTechnician(id) {
-    if (!window.confirm("Delete this technician from the technicians table?")) return;
+  function requestDeleteTechnician(technician) {
+    if (technician.status !== "Pending") {
+      setError("Only Pending technicians can be deleted.");
+      return;
+    }
+
+    setTechnicianToDelete(technician);
+  }
+
+  async function confirmDeleteTechnician() {
+    if (!technicianToDelete) return;
+    if (technicianToDelete.status !== "Pending") {
+      setError("Only Pending technicians can be deleted.");
+      setTechnicianToDelete(null);
+      return;
+    }
 
     try {
-      await deleteTechnician(id);
-      setTechnicians((current) => current.filter((technician) => technician.id !== id));
+      await markTechnicianInvitationsDeleted(technicianToDelete.id);
+      await deleteTechnician(technicianToDelete.id);
+      setTechnicians((current) => current.filter((technician) => technician.id !== technicianToDelete.id));
       setSelectedTechnician(null);
+      setTechnicianToDelete(null);
+      setCopyMessage("Technician deleted successfully.");
+      await refreshTechnicians();
     } catch (deleteError) {
       setError(deleteError.message || "Unable to delete technician.");
     }
@@ -532,7 +552,7 @@ export default function TechnicianCenter() {
                                 <AdminActions
                                   technician={technician}
                                 onStatus={(status) => updateTechnicianStatus(technician, status)}
-                                  onDelete={() => removeTechnician(technician.id)}
+                                  onDelete={() => requestDeleteTechnician(technician)}
                                 />
                               </div>
                             )}
@@ -565,7 +585,15 @@ export default function TechnicianCenter() {
           onClose={() => setSelectedTechnician(null)}
           onSaveNotes={(notes) => saveTechnician(selectedTechnician.id, { notes })}
           onStatus={(status) => updateTechnicianStatus(selectedTechnician, status)}
-          onDelete={() => removeTechnician(selectedTechnician.id)}
+          onDelete={() => requestDeleteTechnician(selectedTechnician)}
+        />
+      )}
+
+      {technicianToDelete && (
+        <DeleteTechnicianModal
+          technician={technicianToDelete}
+          onCancel={() => setTechnicianToDelete(null)}
+          onConfirm={confirmDeleteTechnician}
         />
       )}
 
@@ -1048,15 +1076,54 @@ function AdminActions({ technician, onStatus, onDelete }) {
           Mark Missing Documents
         </button>
       )}
-      <button
-        type="button"
-        onClick={onDelete}
-        className="rounded-xl bg-red-100 p-2 text-red-700 hover:bg-red-200"
-        title="Delete technician"
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
+      {technician.status === "Pending" && (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200"
+          title="Delete technician"
+        >
+          Delete
+        </button>
+      )}
     </>
+  );
+}
+
+function DeleteTechnicianModal({ technician, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+        <h2 className="text-2xl font-bold text-slate-950">Delete Technician</h2>
+        <p className="mt-2 text-sm text-slate-600">
+          Are you sure you want to permanently delete this technician?
+        </p>
+
+        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+          <Detail label="Full name" value={technician.full_name} />
+          <Detail label="Phone" value={technician.phone} />
+          <Detail label="Company" value={technician.company_name} />
+          <Detail label="City / State" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
