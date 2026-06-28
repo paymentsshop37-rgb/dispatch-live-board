@@ -154,7 +154,7 @@ function buildPayload(technician, knownColumns = DEFAULT_COLUMNS) {
   Object.keys(fieldAliases).forEach((field) => {
     const column = resolveColumn(field, knownColumns);
     if (knownColumns.includes(column) && Object.prototype.hasOwnProperty.call(technician, field)) {
-      payload[column] = technician[field];
+      payload[column] = field === "services" ? splitServices(technician[field]) : technician[field];
     }
   });
 
@@ -236,7 +236,7 @@ function splitServices(services) {
   }
 
   return String(services || "")
-    .split(/[,\n\r]+/)
+    .split(/[,\n\r;]+/)
     .map((service) => service.trim())
     .filter(Boolean);
 }
