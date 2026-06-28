@@ -12,14 +12,13 @@ The platform must remain modular, secure, scalable, and compatible with the exis
 
 1. Dispatch Center
 2. Technician Center
-3. Technician Portal
-4. Customer Portal
-5. Billing & Payments
-6. Executive Dashboard
-7. Live Technician Map
-8. AI Dispatch Engine
-9. Administration
-10. Reports & Analytics
+3. Customer Portal
+4. Billing & Payments
+5. Executive Dashboard
+6. Live Technician Map
+7. AI Dispatch Engine
+8. Administration
+9. Reports & Analytics
 
 ## User Roles
 
@@ -33,7 +32,7 @@ Dispatchers manage live jobs, update the Dispatch Board, search approved technic
 
 ### Technician
 
-Technicians receive job assignments, update availability, accept or reject jobs, navigate to job sites, upload job photos, and complete work through the Technician Portal.
+Technicians do not log in and do not use a portal. Dispatchers contact technicians by phone or WhatsApp and manually manage technician availability, assignment status, and job updates inside the Dispatch Center.
 
 ### Customer
 
@@ -56,7 +55,6 @@ Customers will request service, track job status, provide job information, commu
 - Approved technician loading from Technician Center into Dispatch Board.
 - City, state, and service filters for assignment panel.
 - Safe assignment warning when `jobs.technician_id` does not exist.
-- Technician Portal foundation at `/technician-portal`.
 - Supabase migration scripts under `supabase/migrations`.
 
 ## Supabase Tables
@@ -134,7 +132,7 @@ Dispatch Board + Technician Center + Registration + Invitations
 
 ### v1.5
 
-Technician Portal + Assignment Workflow
+Dispatcher-controlled assignment workflow
 
 ### v2.0
 

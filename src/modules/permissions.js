@@ -10,10 +10,10 @@ export function getPermissions(role) {
     canApproveTechnicians: false,
     canViewPrivateTechnicianData: false,
     canAssignTechnicians: false,
+    canViewCustomers: false,
     canViewBilling: false,
     canManageUsers: false,
     canViewExecutiveDashboard: false,
-    canViewTechnicianPortal: false,
     canViewCustomerPortal: false,
   };
 
@@ -26,14 +26,12 @@ export function getPermissions(role) {
       ...permissions,
       canViewTechnicianCenter: true,
       canAssignTechnicians: true,
+      canViewCustomers: true,
     };
   }
 
   if (normalizedRole === "technician") {
-    return {
-      ...permissions,
-      canViewTechnicianPortal: true,
-    };
+    return permissions;
   }
 
   if (normalizedRole === "customer") {

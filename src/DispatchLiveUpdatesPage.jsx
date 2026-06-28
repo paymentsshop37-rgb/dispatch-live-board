@@ -48,8 +48,16 @@ const USERS = {
 
 const statusStyles = {
   New: "bg-blue-50 text-blue-700 border-blue-200",
+  Assigned: "bg-blue-100 text-blue-800 border-blue-300",
+  "Tech Accepted": "bg-indigo-50 text-indigo-700 border-indigo-200",
+  "En Route": "bg-cyan-50 text-cyan-700 border-cyan-200",
+  "On Site": "bg-violet-50 text-violet-700 border-violet-200",
+  Working: "bg-amber-50 text-amber-700 border-amber-200",
   "In Progress": "bg-amber-50 text-amber-700 border-amber-200",
   Completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Invoiced: "bg-slate-100 text-slate-700 border-slate-200",
+  Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
+  Declined: "bg-red-50 text-red-700 border-red-200",
   Canceled: "bg-red-50 text-red-700 border-red-200",
   Cancelled: "bg-red-50 text-red-700 border-red-200",
   "Dry Run": "bg-purple-50 text-purple-700 border-purple-200",
@@ -57,8 +65,16 @@ const statusStyles = {
 
 const rowStyles = {
   New: "bg-blue-50 border-l-4 border-blue-500",
+  Assigned: "bg-blue-50 border-l-4 border-blue-600",
+  "Tech Accepted": "bg-indigo-50 border-l-4 border-indigo-500",
+  "En Route": "bg-cyan-50 border-l-4 border-cyan-500",
+  "On Site": "bg-violet-50 border-l-4 border-violet-500",
+  Working: "bg-amber-50 border-l-4 border-amber-500",
   "In Progress": "bg-yellow-50 border-l-4 border-yellow-500",
   Completed: "bg-emerald-50 border-l-4 border-emerald-500",
+  Invoiced: "bg-slate-50 border-l-4 border-slate-500",
+  Paid: "bg-emerald-50 border-l-4 border-emerald-600",
+  Declined: "bg-red-50 border-l-4 border-red-500",
   Canceled: "bg-red-50 border-l-4 border-red-500",
   Cancelled: "bg-red-50 border-l-4 border-red-500",
   "Dry Run": "bg-orange-50 border-l-4 border-orange-500",
@@ -77,6 +93,8 @@ const invoiceStyles = {
 
 const paymentMethods = ["EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire", "Pending"];
 const paymentReceivers = ["A", "B"];
+const jobPipeline = ["New", "Assigned", "Tech Accepted", "En Route", "On Site", "Working", "Completed", "Invoiced", "Paid"];
+const jobStatusOptions = [...jobPipeline, "Declined", "Canceled", "Dry Run"];
 
 const fieldMap = {
   photo_url: "photo_url",
@@ -227,6 +245,9 @@ function fromDbJob(row) {
     tech: row.tech || "",
     technicianId: row.technician_id || "",
     assignedAt: row.assigned_at || "",
+    assignedBy: row.assigned_by || "",
+    previousTechnician: row.previous_technician || "",
+    reassignedCount: Number(row.reassigned_count || 0),
     location: row.location || "",
     status: row.status || "New",
     rowFlag: row.row_flag || "Normal",
@@ -325,8 +346,17 @@ export default function DispatchLiveUpdatesPage() {
     service: "",
   });
   const [jobsSupportsTechnicianId, setJobsSupportsTechnicianId] = useState(false);
+  const [jobsSupportsAssignedAt, setJobsSupportsAssignedAt] = useState(false);
+  const [jobsSupportsAssignedBy, setJobsSupportsAssignedBy] = useState(false);
+  const [jobsSupportsPreviousTechnician, setJobsSupportsPreviousTechnician] = useState(false);
+  const [jobsSupportsReassignedCount, setJobsSupportsReassignedCount] = useState(false);
+  const [technicianAvailabilityColumn, setTechnicianAvailabilityColumn] = useState("");
+  const [techniciansSupportCurrentJobId, setTechniciansSupportCurrentJobId] = useState(false);
+  const [supportsActivityLog, setSupportsActivityLog] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const [currentUserName, setCurrentUserName] = useState(
   localStorage.getItem("currentUserName") || ""
 );
@@ -364,7 +394,28 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
 
     const channel = supabase
       .channel("live-jobs")
-      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, () => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, (payload) => {
+        const nextStatus = payload?.new?.status;
+        if (nextStatus) {
+          const messageByStatus = {
+            "Tech Accepted": "Technician Accepted",
+            Declined: "Technician Declined",
+            "On Site": "Technician Arrived",
+            Completed: "Job Completed",
+          };
+          const message = messageByStatus[nextStatus];
+          if (message) {
+            setNotifications((current) => [
+              {
+                id: `${payload.new.id}-${Date.now()}`,
+                message,
+                detail: payload.new.company || payload.new.invoice_number || `Job ${payload.new.id}`,
+                time: new Date().toLocaleTimeString(),
+              },
+              ...current,
+            ].slice(0, 8));
+          }
+        }
         loadJobs();
 
         const audio = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
@@ -393,15 +444,48 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
   async function loadDispatchTechnicians() {
     try {
       const technicians = await loadTechnicians();
-      setDispatchTechnicians(technicians.filter((technician) => technician.status === "Approved"));
+      setDispatchTechnicians(
+        technicians.filter((technician) => {
+          const isApproved = String(technician.status || "").toLowerCase() === "approved";
+          return isApproved;
+        })
+      );
     } catch (error) {
       console.error("Error loading technicians:", error.message);
     }
   }
 
   async function checkJobAssignmentSupport() {
-    const { error } = await supabase.from("jobs").select("technician_id").limit(0);
-    setJobsSupportsTechnicianId(!error);
+    const [
+      { error: technicianIdError },
+      { error: assignedAtError },
+      { error: assignedByError },
+      { error: previousTechnicianError },
+      { error: reassignedCountError },
+      { error: technicianAvailabilityError },
+      { error: technicianAvailabilityStatusError },
+      { error: technicianCurrentJobIdError },
+      { error: activityLogError },
+    ] = await Promise.all([
+      supabase.from("jobs").select("technician_id").limit(0),
+      supabase.from("jobs").select("assigned_at").limit(0),
+      supabase.from("jobs").select("assigned_by").limit(0),
+      supabase.from("jobs").select("previous_technician").limit(0),
+      supabase.from("jobs").select("reassigned_count").limit(0),
+      supabase.from("technicians").select("availability").limit(0),
+      supabase.from("technicians").select("availability_status").limit(0),
+      supabase.from("technicians").select("current_job_id").limit(0),
+      supabase.from("activity_log").select("id").limit(0),
+    ]);
+
+    setJobsSupportsTechnicianId(!technicianIdError);
+    setJobsSupportsAssignedAt(!assignedAtError);
+    setJobsSupportsAssignedBy(!assignedByError);
+    setJobsSupportsPreviousTechnician(!previousTechnicianError);
+    setJobsSupportsReassignedCount(!reassignedCountError);
+    setTechnicianAvailabilityColumn(!technicianAvailabilityError ? "availability" : !technicianAvailabilityStatusError ? "availability_status" : "");
+    setTechniciansSupportCurrentJobId(!technicianCurrentJobIdError);
+    setSupportsActivityLog(!activityLogError);
   }
 
   async function loadJobs() {
@@ -570,6 +654,11 @@ return (
   const stats = useMemo(() => {
    return {
   total: filteredJobs.length,
+  newJobs: filteredJobs.filter((j) => j.status === "New").length,
+  assigned: filteredJobs.filter((j) => j.status === "Assigned").length,
+  enRoute: filteredJobs.filter((j) => j.status === "En Route").length,
+  working: filteredJobs.filter((j) => j.status === "Working").length,
+  completedToday: filteredJobs.filter((j) => j.status === "Completed" && j.date === new Date().toISOString().slice(0, 10)).length,
   inProgress: filteredJobs.filter((j) => j.status === "In Progress").length,
   completed: filteredJobs.filter((j) => j.status === "Completed").length,
   canceled: filteredJobs.filter((j) => j.status === "Canceled" || j.status === "Cancelled").length,
@@ -618,11 +707,13 @@ profit: filteredJobs.reduce(
  }, [jobs, filteredJobs]);
 
   const assignmentTechnicians = useMemo(() => {
-    const city = assignmentFilters.city.trim().toLowerCase();
-    const state = assignmentFilters.state.trim().toLowerCase();
+    const jobLocation = parseLocation(assignmentJob?.location);
+    const city = (assignmentFilters.city || jobLocation.city).trim().toLowerCase();
+    const state = (assignmentFilters.state || jobLocation.state).trim().toLowerCase();
     const service = assignmentFilters.service.trim().toLowerCase();
 
-    return dispatchTechnicians.filter((technician) => {
+    return dispatchTechnicians
+      .filter((technician) => {
       const services = splitServices(technician.services).join(" ").toLowerCase();
       const coverage = [technician.coverage, technician.serviceArea].join(" ").toLowerCase();
 
@@ -634,8 +725,22 @@ profit: filteredJobs.reduce(
       const matchesService = !service || services.includes(service);
 
       return matchesCity && matchesState && matchesService;
-    });
-  }, [assignmentFilters, dispatchTechnicians]);
+    })
+      .sort((a, b) => {
+        const aCityExact = String(a.city || "").trim().toLowerCase() === city ? 1 : 0;
+        const bCityExact = String(b.city || "").trim().toLowerCase() === city ? 1 : 0;
+        if (aCityExact !== bCityExact) return bCityExact - aCityExact;
+
+        const aStateMatch = state && String(a.state || "").trim().toLowerCase() === state ? 1 : 0;
+        const bStateMatch = state && String(b.state || "").trim().toLowerCase() === state ? 1 : 0;
+        if (aStateMatch !== bStateMatch) return bStateMatch - aStateMatch;
+
+        const ratingDifference = Number(b.rating || 0) - Number(a.rating || 0);
+        if (ratingDifference !== 0) return ratingDifference;
+
+        return technicianCompliance(b) - technicianCompliance(a);
+      });
+  }, [assignmentFilters, assignmentJob, dispatchTechnicians]);
 
   async function addJob(e) {
     e.preventDefault();
@@ -793,7 +898,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
   async function assignRecommendedTechnician(job, technician) {
     if (!jobsSupportsTechnicianId) {
-      alert("Safe assignment skipped: jobs.technician_id does not exist yet. Apply the assignment migration first.");
+      alert("Safe mode: jobs.technician_id does not exist yet. Assignment preview only.");
+      setForm((current) => ({ ...current, tech: technician.full_name || "" }));
       return;
     }
 
@@ -803,18 +909,80 @@ setActivityLogs((logs) => [newActivity, ...logs]);
       return;
     }
 
+    const isReassignment = Boolean(job.technicianId && job.technicianId !== technician.id);
+    if (isReassignment) {
+      const shouldReassign = window.confirm("This job is already assigned.\nDo you want to reassign?");
+      if (!shouldReassign) return;
+    }
+
     try {
       const assignedAt = new Date().toISOString();
+      const dispatcher = currentUserName || "Dispatcher";
+      const previousTechnician = job.tech || job.previousTechnician || "";
+      const nextReassignedCount = isReassignment ? Number(job.reassignedCount || 0) + 1 : Number(job.reassignedCount || 0);
+      const jobUpdate = {
+        technician_id: technician.id,
+        tech: technician.full_name || "",
+        status: "Assigned",
+      };
+
+      if (jobsSupportsAssignedAt) {
+        jobUpdate.assigned_at = assignedAt;
+      }
+      if (jobsSupportsAssignedBy) {
+        jobUpdate.assigned_by = dispatcher;
+      }
+      if (jobsSupportsPreviousTechnician && isReassignment) {
+        jobUpdate.previous_technician = previousTechnician;
+      }
+      if (jobsSupportsReassignedCount) {
+        jobUpdate.reassigned_count = nextReassignedCount;
+      }
+
       const { error } = await supabase
         .from("jobs")
-        .update({
-          technician_id: technician.id,
-          tech: technician.full_name || "",
-        })
+        .update(jobUpdate)
         .eq("id", job.id);
 
       if (error) {
         throw error;
+      }
+
+      const technicianUpdate = {};
+      if (technicianAvailabilityColumn) {
+        technicianUpdate[technicianAvailabilityColumn] = "Busy";
+      }
+      if (techniciansSupportCurrentJobId) {
+        technicianUpdate.current_job_id = job.id;
+      }
+      if (Object.keys(technicianUpdate).length > 0) {
+        const { error: technicianUpdateError } = await supabase
+          .from("technicians")
+          .update(technicianUpdate)
+          .eq("id", technician.id);
+
+        if (technicianUpdateError) {
+          console.warn("Technician assignment status update skipped:", technicianUpdateError.message);
+        }
+      }
+
+      if (supportsActivityLog) {
+        const assignedDate = new Date(assignedAt);
+        await supabase.from("activity_log").insert([
+          {
+            entity_type: "job",
+            entity_id: String(job.id),
+            action: "Job Assigned",
+            description: [
+              `Job ID: ${job.id}`,
+              `Technician: ${technician.full_name || "Technician"}`,
+              `Dispatcher: ${dispatcher}`,
+              `Date: ${assignedDate.toLocaleDateString()}`,
+              `Time: ${assignedDate.toLocaleTimeString()}`,
+            ].join(" | "),
+            created_by: dispatcher,
+          },
+        ]);
       }
 
       setJobs((currentJobs) =>
@@ -825,16 +993,46 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 tech: technician.full_name || "",
                 technicianId: technician.id,
                 assignedAt,
+                assignedBy: dispatcher,
+                previousTechnician: isReassignment ? previousTechnician : currentJob.previousTechnician,
+                reassignedCount: nextReassignedCount,
+                status: "Assigned",
               }
             : currentJob
         )
       );
       setAssignmentJob(null);
+      setToastMessage("Technician Assigned Successfully");
+      window.setTimeout(() => setToastMessage(""), 3500);
       await loadDispatchTechnicians();
       await loadJobs();
     } catch (error) {
       alert("Error assigning technician: " + error.message);
     }
+  }
+
+  async function updateTechnicianAvailability(technician, availability) {
+    if (!technicianAvailabilityColumn) {
+      alert("Safe mode: technician availability column does not exist yet.");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("technicians")
+      .update({ [technicianAvailabilityColumn]: availability })
+      .eq("id", technician.id);
+
+    if (error) {
+      alert("Error updating technician availability: " + error.message);
+      return;
+    }
+
+    setDispatchTechnicians((current) =>
+      current.map((item) =>
+        item.id === technician.id ? { ...item, availabilityStatus: availability } : item
+      )
+    );
+    await loadDispatchTechnicians();
   }
 
   if (!accessGranted) {
@@ -869,6 +1067,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
   return (
     <div className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden bg-slate-100 p-4 text-slate-900 md:p-6 xl:p-8">
+      {toastMessage && (
+        <div className="fixed right-6 top-6 z-50 rounded-xl border border-emerald-200 bg-white px-5 py-3 text-sm font-bold text-emerald-700 shadow-xl">
+          {toastMessage}
+        </div>
+      )}
       <div className="w-full max-w-none min-w-0 space-y-6">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
@@ -952,19 +1155,51 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           </div>
         </div>
 
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-950">Job Status Pipeline</h2>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Live dispatch workflow</p>
+            </div>
+            <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">Realtime</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {jobPipeline.map((status) => (
+              <span key={status} className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${statusStyles[status] || "bg-slate-50 text-slate-700 border-slate-200"}`}>
+                {status}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <Bell className="h-5 w-5 text-blue-600" />
+            <h2 className="text-lg font-bold text-slate-950">Notification Center</h2>
+          </div>
+          {notifications.length === 0 ? (
+            <p className="text-sm text-slate-500">No live workflow notifications yet.</p>
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              {notifications.map((notification) => (
+                <div key={notification.id} className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm">
+                  <p className="font-bold text-blue-900">{notification.message}</p>
+                  <p className="text-xs text-blue-700">{notification.detail}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{notification.time}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="grid gap-4 md:grid-cols-4 xl:grid-cols-8">
           <StatCard icon={<ClipboardList />} label="Total Jobs" value={stats.total} />
-          <StatCard icon={<Clock />} label="Weekly Jobs" value={stats.weeklyJobs} />
-          <StatCard
-  icon={<ClipboardList />}
-  label="Monthly Jobs"
-  value={stats.monthlyJobs}
-/>
-          <StatCard icon={<Clock />} label="In Progress" value={stats.inProgress} />
-          <StatCard icon={<CheckCircle2 />} label="Completed" value={stats.completed} />
+          <StatCard icon={<Plus />} label="New Jobs" value={stats.newJobs} />
+          <StatCard icon={<Users />} label="Assigned" value={stats.assigned} />
+          <StatCard icon={<Truck />} label="En Route" value={stats.enRoute} />
+          <StatCard icon={<Clock />} label="Working" value={stats.working} />
+          <StatCard icon={<CheckCircle2 />} label="Completed Today" value={stats.completedToday} />
           <StatCard icon={<AlertTriangle />} label="Open Invoices" value={stats.pendingInvoices} />
-          <StatCard icon={<AlertTriangle />} label="Canceled" value={stats.canceled} />
-          <StatCard icon={<Truck />} label="Dry Runs" value={stats.dryRuns} />
           {isAdmin && <StatCard icon={<DollarSign />} label="Profit" value={money(stats.profit)} />}
         </div>
 
@@ -1146,7 +1381,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <Input label="Tech" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
               <Input label="Location" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
               <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
-              <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={["New", "In Progress", "Completed", "Canceled", "Dry Run"]} />
+              <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={jobStatusOptions} />
               <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={["Pending", "Sent", "Paid", "Need Review"]} />
               <Select label="Payment Method" value={form.paymentMethod} onChange={(v) => setForm({ ...form, paymentMethod: v })} options={paymentMethods} />
               <Select label="Received" value={form.paymentReceiver} onChange={(v) => setForm({ ...form, paymentReceiver: v })} options={paymentReceivers} />
@@ -1272,7 +1507,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
-                  {["All", "New", "In Progress", "Completed", "Canceled", "Dry Run"].map((s) => (
+                  {["All", ...jobStatusOptions].map((s) => (
                     <option key={s}>{s}</option>
                   ))}
                 </select>
@@ -1375,7 +1610,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       className={`border-t border-slate-200 align-top hover:brightness-[0.98] ${
                         job.rowFlag === "Problem" || job.status === "Dry Run"
                           ? "bg-red-300 border-l-8 border-red-800 shadow-lg"
-                          : rowStyles[job.rowFlag || "Normal"]
+                          : rowStyles[job.rowFlag && job.rowFlag !== "Normal" ? job.rowFlag : job.status] || rowStyles.Normal
                       }`}
                     >
                       <Td>
@@ -1413,10 +1648,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                           value={job.status}
                           onChange={(e) => updateJob(job.id, "status", e.target.value)}
                         >
-                          {["New", "In Progress", "Completed", "Canceled", "Dry Run"].map((s) => (
+                          {jobStatusOptions.map((s) => (
                             <option key={s}>{s}</option>
                           ))}
                         </select>
+                        <JobPipelineMini status={job.status} />
+                        <p className="mt-2 text-xs font-semibold text-slate-500">ETA: {job.manualEta || extractEta(job.updates) || "Manual ETA not set"}</p>
                       </Td>
 
                       <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
@@ -1489,6 +1726,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                           defaultValue={job.updates}
                           onBlur={(e) => updateJob(job.id, "updates", e.target.value)}
                         />
+                        <JobTimeline job={job} />
                       </Td>
 
                       <Td>
@@ -1587,7 +1825,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                             onClick={() => setAssignmentJob(job)}
                             className="rounded-xl bg-blue-100 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-200"
                           >
-                            Match
+                            Workspace
                           </button>
                           <button
                             type="button"
@@ -1683,11 +1921,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           {permissions.canAssignTechnicians && (
             <AssignmentPanel
               job={assignmentJob}
+              jobs={jobs}
               technicians={assignmentTechnicians}
               filters={assignmentFilters}
               onFiltersChange={setAssignmentFilters}
               supportsAssignment={jobsSupportsTechnicianId}
               onAssign={assignRecommendedTechnician}
+              onAvailabilityChange={updateTechnicianAvailability}
               onClear={() => setAssignmentJob(null)}
             />
           )}
@@ -1802,14 +2042,14 @@ function MoneyInput({ value, onChange, className = "" }) {
   );
 }
 
-function AssignmentPanel({ job, technicians, filters, onFiltersChange, supportsAssignment, onAssign, onClear }) {
+function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, supportsAssignment, onAssign, onAvailabilityChange, onClear }) {
   return (
     <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-slate-950">Assign Technician</h2>
+          <h2 className="text-xl font-bold text-slate-950">Dispatch Workspace</h2>
           <p className="mt-1 text-xs text-slate-500">
-            {job?.id ? `Selected job ${job.reference || job.id}` : "Approved technicians from Technician Center"}
+            {job?.id ? `Selected job ${job.reference || job.id}` : "Select a job from Live Jobs to manage assignment"}
           </p>
         </div>
         {job?.id && (
@@ -1825,9 +2065,53 @@ function AssignmentPanel({ job, technicians, filters, onFiltersChange, supportsA
 
       {!supportsAssignment && (
         <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-800">
-          Safe mode: jobs.technician_id does not exist yet. Assign will not update the job until the column is added.
+          Safe mode: jobs.technician_id does not exist yet. Assignment preview only.
         </div>
       )}
+
+      {supportsAssignment && (!job?.assignedAt && !job?.assignedBy) && (
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          Assignment timestamps and assigned-by values are saved when those columns exist.
+        </div>
+      )}
+
+      {job?.id ? (
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="font-bold text-slate-950">Job Details</p>
+            <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[job.status] || "border-slate-200 bg-white text-slate-700"}`}>
+              {job.status || "New"}
+            </span>
+          </div>
+          <div className="grid gap-2">
+            <DetailLine label="Customer / Company" value={job.company} />
+            <DetailLine label="Location" value={job.location} />
+            <DetailLine label="Service Needed" value={filters.service || extractService(job)} />
+            <DetailLine label="Invoice #" value={job.reference} />
+            <DetailLine label="Reference #" value={job.reference} />
+            <DetailLine label="Notes / Updates" value={job.updates} />
+          </div>
+          <JobTimeline job={job} />
+        </div>
+      ) : (
+        <div className="mb-4 rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+          Click Workspace on a live job to review details and assign an approved technician.
+        </div>
+      )}
+
+      {job?.technicianId && (
+        <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800">
+          <p className="font-bold">Assignment History</p>
+          <p>Assigned By: {job.assignedBy || "Not recorded"}</p>
+          <p>Assigned Time: {job.assignedAt ? new Date(job.assignedAt).toLocaleString() : "Not recorded"}</p>
+          <p>Previous Technician: {job.previousTechnician || "None"}</p>
+          <p>Reassigned Count: {job.reassignedCount || 0}</p>
+        </div>
+      )}
+
+      <div className="mb-3">
+        <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">Recommended Technicians</h3>
+      </div>
 
       <div className="mb-4 grid gap-2">
         <input
@@ -1878,15 +2162,54 @@ function AssignmentPanel({ job, technicians, filters, onFiltersChange, supportsA
                 <MiniMetric label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
                 <MiniMetric label="Compliance" value={`${technicianCompliance(technician)}%`} />
                 <MiniMetric label="Availability" value={technician.availabilityStatus || "Available"} />
+                <MiniMetric label="Last Job" value={lastTechnicianJob(jobs, technician)} />
+                <MiniMetric label="Jobs Completed" value={technician.completedJobs || 0} />
               </div>
 
-              <button
-                type="button"
-                onClick={() => onAssign(job, technician)}
-                className="mt-3 w-full rounded-xl bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700"
-              >
-                Assign Technician
-              </button>
+              {technician.notes && (
+                <p className="mt-3 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">{technician.notes}</p>
+              )}
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {["Available", "Busy", "Off Duty", "Offline"].map((availability) => (
+                  <button
+                    key={availability}
+                    type="button"
+                    onClick={() => onAvailabilityChange(technician, availability)}
+                    className={`rounded-xl px-2 py-2 text-xs font-bold ${
+                      technician.availabilityStatus === availability
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    {availability}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <a
+                  href={technician.phone ? `tel:${technician.phone}` : undefined}
+                  className="rounded-xl bg-slate-100 px-3 py-2 text-center text-xs font-bold text-slate-700 hover:bg-slate-200"
+                >
+                  Call
+                </a>
+                <a
+                  href={whatsappLink(job, technician, filters.service)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl bg-emerald-600 px-3 py-2 text-center text-xs font-bold text-white hover:bg-emerald-700"
+                >
+                  WhatsApp
+                </a>
+                <button
+                  type="button"
+                  onClick={() => onAssign(job, technician)}
+                  className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                >
+                  Assign
+                </button>
+              </div>
             </div>
           ))
         )}
@@ -1902,6 +2225,58 @@ function MiniMetric({ label, value }) {
       <p className="mt-1 font-semibold text-slate-800">{value}</p>
     </div>
   );
+}
+
+function DetailLine({ label, value }) {
+  return (
+    <div>
+      <p className="text-xs font-bold uppercase text-slate-400">{label}</p>
+      <p className="mt-1 whitespace-pre-wrap font-semibold text-slate-800">{value || "Not provided"}</p>
+    </div>
+  );
+}
+
+function whatsappLink(job, technician, requestedService) {
+  const phone = String(technician.phone || "").replace(/\D/g, "");
+  const message = [
+    "NTTR Dispatch",
+    "",
+    "Customer:",
+    job?.company || "",
+    "",
+    "Location:",
+    job?.location || "",
+    "",
+    "Service:",
+    requestedService || extractService(job),
+    "",
+    "Reference:",
+    job?.reference || "",
+    "",
+    "Please confirm availability.",
+  ].join("\n");
+
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function extractService(job) {
+  const updates = String(job?.updates || "");
+  const serviceLine = updates
+    .split(/\n+/)
+    .find((line) => /service|repair|tire|brake|reefer|tow|jump|fuel/i.test(line));
+
+  return serviceLine || updates.slice(0, 80) || "Roadside service";
+}
+
+function lastTechnicianJob(jobs, technician) {
+  const technicianJobs = jobs
+    .filter((job) => job.technicianId === technician.id || job.tech === technician.full_name)
+    .sort((a, b) => new Date(`${b.date || ""} ${b.time || "00:00"}`) - new Date(`${a.date || ""} ${a.time || "00:00"}`));
+
+  const lastJob = technicianJobs[0];
+  if (!lastJob) return "None";
+
+  return [lastJob.company, lastJob.location].filter(Boolean).join(" - ") || lastJob.reference || "Recent job";
 }
 
 function initials(name) {
@@ -1937,6 +2312,14 @@ function splitServices(services) {
     .filter(Boolean);
 }
 
+function parseLocation(location) {
+  const [city = "", state = ""] = String(location || "")
+    .split(",")
+    .map((part) => part.trim());
+
+  return { city, state };
+}
+
 function formatServices(services) {
   const serviceList = splitServices(services);
   return serviceList.length ? serviceList.join(", ") : "No services";
@@ -1948,4 +2331,77 @@ function Th({ children }) {
 
 function Td({ children, className = "" }) {
   return <td className={`whitespace-nowrap px-4 py-3 align-top ${className}`}>{children}</td>;
+}
+
+function JobPipelineMini({ status }) {
+  const activeIndex = jobPipeline.findIndex((item) => item === status);
+
+  return (
+    <div className="mt-2 flex max-w-xs flex-wrap gap-1">
+      {jobPipeline.map((item, index) => {
+        const isActive = index <= activeIndex;
+        return (
+          <span
+            key={item}
+            title={item}
+            className={`h-2 w-6 rounded-full ${isActive ? "bg-blue-600" : "bg-slate-200"}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function JobTimeline({ job }) {
+  const timeline = buildJobTimeline(job);
+
+  return (
+    <div className="mt-3 max-w-sm space-y-1 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">
+      {timeline.map((item) => (
+        <div key={`${item.label}-${item.time}`} className="flex gap-2">
+          <span className="min-w-14 font-bold text-slate-500">{item.time}</span>
+          <span>{item.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildJobTimeline(job) {
+  const createdTime = formatTimelineTime(job.time);
+  const timeline = [{ time: createdTime, label: "Job Created" }];
+
+  if (job.assignedAt) {
+    timeline.push({ time: formatTimelineTime(job.assignedAt), label: "Assigned" });
+  }
+
+  const updateLines = String(job.updates || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => /^\d{1,2}:\d{2}/.test(line));
+
+  updateLines.forEach((line) => {
+    const [time, ...rest] = line.split(" ");
+    timeline.push({ time, label: rest.join(" ") || "Status Updated" });
+  });
+
+  if (timeline.length === 1 && job.status && job.status !== "New") {
+    timeline.push({ time: "Live", label: job.status });
+  }
+
+  return timeline.slice(-8);
+}
+
+function formatTimelineTime(value) {
+  if (!value) return "--:--";
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return String(value).slice(0, 5);
+}
+
+function extractEta(updates) {
+  const match = String(updates || "").match(/eta\s*:?\s*([^\n\r]+)/i);
+  return match?.[1]?.trim() || "";
 }

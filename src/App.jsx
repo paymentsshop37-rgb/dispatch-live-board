@@ -3,7 +3,9 @@ import {
   BarChart3,
   ClipboardList,
   Cloud,
+  CreditCard,
   Database,
+  Building2,
   LayoutDashboard,
   Save,
   Settings,
@@ -12,13 +14,17 @@ import {
   Users,
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
-import { TechnicianCenter, TechnicianPortal, TechnicianRegistrationPortal } from "./modules/technicians";
+import { BillingDashboard } from "./modules/billing";
+import { CustomerCRM } from "./modules/customers";
+import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 
 const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
   { id: "dispatch", label: "Dispatch Center", icon: ClipboardList },
   { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
+  { id: "customers", label: "Customers", icon: Building2, requires: "canViewCustomers" },
+  { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "reports", label: "Reports", icon: BarChart3, adminOnly: true },
   { id: "settings", label: "Settings", icon: Settings, adminOnly: true },
@@ -28,7 +34,6 @@ export default function App() {
   const [activeView, setActiveView] = useState("dispatch");
   const [session, setSession] = useState(getSession());
   const isPublicRegistration = window.location.pathname === "/technician-registration";
-  const isTechnicianPortal = window.location.pathname === "/technician-portal";
 
   useEffect(() => {
     function syncSession() {
@@ -65,10 +70,6 @@ export default function App() {
 
   if (isPublicRegistration) {
     return <TechnicianRegistrationPortal />;
-  }
-
-  if (isTechnicianPortal) {
-    return <TechnicianPortal />;
   }
 
   return (
@@ -149,6 +150,8 @@ export default function App() {
         {activeView === "dashboard" && <PlaceholderPage title="Dashboard" />}
         {activeView === "dispatch" && <DispatchLiveUpdatesPage />}
         {activeView === "technicians" && permissions.canViewTechnicianCenter && <TechnicianCenter />}
+        {activeView === "customers" && permissions.canViewCustomers && <CustomerCRM />}
+        {activeView === "billing" && isAdmin && <BillingDashboard />}
         {activeView === "administration" && isAdmin && <PlaceholderPage title="Administration" />}
         {activeView === "reports" && isAdmin && <PlaceholderPage title="Reports" />}
         {activeView === "settings" && isAdmin && <PlaceholderPage title="Settings" />}
@@ -170,6 +173,8 @@ function viewTitle(view) {
     dashboard: "Dashboard",
     dispatch: "Dispatch Center",
     technicians: "Technician Center",
+    customers: "Customers",
+    billing: "Billing",
     administration: "Administration",
     reports: "Reports",
     settings: "Settings",
