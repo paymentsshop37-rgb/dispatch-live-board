@@ -12,6 +12,12 @@ import {
   DollarSign,
   Trash2,
   Save,
+  RefreshCw,
+  Columns3,
+  Edit3,
+  Eye,
+  HelpCircle,
+  Moon,
   Users,
   Database,
   Crown,
@@ -282,6 +288,9 @@ function emptyForm() {
     invoice: "Pending",
     paymentMethod: "Pending",
     paymentReceiver: "A",
+    jobReference: "",
+    poNumber: "",
+    truckUnit: "",
     updates: "",
     parts: "",
     totalBill: "",
@@ -304,6 +313,7 @@ export default function DispatchLiveUpdatesPage() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [dispatchFilter, setDispatchFilter] = useState("All");
+  const [techFilter, setTechFilter] = useState("All");
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
@@ -341,6 +351,7 @@ setAccessGranted(true);
 localStorage.setItem("currentUser", username);
 localStorage.setItem("currentUserName", user.name);
 localStorage.setItem("currentUserRole", user.role);
+window.dispatchEvent(new Event("nttr-auth-changed"));
   } else {
     alert("Invalid username or password");
   }
@@ -425,6 +436,7 @@ const { data: logsData } = await supabase
         const matchesDate = dateFilter === "All" || job.date === dateFilter;
         const matchesCity = cityFilter === "All" || job.location === cityFilter;
         const matchesDispatch = dispatchFilter === "All" || job.dispatch === dispatchFilter;
+        const matchesTech = techFilter === "All" || job.tech === techFilter;
         const matchesInvoice = invoiceFilter === "All" || job.invoice === invoiceFilter;
 const today = new Date();
 const jobDate = new Date(job.date + " 00:00:00");
@@ -521,6 +533,7 @@ return (
   matchesDate &&
   matchesCity &&
   matchesDispatch &&
+  matchesTech &&
   matchesInvoice &&
   matchesPeriod &&
   matchesDateRange
@@ -532,7 +545,7 @@ return (
 
   return dateTimeA - dateTimeB;
 });
-  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, invoiceFilter, periodFilter, fromDate, toDate]);
+  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, invoiceFilter, periodFilter, fromDate, toDate]);
 
   const dates = useMemo(
     () => [...new Set(jobs.map((job) => job.date).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b)),
@@ -546,6 +559,11 @@ return (
 
   const dispatchers = useMemo(
     () => [...new Set(jobs.map((job) => job.dispatch).filter(Boolean))].sort(),
+    [jobs]
+  );
+
+  const techs = useMemo(
+    () => [...new Set(jobs.map((job) => job.tech).filter(Boolean))].sort(),
     [jobs]
   );
 
@@ -850,29 +868,57 @@ setActivityLogs((logs) => [newActivity, ...logs]);
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 text-slate-900 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden bg-slate-100 p-4 text-slate-900 md:p-6 xl:p-8">
+      <div className="w-full max-w-none min-w-0 space-y-6">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-3xl bg-slate-950 p-6 text-white shadow-xl"
+          className="rounded-xl border border-slate-200 bg-white p-5 text-slate-900 shadow-sm"
         >
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-white/10 p-3">
-                <Truck className="h-7 w-7" />
+              <div className="rounded-xl bg-blue-600 p-3 text-white">
+                <Truck className="h-6 w-6" />
               </div>
 
               <div>
-                <h1 className="text-3xl font-bold tracking-tight">Dispatch Live Board</h1>
-                <p className="text-sm text-slate-300">
+                <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <span>Home</span><span>&gt;</span><span>Dispatch Center</span><span>&gt;</span><span className="text-blue-700">Live Jobs</span>
+                </div>
+                <h1 className="text-3xl font-bold tracking-tight text-slate-950">Dispatch Center</h1>
+                <p className="text-sm text-slate-500">
                   Secure live dispatch system · Truck & Trailer Road Service
                 </p>
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white/10 px-4 py-3 text-sm text-slate-200">
-                {normalizeRole(currentUserRole) || currentUserRole} Access
+            <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                <input
+                  className="w-72 rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500"
+                  placeholder="Search dispatch..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <button type="button" className="rounded-xl bg-slate-100 p-3 text-slate-700 hover:bg-slate-200" title="Notifications">
+                <Bell className="h-4 w-4" />
+              </button>
+              <button type="button" className="rounded-xl bg-slate-100 p-3 text-slate-700 hover:bg-slate-200" title="Help">
+                <HelpCircle className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => document.documentElement.classList.toggle("dark")}
+                className="rounded-xl bg-slate-100 p-3 text-slate-700 hover:bg-slate-200"
+                title="Dark mode"
+              >
+                <Moon className="h-4 w-4" />
+              </button>
+              <div className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold capitalize text-white">
+                {currentUserName || "PRESTIGE T"} · {normalizeRole(currentUserRole) || "administrator"}
+              </div>
             </div>
           </div>
 
@@ -887,20 +933,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 localStorage.removeItem("currentUser");
                 localStorage.removeItem("currentUserName");
                 localStorage.removeItem("currentUserRole");
+                window.dispatchEvent(new Event("nttr-auth-changed"));
               }}
-              className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
+              className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-100"
             >
               Logout
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                document.documentElement.classList.toggle("dark");
-              }}
-              className="rounded-xl bg-slate-800 px-4 py-2 text-sm font-bold text-white hover:bg-slate-700"
-            >
-              Dark Mode
             </button>
           </div>
         </motion.div>
@@ -1090,14 +1127,17 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[380px_1fr] xl:grid-cols-[360px_minmax(0,1fr)_340px]">
-          <form onSubmit={addJob} className="rounded-3xl bg-white p-5 shadow-sm">
+        <div className="grid w-full min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <form onSubmit={addJob} className="w-full max-w-none rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-bold">Add New Job</h2>
-              <Plus className="h-5 w-5 text-slate-500" />
+              <div>
+                <h2 className="text-xl font-bold text-slate-950">Add New Job</h2>
+                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Dispatch intake</p>
+              </div>
+              <Plus className="h-5 w-5 text-blue-600" />
             </div>
 
-            <div className="grid gap-3">
+            <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               <Input label="Date" type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
               <Input label="Time" placeholder="10:45 AM" value={form.time} onChange={(v) => setForm({ ...form, time: v })} />
               <Input label="Invoice #" value={form.reference} onChange={(v) => setForm({ ...form, reference: v })} />
@@ -1105,17 +1145,17 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <Input label="Company" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
               <Input label="Tech" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
               <Input label="Location" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
+              <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
+              <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={["New", "In Progress", "Completed", "Canceled", "Dry Run"]} />
+              <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={["Pending", "Sent", "Paid", "Need Review"]} />
+              <Select label="Payment Method" value={form.paymentMethod} onChange={(v) => setForm({ ...form, paymentMethod: v })} options={paymentMethods} />
+              <Select label="Received" value={form.paymentReceiver} onChange={(v) => setForm({ ...form, paymentReceiver: v })} options={paymentReceivers} />
+              <Input label="Reference #" value={form.jobReference || ""} onChange={(v) => setForm({ ...form, jobReference: v })} />
+              <Input label="PO #" value={form.poNumber || ""} onChange={(v) => setForm({ ...form, poNumber: v })} />
+              <Input label="Truck/Unit #" value={form.truckUnit || ""} onChange={(v) => setForm({ ...form, truckUnit: v })} />
 
-              <div className="grid grid-cols-2 gap-3">
-                <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
-                <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={["New", "In Progress", "Completed", "Canceled", "Dry Run"]} />
-                <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={["Pending", "Sent", "Paid", "Need Review"]} />
-                <Select label="Payment Method" value={form.paymentMethod} onChange={(v) => setForm({ ...form, paymentMethod: v })} options={paymentMethods} />
-                <Select label="Received" value={form.paymentReceiver} onChange={(v) => setForm({ ...form, paymentReceiver: v })} options={paymentReceivers} />
-              </div>
-
-              <label className="space-y-1 text-sm font-medium">
-                Updates
+              <label className="space-y-1 text-sm font-medium md:col-span-2 2xl:col-span-3">
+                Updates / Notes
                 <textarea
                   className="min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
                   placeholder="Example: Driver called. Tech ETA 35 minutes..."
@@ -1124,19 +1164,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-3">
-                <Input label="Total Bill" type="number" value={form.totalBill} onChange={(v) => setForm({ ...form, totalBill: v })} />
-                <Input label="Parts" type="number" value={form.parts} onChange={(v) => setForm({ ...form, parts: v })} />
-                <Input label="Tech Labor" type="number" value={form.techLabor} onChange={(v) => setForm({ ...form, techLabor: v })} />
-              </div>
+              <Input label="Total Bill" type="number" value={form.totalBill} onChange={(v) => setForm({ ...form, totalBill: v })} />
+              <Input label="Parts" type="number" value={form.parts} onChange={(v) => setForm({ ...form, parts: v })} />
+              <Input label="Tech Labor" type="number" value={form.techLabor} onChange={(v) => setForm({ ...form, techLabor: v })} />
 
-              <button
-                type="submit"
-                className="mt-2 rounded-2xl bg-slate-950 px-4 py-3 font-semibold text-white shadow-sm transition hover:bg-slate-800"
-              >
-                Add Job to Live Board
-              </button>
-              <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 md:col-span-2 2xl:col-span-3">
                 <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
                   Filter by period / date range
                 </div>
@@ -1171,37 +1203,64 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap justify-end gap-2 md:col-span-2 2xl:col-span-3">
                 <button
                   type="button"
-                  onClick={() => exportJobsToCSV(filteredJobs)}
-                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 flex items-center gap-2"
+                  onClick={() => setForm(emptyForm())}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50"
                 >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Export Excel
+                  Clear
                 </button>
-
                 <button
-                  type="button"
-                  onClick={() => exportJobsToPDF(filteredJobs, isAdmin)}
-                  className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 flex items-center gap-2"
+                  type="submit"
+                  className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700"
                 >
-                  <FileText className="h-4 w-4" />
-                  Export PDF
+                  Save Job
                 </button>
               </div>
             </div>
           </form>
 
-          <div id="live-jobs-table" className="rounded-3xl bg-white p-5 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <h2 className="text-xl font-bold">Live Jobs Ordered Oldest to Newest</h2>
+          <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-slate-950">Live Jobs</h2>
+                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Ordered oldest to newest</p>
+              </div>
 
-              <div className="flex flex-wrap gap-3">
-                <div className="relative">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => exportJobsToCSV(filteredJobs)}
+                  className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                >
+                  <FileSpreadsheet className="h-4 w-4" />
+                  Export Excel
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  <Columns3 className="h-4 w-4" />
+                  Columns
+                </button>
+                <button
+                  type="button"
+                  onClick={loadJobs}
+                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="mb-4 w-full max-w-none overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="grid w-full min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_150px_170px_170px_160px_160px] xl:items-center">
+                <div className="relative min-w-0">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <input
-                    className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-slate-500 md:w-64"
+                    className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-slate-500"
                     placeholder="Search job, city, tech..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -1209,18 +1268,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </div>
 
                 <select
-                  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                >
-                  <option>All</option>
-                  {dates.map((date) => (
-                    <option key={date}>{date}</option>
-                  ))}
-                </select>
-
-                <select
-                  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
@@ -1230,28 +1278,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </select>
 
                 <select
-                  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
-                  value={invoiceFilter}
-                  onChange={(e) => setInvoiceFilter(e.target.value)}
-                >
-                  {["All", "Pending", "Sent", "Paid", "Need Review"].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-
-                <select
-                  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
-                  value={cityFilter}
-                  onChange={(e) => setCityFilter(e.target.value)}
-                >
-                  <option>All</option>
-                  {cities.map((city) => (
-                    <option key={city}>{city}</option>
-                  ))}
-                </select>
-
-                <select
-                  className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
                   value={dispatchFilter}
                   onChange={(e) => setDispatchFilter(e.target.value)}
                 >
@@ -1260,11 +1287,62 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <option key={dispatch}>{dispatch}</option>
                   ))}
                 </select>
+
+                <select
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+                  value={techFilter}
+                  onChange={(e) => setTechFilter(e.target.value)}
+                >
+                  <option>All</option>
+                  {techs.map((tech) => (
+                    <option key={tech}>{tech}</option>
+                  ))}
+                </select>
+
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                />
+
+                <input
+                  type="date"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                />
+              </div>
+
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  className="whitespace-nowrap rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                >
+                  Filter
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setStatusFilter("All");
+                    setDispatchFilter("All");
+                    setTechFilter("All");
+                    setFromDate("");
+                    setToDate("");
+                    setInvoiceFilter("All");
+                    setPeriodFilter("All");
+                  }}
+                  className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  Reset
+                </button>
               </div>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="w-full min-w-[1600px] lg:min-w-full border-collapse text-left text-sm">
+            <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-slate-200">
+              <table className="min-w-[1600px] table-auto border-collapse whitespace-nowrap text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <Th>#</Th>
@@ -1511,8 +1589,30 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                           >
                             Match
                           </button>
-                          <button type="button" title="Auto Saved" className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
-                            <Save className="h-4 w-4" />
+                          <button
+                            type="button"
+                            title="Edit inline"
+                            className="rounded-xl bg-slate-100 p-2 text-slate-700 hover:bg-slate-200"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            title="View job"
+                            onClick={() => {
+                              alert(
+                                [
+                                  `Invoice: ${job.reference || "N/A"}`,
+                                  `Company: ${job.company || "N/A"}`,
+                                  `Tech: ${job.tech || "N/A"}`,
+                                  `Location: ${job.location || "N/A"}`,
+                                  `Status: ${job.status || "N/A"}`,
+                                ].join("\n")
+                              );
+                            }}
+                            className="rounded-xl bg-emerald-100 p-2 text-emerald-700 hover:bg-emerald-200"
+                          >
+                            <Eye className="h-4 w-4" />
                           </button>
 
                           <button
@@ -1704,10 +1804,10 @@ function MoneyInput({ value, onChange, className = "" }) {
 
 function AssignmentPanel({ job, technicians, filters, onFiltersChange, supportsAssignment, onAssign, onClear }) {
   return (
-    <aside className="rounded-3xl bg-white p-5 shadow-sm">
+    <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold">Assign Technician</h2>
+          <h2 className="text-xl font-bold text-slate-950">Assign Technician</h2>
           <p className="mt-1 text-xs text-slate-500">
             {job?.id ? `Selected job ${job.reference || job.id}` : "Approved technicians from Technician Center"}
           </p>
@@ -1757,7 +1857,7 @@ function AssignmentPanel({ job, technicians, filters, onFiltersChange, supportsA
           </div>
         ) : (
           technicians.map((technician) => (
-            <div key={technician.id} className="rounded-2xl border border-slate-200 p-4">
+            <div key={technician.id} className="rounded-xl border border-slate-200 p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-sm font-bold text-slate-600">
                   {technician.profilePhotoUrl ? (
@@ -1783,9 +1883,9 @@ function AssignmentPanel({ job, technicians, filters, onFiltersChange, supportsA
               <button
                 type="button"
                 onClick={() => onAssign(job, technician)}
-                className="mt-3 w-full rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800"
+                className="mt-3 w-full rounded-xl bg-blue-600 px-3 py-2 text-sm font-bold text-white hover:bg-blue-700"
               >
-                Assign
+                Assign Technician
               </button>
             </div>
           ))
@@ -1843,9 +1943,9 @@ function formatServices(services) {
 }
 
 function Th({ children }) {
-  return <th className="px-4 py-3 font-bold">{children}</th>;
+  return <th className="whitespace-nowrap px-4 py-3 font-bold">{children}</th>;
 }
 
 function Td({ children, className = "" }) {
-  return <td className={`px-4 py-3 ${className}`}>{children}</td>;
+  return <td className={`whitespace-nowrap px-4 py-3 align-top ${className}`}>{children}</td>;
 }
