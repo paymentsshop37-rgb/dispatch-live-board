@@ -21,15 +21,17 @@ import { BillingDashboard } from "./modules/billing";
 import { CustomerCRM } from "./modules/customers";
 import { ExecutiveDashboard } from "./modules/executive";
 import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
+import { UserManagement } from "./modules/users";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 
 const sidebarItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
   { id: "dispatch", label: "Dispatch Center", icon: ClipboardList },
   { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
-  { id: "customers", label: "Customers", icon: Building2, requires: "canViewCustomers" },
+  { id: "customers", label: "Customers", icon: Building2, adminOnly: true },
   { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
+  { id: "users", label: "Users", icon: Users, adminOnly: true },
   { id: "reports", label: "Reports", icon: BarChart3, adminOnly: true },
   { id: "settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
@@ -38,10 +40,10 @@ const sidebarSections = [
   {
     label: "Dispatch",
     items: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, adminOnly: true },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
       { id: "dispatch", label: "Dispatch Board", icon: ClipboardList },
       { id: "technicians-quick", label: "Technicians", icon: Users, target: "technicians", requires: "canViewTechnicianCenter" },
-      { id: "customers", label: "Customers", icon: Building2, requires: "canViewCustomers" },
+      { id: "customers", label: "Customers", icon: Building2, adminOnly: true },
       { id: "reports", label: "Reports", icon: BarChart3, target: "dashboard", adminOnly: true },
     ],
   },
@@ -57,6 +59,7 @@ const sidebarSections = [
     label: "Administration",
     items: [
       { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
+      { id: "users", label: "Users", icon: Users, adminOnly: true },
       { id: "settings", label: "Settings", icon: Settings, target: "administration", adminOnly: true },
     ],
   },
@@ -83,22 +86,34 @@ export default function App() {
     };
   }, []);
 
-  const permissions = useMemo(() => getPermissions(session.role), [session.role]);
-  const role = normalizeRole(session.role);
+  const role = normalizeRole(session.role) || "dispatcher";
+  const permissions = useMemo(() => getPermissions(role), [role]);
   const isAdmin = role === "admin";
+  const visibleSidebarSections = useMemo(
+    () =>
+      sidebarSections
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) => canShowSidebarItem(item, role, permissions)),
+        }))
+        .filter((section) => section.items.length > 0),
+    [role, permissions]
+  );
 
   const visibleItems = sidebarItems.filter((item) => {
     if (item.adminOnly) return isAdmin;
+    if (item.roles) return item.roles.includes(role);
     if (item.requires) return Boolean(permissions[item.requires]);
     if (item.id === "dispatch") return true;
     return true;
   });
+  const canAccessActiveView = canAccessView(activeView, role, permissions);
 
   useEffect(() => {
-    if (!visibleItems.some((item) => item.id === activeView)) {
+    if (!role && !visibleItems.some((item) => item.id === activeView)) {
       setActiveView("dispatch");
     }
-  }, [activeView, visibleItems]);
+  }, [activeView, role, visibleItems]);
 
   if (isPublicRegistration) {
     return <TechnicianRegistrationPortal />;
@@ -114,11 +129,11 @@ export default function App() {
           </div>
 
           <nav className="flex gap-3 overflow-x-auto lg:flex-1 lg:flex-col lg:overflow-visible">
-            {sidebarSections.map((section) => (
+            {visibleSidebarSections.map((section) => (
               <div key={section.label} className="min-w-max lg:min-w-0">
                 <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{section.label}</p>
                 <div className="flex gap-2 lg:flex-col">
-                  {section.items.filter((item) => canShowSidebarItem(item, isAdmin, permissions)).map((item) => {
+                  {section.items.map((item) => {
                     const Icon = item.icon;
                     const target = item.target || item.id;
                     const isActive = activeView === target;
@@ -144,6 +159,7 @@ export default function App() {
             ))}
           </nav>
 
+          {isAdmin && (
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-400">System Status</p>
             <div className="grid gap-2 text-xs font-semibold text-slate-200">
@@ -161,6 +177,7 @@ export default function App() {
               </div>
             </div>
           </div>
+          )}
 
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Signed In</p>
@@ -194,34 +211,54 @@ export default function App() {
             </div>
             <div className="hidden items-center gap-3 md:flex">
               <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold capitalize text-slate-100">
-                {role === "admin" ? "Admin / Administrator" : role || "guest"}
+                <p className="leading-tight">{session.name || session.username || "Not signed in"}</p>
+                <p className="text-xs font-semibold text-slate-400">{roleLabel(role)}</p>
               </div>
             </div>
           </div>
         </div>
 
-        {activeView === "dashboard" && isAdmin && <ExecutiveDashboard />}
-        {activeView === "dispatch" && <DispatchLiveUpdatesPage />}
-        {activeView === "technicians" && permissions.canViewTechnicianCenter && <TechnicianCenter />}
-        {activeView === "customers" && permissions.canViewCustomers && <CustomerCRM />}
-        {activeView === "billing" && isAdmin && <BillingDashboard />}
-        {activeView === "administration" && isAdmin && <AdministrationDashboard session={session} role={role} />}
+        {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
+        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard /> : <DispatcherDashboard />)}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage />}
+        {canAccessActiveView && activeView === "technicians" && <TechnicianCenter />}
+        {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
+        {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
+        {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
+        {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
       </main>
     </div>
   );
 }
 
-function canShowSidebarItem(item, isAdmin, permissions) {
-  if (item.adminOnly) return isAdmin;
+function canShowSidebarItem(item, role, permissions) {
+  if (item.adminOnly) return role === "admin";
+  if (item.roles) return item.roles.includes(role);
   if (item.requires) return Boolean(permissions[item.requires]);
   return true;
+}
+
+function canAccessView(view, role, permissions) {
+  if (view === "dispatch") return true;
+  if (view === "dashboard") return role === "admin" || role === "dispatcher";
+  if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
+  if (["customers", "billing", "administration", "users", "reports", "settings"].includes(view)) {
+    return role === "admin";
+  }
+  return false;
+}
+
+function roleLabel(role) {
+  if (role === "admin") return "Administrator";
+  if (role === "dispatcher") return "Dispatcher";
+  return "Access required";
 }
 
 function getSession() {
   return {
     username: localStorage.getItem("currentUser") || "",
     name: localStorage.getItem("currentUserName") || "",
-    role: localStorage.getItem("currentUserRole") || "",
+    role: localStorage.getItem("currentUserRole") || "dispatcher",
   };
 }
 
@@ -233,7 +270,50 @@ function viewTitle(view) {
     customers: "Customers",
     billing: "Billing",
     administration: "Administration",
+    users: "Users",
   };
 
   return titles[view] || "Dispatch Center";
+}
+
+function DispatcherDashboard() {
+  return (
+    <div className="min-h-screen w-full max-w-none bg-slate-100 p-4 md:p-8">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">Dispatcher Dashboard</p>
+        <h1 className="mt-1 text-3xl font-black text-slate-950">Daily Dispatch Workspace</h1>
+        <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500">
+          Use the Dispatch Board for live jobs and Technician Center for approved technician lookup.
+        </p>
+        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <DispatcherCard title="Dispatch Board" text="Create, edit, track, and assign live jobs." />
+          <DispatcherCard title="Technician Center" text="View approved technicians and dispatcher-safe technician details." />
+          <DispatcherCard title="Role Access" text="Billing, reports, customers, administration, and settings are admin-only." />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DispatcherCard({ title, text }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+      <h2 className="text-lg font-black text-slate-950">{title}</h2>
+      <p className="mt-2 text-sm font-medium text-slate-500">{text}</p>
+    </div>
+  );
+}
+
+function AccessDenied({ view }) {
+  return (
+    <div className="min-h-screen w-full max-w-none bg-slate-100 p-4 md:p-8">
+      <div className="rounded-2xl border border-red-200 bg-white p-8 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-[0.18em] text-red-600">Access Denied</p>
+        <h1 className="mt-1 text-3xl font-black text-slate-950">{view}</h1>
+        <p className="mt-2 max-w-2xl text-sm font-semibold text-slate-500">
+          Your current role does not have permission to view this module.
+        </p>
+      </div>
+    </div>
+  );
 }
