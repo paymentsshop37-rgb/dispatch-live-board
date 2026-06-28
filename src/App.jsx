@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
+import { AUTH_USERS, clearAuthSession } from "./authUsers";
 import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard } from "./modules/billing";
 import { CustomerCRM } from "./modules/customers";
@@ -69,6 +70,7 @@ export default function App() {
   const [activeView, setActiveView] = useState("dispatch");
   const [session, setSession] = useState(getSession());
   const isPublicRegistration = window.location.pathname === "/technician-registration";
+  const isAuthenticated = Boolean(session.isAuthenticated);
 
   useEffect(() => {
     function syncSession() {
@@ -85,6 +87,12 @@ export default function App() {
       window.removeEventListener("focus", syncSession);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated && !isPublicRegistration && window.location.pathname !== "/") {
+      window.history.replaceState({}, "", "/");
+    }
+  }, [isAuthenticated, isPublicRegistration]);
 
   const role = normalizeRole(session.role) || "dispatcher";
   const permissions = useMemo(() => getPermissions(role), [role]);
@@ -117,6 +125,10 @@ export default function App() {
 
   if (isPublicRegistration) {
     return <TechnicianRegistrationPortal />;
+  }
+
+  if (!isAuthenticated) {
+    return <LoginScreen />;
   }
 
   return (
@@ -194,7 +206,7 @@ export default function App() {
               <HelpCircle className="h-4 w-4" />
               Help Center
             </button>
-            <button type="button" className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white">
+            <button type="button" onClick={clearAuthSession} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white">
               <LogOut className="h-4 w-4" />
               Logout
             </button>
@@ -255,10 +267,24 @@ function roleLabel(role) {
 }
 
 function getSession() {
+  const username = localStorage.getItem("currentUser") || "";
+  const storedUser = username ? AUTH_USERS[username] : null;
+
+  if (username && !storedUser) {
+    clearAuthSession();
+    return {
+      username: "",
+      name: "",
+      role: "dispatcher",
+      isAuthenticated: false,
+    };
+  }
+
   return {
-    username: localStorage.getItem("currentUser") || "",
-    name: localStorage.getItem("currentUserName") || "",
-    role: localStorage.getItem("currentUserRole") || "dispatcher",
+    username,
+    name: storedUser?.name || localStorage.getItem("currentUserName") || "",
+    role: storedUser?.role || localStorage.getItem("currentUserRole") || "dispatcher",
+    isAuthenticated: Boolean(storedUser),
   };
 }
 
@@ -274,6 +300,56 @@ function viewTitle(view) {
   };
 
   return titles[view] || "Dispatch Center";
+}
+
+function LoginScreen() {
+  const [accessCode, setAccessCode] = useState("");
+
+  function handleLogin() {
+    const input = accessCode.trim();
+    const userFound = Object.entries(AUTH_USERS).find(
+      ([username, user]) => input === `${username}/${user.password}`
+    );
+
+    if (!userFound) {
+      alert("Invalid username or password");
+      return;
+    }
+
+    const [username, user] = userFound;
+    localStorage.setItem("currentUser", username);
+    localStorage.setItem("currentUserName", user.name);
+    localStorage.setItem("currentUserRole", user.role);
+    window.dispatchEvent(new Event("nttr-auth-changed"));
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
+        <h1 className="text-3xl font-bold text-slate-900">Dispatch Live Access</h1>
+        <p className="mt-2 text-sm text-slate-500">Enter your access code to continue.</p>
+
+        <input
+          type="password"
+          className="mt-6 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-slate-900"
+          placeholder="Access code"
+          value={accessCode}
+          onChange={(event) => setAccessCode(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") handleLogin();
+          }}
+        />
+
+        <button
+          type="button"
+          onClick={handleLogin}
+          className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800"
+        >
+          Enter System
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function DispatcherDashboard() {

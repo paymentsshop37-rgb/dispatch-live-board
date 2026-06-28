@@ -35,23 +35,9 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
+import { AUTH_USERS, clearAuthSession } from "./authUsers";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
-
-const USERS = {
-  admin: { password: "Admin#2026", role: "admin", name: "Owner Admin" },
-
-  dispatcher01: { password: "Dsp#1001", role: "dispatcher", name: "Daniel" },
-  dispatcher02: { password: "Dsp#1002", role: "dispatcher", name: "Gonzalo" },
-  dispatcher03: { password: "Dsp#1003", role: "dispatcher", name: "Janeth" },
-  dispatcher04: { password: "Dsp#1004", role: "dispatcher", name: "Victor" },
-  dispatcher05: { password: "Dsp#1005", role: "dispatcher", name: "Cris" },
-  dispatcher06: { password: "Dsp#1006", role: "dispatcher", name: "Mike" },
-  dispatcher07: { password: "Dsp#1007", role: "dispatcher", name: "Dispatcher 07" },
-  dispatcher08: { password: "Dsp#1008", role: "dispatcher", name: "Dispatcher 08" },
-  dispatcher09: { password: "Dsp#1009", role: "dispatcher", name: "Dispatcher 09" },
-  dispatcher10: { password: "Dsp#1010", role: "dispatcher", name: "Dispatcher 10" }
-};
 
 const statusStyles = {
   New: "bg-blue-50 text-blue-700 border-blue-200",
@@ -354,7 +340,7 @@ export default function DispatchLiveUpdatesPage() {
   const formRef = useRef(null);
   const searchInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
-  const [accessGranted, setAccessGranted] = useState(false);
+  const [accessGranted, setAccessGranted] = useState(() => Boolean(AUTH_USERS[localStorage.getItem("currentUser") || ""]));
   const [accessCode, setAccessCode] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState(
     localStorage.getItem("currentUserRole") || null
@@ -409,7 +395,7 @@ export default function DispatchLiveUpdatesPage() {
   function handleLogin() {
   const input = accessCode.trim();
 
-  const userFound = Object.entries(USERS).find(
+  const userFound = Object.entries(AUTH_USERS).find(
     ([username, user]) => input === `${username}/${user.password}`
   );
 
@@ -430,6 +416,8 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
 }
 
   useEffect(() => {
+    if (!accessGranted) return undefined;
+
     loadJobs();
     loadDispatchTechnicians();
     checkJobAssignmentSupport();
@@ -468,9 +456,11 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [accessGranted]);
 
   useEffect(() => {
+    if (!accessGranted) return undefined;
+
     const channel = supabase
       .channel("live-dispatch-technicians")
       .on("postgres_changes", { event: "*", schema: "public", table: "technicians" }, () => {
@@ -481,9 +471,11 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [accessGranted]);
 
   useEffect(() => {
+    if (!accessGranted) return undefined;
+
     function handleKeyboard(event) {
       const targetTag = event.target?.tagName?.toLowerCase();
       const isTyping = ["input", "textarea", "select"].includes(targetTag);
@@ -528,7 +520,7 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
       window.removeEventListener("keydown", handleKeyboard);
       window.removeEventListener("click", closeContextMenu);
     };
-  }, []);
+  }, [accessGranted]);
 
   async function loadDispatchTechnicians() {
     try {
@@ -1410,10 +1402,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 setAccessCode("");
                 setCurrentUserRole(null);
                 setCurrentUserName("");
-                localStorage.removeItem("currentUser");
-                localStorage.removeItem("currentUserName");
-                localStorage.removeItem("currentUserRole");
-                window.dispatchEvent(new Event("nttr-auth-changed"));
+                clearAuthSession();
               }}
               className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-100"
             >
