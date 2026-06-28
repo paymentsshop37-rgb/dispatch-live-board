@@ -32,6 +32,7 @@ import {
   createInvitation,
   inviteMessage,
   loadInvitations,
+  registrationLink as buildRegistrationLink,
   registrationLinkForInvite,
 } from "./technicianInvitationService";
 import { getPermissions } from "../permissions";
@@ -76,7 +77,7 @@ export default function TechnicianCenter() {
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
   const knownColumns = useMemo(() => getKnownColumns(technicians), [technicians]);
-  const registrationLink = `${window.location.origin}/technician-registration`;
+  const registrationLink = buildRegistrationLink();
 
   async function refreshTechnicians() {
     setLoading(true);

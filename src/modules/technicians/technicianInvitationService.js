@@ -1,5 +1,18 @@
 import { supabase } from "../../lib/supabase";
 
+export const PRODUCTION_REGISTRATION_BASE_URL = "https://roadservicelive.com";
+
+export function registrationBaseUrl() {
+  const origin = window.location.origin;
+  return origin.includes("localhost") || origin.includes("127.0.0.1")
+    ? PRODUCTION_REGISTRATION_BASE_URL
+    : PRODUCTION_REGISTRATION_BASE_URL;
+}
+
+export function registrationLink() {
+  return `${registrationBaseUrl()}/technician-registration`;
+}
+
 export function generateInviteCode() {
   const randomValues = new Uint8Array(4);
   window.crypto.getRandomValues(randomValues);
@@ -10,7 +23,7 @@ export function generateInviteCode() {
 }
 
 export function registrationLinkForInvite(inviteCode) {
-  return `${window.location.origin}/technician-registration?invite=${encodeURIComponent(inviteCode)}`;
+  return `${registrationBaseUrl()}/technician-registration?invite=${encodeURIComponent(inviteCode)}`;
 }
 
 export function inviteMessage(registrationLink) {
