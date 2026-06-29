@@ -26,6 +26,7 @@ import { ExecutiveDashboard } from "./modules/executive";
 import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
 import { UserManagement } from "./modules/users";
 import { getPermissions, normalizeRole } from "./modules/permissions";
+import { supabase } from "./lib/supabase";
 
 const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
@@ -35,7 +36,7 @@ const sidebarItems = [
   { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "users", label: "Users", icon: Users, adminOnly: true },
-  { id: "activity", label: "Activity Log", icon: Activity, adminOnly: true },
+  { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher"] },
   { id: "reports", label: "Reports", icon: BarChart3, adminOnly: true },
   { id: "settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
@@ -47,6 +48,7 @@ const sidebarSections = [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
       { id: "dispatch", label: "Dispatch Board", icon: ClipboardList },
       { id: "technicians-quick", label: "Technicians", icon: Users, target: "technicians", requires: "canViewTechnicianCenter" },
+      { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher"] },
       { id: "customers", label: "Customers", icon: Building2, adminOnly: true },
       { id: "reports", label: "Reports", icon: BarChart3, target: "dashboard", adminOnly: true },
     ],
@@ -64,7 +66,6 @@ const sidebarSections = [
     items: [
       { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
       { id: "users", label: "Users", icon: Users, adminOnly: true },
-      { id: "activity", label: "Activity Log", icon: Activity, adminOnly: true },
       { id: "settings", label: "Settings", icon: Settings, target: "administration", adminOnly: true },
     ],
   },
@@ -242,7 +243,7 @@ export default function App() {
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
-        {canAccessActiveView && activeView === "activity" && <ActivityLogPage />}
+        {canAccessActiveView && activeView === "activity" && <ActivityLogPage role={role} />}
       </main>
     </div>
   );
@@ -259,7 +260,8 @@ function canAccessView(view, role, permissions) {
   if (view === "dispatch") return true;
   if (view === "dashboard") return role === "admin" || role === "dispatcher";
   if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
-  if (["customers", "billing", "administration", "users", "activity", "reports", "settings"].includes(view)) {
+  if (view === "activity") return role === "admin" || role === "dispatcher";
+  if (["customers", "billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";
   }
   return false;
@@ -374,20 +376,66 @@ function LoginScreen() {
 }
 
 function DispatcherDashboard() {
+  const [jobs, setJobs] = useState([]);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadOperationalSummary() {
+      const { data, error } = await supabase.from("jobs").select("id,status,job_date");
+      if (!mounted) return;
+      setJobs(error ? [] : data || []);
+    }
+    loadOperationalSummary();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const summary = {
+    totalJobs: jobs.length,
+    activeJobs: jobs.filter((job) => !["completed", "cancelled", "canceled", "paid"].includes(String(job.status || "").toLowerCase())).length,
+    pendingJobs: jobs.filter((job) => String(job.status || "").toLowerCase().includes("pending") || String(job.status || "").toLowerCase() === "new").length,
+    completedToday: jobs.filter((job) => String(job.status || "").toLowerCase().includes("completed") && String(job.job_date || "").slice(0, 10) === today).length,
+    cancelados: jobs.filter((job) => ["cancelled", "canceled", "cancelado"].some((status) => String(job.status || "").toLowerCase().includes(status))).length,
+    dryRuns: jobs.filter((job) => String(job.status || "").toLowerCase().includes("dry")).length,
+  };
+
   return (
     <div className="min-h-screen w-full max-w-none bg-slate-100 p-4 md:p-8">
+      <div className="space-y-6">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">Dispatcher Dashboard</p>
         <h1 className="mt-1 text-3xl font-black text-slate-950">Daily Dispatch Workspace</h1>
         <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500">
           Use the Dispatch Board for live jobs and Technician Center for approved technician lookup.
         </p>
+      </div>
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <DispatcherMetric title="Total Jobs" value={summary.totalJobs} />
+        <DispatcherMetric title="Active Jobs" value={summary.activeJobs} />
+        <DispatcherMetric title="Pending Jobs" value={summary.pendingJobs} />
+        <DispatcherMetric title="Completed Today" value={summary.completedToday} />
+        <DispatcherMetric title="Cancelados" value={summary.cancelados} />
+        <DispatcherMetric title="Dry Runs" value={summary.dryRuns} />
+      </section>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <DispatcherCard title="Dispatch Board" text="Create, edit, track, and assign live jobs." />
           <DispatcherCard title="Technician Center" text="View approved technicians and dispatcher-safe technician details." />
-          <DispatcherCard title="Role Access" text="Billing, reports, customers, administration, and settings are admin-only." />
+          <DispatcherCard title="Activity Log" text="Review operational activity without financial details." />
         </div>
       </div>
+      </div>
+    </div>
+  );
+}
+
+function DispatcherMetric({ title, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{title}</p>
+      <p className="mt-2 text-3xl font-black text-slate-950">{value}</p>
     </div>
   );
 }

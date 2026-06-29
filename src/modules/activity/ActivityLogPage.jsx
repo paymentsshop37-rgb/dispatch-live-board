@@ -14,6 +14,16 @@ import {
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "./activityLogService";
 
 const dateFilters = ["Today", "Yesterday", "Last 7 Days", "All"];
+const dispatcherActivityActions = [
+  "Job Created",
+  "Job Deleted",
+  "Technician Invited",
+  "Technician Registered",
+  "Technician Approved",
+  "Technician Deleted",
+  "Login Success",
+  "Login Failure",
+];
 
 const eventIcons = {
   "Job Created": ClipboardList,
@@ -30,7 +40,7 @@ const eventIcons = {
   "Login Failure": XCircle,
 };
 
-export default function ActivityLogPage() {
+export default function ActivityLogPage({ role = "admin" }) {
   const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -42,19 +52,20 @@ export default function ActivityLogPage() {
 
   useEffect(() => {
     loadActivity();
-  }, []);
+  }, [role]);
 
   async function loadActivity() {
     setLoading(true);
     const rows = await getRecentActivity({ limit: 500 });
-    setActivity(rows.filter((item) => SYSTEM_ACTIVITY_ACTIONS.includes(item.action)));
+    const allowedActions = role === "dispatcher" ? dispatcherActivityActions : SYSTEM_ACTIVITY_ACTIONS;
+    setActivity(rows.filter((item) => allowedActions.includes(item.action)));
     setLoading(false);
   }
 
   const options = useMemo(() => ({
     users: unique(activity.map((item) => item.created_by)),
-    actions: SYSTEM_ACTIVITY_ACTIONS.filter((action) => activity.some((item) => item.action === action)),
-  }), [activity]);
+    actions: (role === "dispatcher" ? dispatcherActivityActions : SYSTEM_ACTIVITY_ACTIONS).filter((action) => activity.some((item) => item.action === action)),
+  }), [activity, role]);
 
   const summary = useMemo(() => ({
     total: activity.length,
@@ -89,7 +100,7 @@ export default function ActivityLogPage() {
               <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">Administration</p>
               <h1 className="mt-1 text-3xl font-black text-slate-950">System Activity Log</h1>
               <p className="mt-2 text-sm font-medium text-slate-500">
-                Important NTTR business events only. Field edits and minor updates are intentionally excluded.
+                {role === "dispatcher" ? "Operational events only. Financial and user administration events are hidden." : "Important NTTR business events only. Field edits and minor updates are intentionally excluded."}
               </p>
             </div>
             <button type="button" onClick={loadActivity} className="inline-flex w-fit items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">

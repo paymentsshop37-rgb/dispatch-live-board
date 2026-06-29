@@ -1499,12 +1499,12 @@ await logActivity({
           )}
         </div>
 
-        <div className="sticky top-0 z-30 grid gap-4 rounded-xl border border-slate-200 bg-slate-100/95 p-2 backdrop-blur md:grid-cols-3 xl:grid-cols-6">
+        <div className={`sticky top-0 z-30 grid gap-4 rounded-xl border border-slate-200 bg-slate-100/95 p-2 backdrop-blur md:grid-cols-3 ${isAdmin ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
           <StatCard icon={<ClipboardList />} label="Active Jobs" value={stats.activeJobs} />
           <StatCard icon={<AlertTriangle />} label="Pending Jobs" value={stats.pendingJobs} />
           <StatCard icon={<Users />} label="Assigned Jobs" value={stats.assigned} />
           <StatCard icon={<CheckCircle2 />} label="Completed Today" value={stats.completedToday} />
-          <StatCard icon={<DollarSign />} label="Revenue Today" value={money(stats.revenueToday)} />
+          {isAdmin && <StatCard icon={<DollarSign />} label="Revenue Today" value={money(stats.revenueToday)} />}
           <StatCard icon={<Clock />} label="Average ETA" value={stats.averageEta ? `${stats.averageEta} min` : "0"} />
         </div>
 
@@ -1675,9 +1675,13 @@ await logActivity({
                 />
               </label>
 
-              <Input label="Total Bill" type="number" value={form.totalBill} onChange={(v) => setForm({ ...form, totalBill: v })} />
-              <Input label="Parts" type="number" value={form.parts} onChange={(v) => setForm({ ...form, parts: v })} />
-              <Input label="Tech Labor" type="number" value={form.techLabor} onChange={(v) => setForm({ ...form, techLabor: v })} />
+              {isAdmin && (
+                <>
+                  <Input label="Total Bill" type="number" value={form.totalBill} onChange={(v) => setForm({ ...form, totalBill: v })} />
+                  <Input label="Parts" type="number" value={form.parts} onChange={(v) => setForm({ ...form, parts: v })} />
+                  <Input label="Tech Labor" type="number" value={form.techLabor} onChange={(v) => setForm({ ...form, techLabor: v })} />
+                </>
+              )}
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 md:col-span-2 2xl:col-span-3">
                 <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -1770,6 +1774,7 @@ await logActivity({
               activityLogs={activityLogs}
               changeLogs={changeLogs}
               filters={assignmentFilters}
+              isAdmin={isAdmin}
               onSelectJob={setAssignmentJob}
               onFiltersChange={setAssignmentFilters}
               onAssign={assignRecommendedTechnician}
@@ -1797,14 +1802,16 @@ await logActivity({
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => exportJobsToCSV(filteredJobs)}
-                  className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
-                >
-                  <FileSpreadsheet className="h-4 w-4" />
-                  Export Excel
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => exportJobsToCSV(filteredJobs)}
+                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export Excel
+                  </button>
+                )}
                 <button
                   type="button"
                   className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
@@ -1927,9 +1934,9 @@ await logActivity({
                     <Th>Payment</Th>
                     <Th>Received</Th>
                     <Th>Updates</Th>
-                    <Th>Total Bill</Th>
-                    <Th>Parts</Th>
-                    <Th>Tech Labor</Th>
+                    {isAdmin && <Th>Total Bill</Th>}
+                    {isAdmin && <Th>Parts</Th>}
+                    {isAdmin && <Th>Tech Labor</Th>}
                     <Th>Tech Payment</Th>
                     {isAdmin && <Th>Profit</Th>}
                     <Th>Photo</Th>
@@ -2063,54 +2070,64 @@ await logActivity({
                         />
                       </Td>
 
-                      <Td>
-                        <input
-                          type="number"
-                          className="w-24 rounded-lg border border-slate-200 px-2 py-1 font-bold outline-none focus:border-slate-500"
-                          defaultValue={job.totalBill}
-                          onBlur={(e) => updateJob(job.id, "totalBill", Number(e.target.value || 0))}
-                        />
-                      </Td>
+                      {isAdmin && (
+                        <Td>
+                          <input
+                            type="number"
+                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 font-bold outline-none focus:border-slate-500"
+                            defaultValue={job.totalBill}
+                            onBlur={(e) => updateJob(job.id, "totalBill", Number(e.target.value || 0))}
+                          />
+                        </Td>
+                      )}
 
-                      <Td>
-                        <input
-                          type="number"
-                          className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
-                          defaultValue={job.parts}
-                          onBlur={(e) => updateJob(job.id, "parts", Number(e.target.value || 0))}
-                        />
-                      </Td>
+                      {isAdmin && (
+                        <Td>
+                          <input
+                            type="number"
+                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+                            defaultValue={job.parts}
+                            onBlur={(e) => updateJob(job.id, "parts", Number(e.target.value || 0))}
+                          />
+                        </Td>
+                      )}
 
-                      <Td>
-                        <input
-                          type="number"
-                          className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
-                          defaultValue={job.techLabor}
-                          onBlur={(e) => updateJob(job.id, "techLabor", Number(e.target.value || 0))}
-                        />
-                      </Td>
+                      {isAdmin && (
+                        <Td>
+                          <input
+                            type="number"
+                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+                            defaultValue={job.techLabor}
+                            onBlur={(e) => updateJob(job.id, "techLabor", Number(e.target.value || 0))}
+                          />
+                        </Td>
+                      )}
 
                       <Td>
                         <div className="grid gap-2">
                           <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${techPaymentStatusStyles[job.techPaymentStatus] || techPaymentStatusStyles.Pending}`}>
                             {job.techPaymentStatus || "Pending"}
                           </span>
-                          <select
-                            className="w-36 rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold outline-none focus:border-slate-500"
-                            value={job.techPaymentStatus || "Pending"}
-                            onChange={(e) => updateTechPaymentStatus(job, e.target.value)}
-                          >
-                            {techPaymentStatusOptions.map((status) => (
-                              <option key={status}>{status}</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => setTechPaymentJob(job)}
-                            className="w-fit rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
-                          >
-                            Tech Payment
-                          </button>
+                          {isAdmin && (
+                            <>
+                              <select
+                                className="w-36 rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold outline-none focus:border-slate-500"
+                                value={job.techPaymentStatus || "Pending"}
+                                onChange={(e) => updateTechPaymentStatus(job, e.target.value)}
+                              >
+                                {techPaymentStatusOptions.map((status) => (
+                                  <option key={status}>{status}</option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => setTechPaymentJob(job)}
+                                className="w-fit rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                              >
+                                Tech Payment
+                              </button>
+                            </>
+                          )}
                         </div>
                       </Td>
 
@@ -2272,7 +2289,7 @@ await logActivity({
               </div>
             )}
 
-            {techPaymentJob && (
+            {isAdmin && techPaymentJob && (
               <TechPaymentModal
                 job={techPaymentJob}
                 columnsAvailable={Boolean(techPaymentColumns.status)}
@@ -2331,6 +2348,7 @@ function DispatchCockpit({
   activityLogs,
   changeLogs,
   filters,
+  isAdmin,
   onSelectJob,
   onFiltersChange,
   onAssign,
@@ -2458,12 +2476,14 @@ function DispatchCockpit({
               <CockpitDetail label="Technician" value={selected.tech} />
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-4">
-              <FinancialCard label="Total Bill" value={money(selected.totalBill)} />
-              <FinancialCard label="Parts" value={money(selected.parts)} />
-              <FinancialCard label="Tech Labor" value={money(selected.techLabor)} />
-              <FinancialCard label="Profit" value={money(Number(selected.totalBill || 0) - Number(selected.parts || 0) - Number(selected.techLabor || 0))} accent />
-            </div>
+            {isAdmin && (
+              <div className="mt-4 grid gap-3 md:grid-cols-4">
+                <FinancialCard label="Total Bill" value={money(selected.totalBill)} />
+                <FinancialCard label="Parts" value={money(selected.parts)} />
+                <FinancialCard label="Tech Labor" value={money(selected.techLabor)} />
+                <FinancialCard label="Profit" value={money(Number(selected.totalBill || 0) - Number(selected.parts || 0) - Number(selected.techLabor || 0))} accent />
+              </div>
+            )}
 
             <div className="mt-4 rounded-xl bg-slate-50 p-4">
               <div className="flex items-center justify-between">
@@ -3153,7 +3173,6 @@ function formatJobForClipboard(job) {
     `Status: ${job.status || ""}`,
     `Dispatch: ${job.dispatch || ""}`,
     `Tech: ${job.tech || ""}`,
-    `Total: ${money(job.totalBill)}`,
     `Updates: ${job.updates || ""}`,
   ].join("\n");
 }
