@@ -22,13 +22,12 @@ import {
 } from "lucide-react";
 import {
   createTechnician,
-  deleteTechnician,
   getKnownColumns,
   loadTechnicians,
-  markTechnicianInvitationsDeleted,
   subscribeToTechnicians,
   updateTechnician,
 } from "./technicianService";
+import { supabase } from "../../lib/supabase";
 import {
   createInvitation,
   cancelInvitation,
@@ -265,7 +264,12 @@ export default function TechnicianCenter() {
   }
 
   function requestDeleteTechnician(technician) {
-    if (technician.status !== "Pending") {
+    if (!canApproveTechnicians) {
+      setError("Only administrators can delete technicians.");
+      return;
+    }
+
+    if (String(technician.status || "").toLowerCase() !== "pending") {
       setError("Only Pending technicians can be deleted.");
       return;
     }
@@ -275,19 +279,42 @@ export default function TechnicianCenter() {
 
   async function confirmDeleteTechnician() {
     if (!technicianToDelete) return;
-    if (technicianToDelete.status !== "Pending") {
+    if (!canApproveTechnicians) {
+      setError("Only administrators can delete technicians.");
+      setTechnicianToDelete(null);
+      return;
+    }
+
+    if (String(technicianToDelete.status || "").toLowerCase() !== "pending") {
       setError("Only Pending technicians can be deleted.");
       setTechnicianToDelete(null);
       return;
     }
 
     try {
-      await markTechnicianInvitationsDeleted(technicianToDelete.id);
-      await deleteTechnician(technicianToDelete.id);
+      const { error: invitationError } = await supabase
+        .from("technician_invitations")
+        .update({ status: "Deleted" })
+        .eq("technician_id", technicianToDelete.id);
+
+      if (invitationError) {
+        console.warn("Technician invitation cleanup skipped:", invitationError);
+      }
+
+      const { error: deleteError } = await supabase
+        .from("technicians")
+        .delete()
+        .eq("id", technicianToDelete.id);
+
+      if (deleteError) {
+        throw deleteError;
+      }
+
       setTechnicians((current) => current.filter((technician) => technician.id !== technicianToDelete.id));
       setSelectedTechnician(null);
       setTechnicianToDelete(null);
-      setCopyMessage("Technician deleted successfully.");
+      setCopyMessage("Technician deleted successfully");
+      setError("");
       await logActivity({
         entityType: "technician",
         entityId: technicianToDelete.id,
@@ -297,7 +324,8 @@ export default function TechnicianCenter() {
       });
       await refreshTechnicians();
     } catch (deleteError) {
-      setError(deleteError.message || "Unable to delete technician.");
+      console.error("Delete technician failed:", deleteError);
+      setError(deleteError.message || JSON.stringify(deleteError) || "Unable to delete technician.");
     }
   }
 
@@ -1145,7 +1173,7 @@ function AdminActions({ technician, onStatus, onDelete }) {
           Mark Missing Documents
         </button>
       )}
-      {technician.status === "Pending" && (
+      {String(technician.status || "").toLowerCase() === "pending" && (
         <button
           type="button"
           onClick={onDelete}

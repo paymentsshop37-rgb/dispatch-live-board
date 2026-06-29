@@ -213,10 +213,21 @@ export async function updateTechnician(id, technician, knownColumns = DEFAULT_CO
 }
 
 export async function deleteTechnician(id) {
-  const { error } = await supabase.from("technicians").delete().eq("id", id);
+  const { data, error } = await supabase
+    .from("technicians")
+    .delete()
+    .eq("id", id)
+    .select("id");
 
   if (error) {
+    console.error("Supabase technician delete error:", error);
     throw error;
+  }
+
+  if (!data || data.length === 0) {
+    const noDeleteError = new Error("No technician was deleted. Check Supabase delete permissions or row-level security policy.");
+    console.error("Supabase technician delete error:", noDeleteError);
+    throw noDeleteError;
   }
 }
 
@@ -230,21 +241,24 @@ export async function markTechnicianInvitationsDeleted(technicianId) {
     .update(withDeletedAt)
     .eq("technician_id", technicianId);
 
-  if (!error) return;
+  if (!error) return "";
 
-  if (String(error.message || "").toLowerCase().includes("deleted_at")) {
+  const errorText = `${error.message || ""} ${error.details || ""} ${error.hint || ""}`.toLowerCase();
+  if (errorText.includes("deleted_at") || errorText.includes("column")) {
     const { error: fallbackError } = await supabase
       .from("technician_invitations")
       .update(baseUpdate)
       .eq("technician_id", technicianId);
 
     if (fallbackError) {
-      throw fallbackError;
+      console.warn("Technician invitation status cleanup skipped:", fallbackError);
+      return fallbackError.message || "Invitation cleanup failed.";
     }
-    return;
+    return "";
   }
 
-  throw error;
+  console.warn("Technician invitation cleanup skipped:", error);
+  return error.message || "Invitation cleanup failed.";
 }
 
 export function getKnownColumns(technicians) {
