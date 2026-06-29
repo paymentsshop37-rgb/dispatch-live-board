@@ -235,7 +235,7 @@ export default function App() {
         </div>
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
-        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard /> : <DispatcherDashboard />)}
+        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
         {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
@@ -321,7 +321,7 @@ function LoginScreen() {
       logActivity({
         entityType: "auth",
         entityId: "login",
-        action: "Login Failed",
+        action: "Login Failure",
         description: "Invalid access code attempt",
         createdBy: "Unknown",
       });

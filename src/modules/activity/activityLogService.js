@@ -2,6 +2,32 @@ import { supabase } from "../../lib/supabase";
 
 const ACTIVITY_TABLE = "activity_log";
 
+export const SYSTEM_ACTIVITY_ACTIONS = [
+  "Job Created",
+  "Job Deleted",
+  "Technician Invited",
+  "Technician Registered",
+  "Technician Approved",
+  "Technician Deleted",
+  "User Created",
+  "User Disabled",
+  "Invoice Paid",
+  "Technician Paid",
+  "Login Success",
+  "Login Failure",
+];
+
+export const JOB_TIMELINE_ACTIONS = [
+  "Job Created",
+  "Dispatcher Updates",
+  "Technician Assigned",
+  "Status Changes",
+  "ETA Updates",
+  "Completion",
+  "Invoice Paid",
+  "Technician Paid",
+];
+
 function warnActivity(error) {
   console.warn("Activity log safe mode:", error?.message || error);
 }

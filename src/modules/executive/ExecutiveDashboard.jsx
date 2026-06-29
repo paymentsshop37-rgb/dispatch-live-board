@@ -47,7 +47,7 @@ const requiredFields = [
 
 const filterPresets = ["Today", "This Week", "This Month", "Last Month", "This Year", "Custom Date Range"];
 
-export default function ExecutiveDashboard() {
+export default function ExecutiveDashboard({ onOpenActivity }) {
   const [jobs, setJobs] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -203,6 +203,12 @@ export default function ExecutiveDashboard() {
                 <Printer className="h-4 w-4" />
                 Print Report
               </button>
+              {onOpenActivity && (
+                <button type="button" onClick={onOpenActivity} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                  <FileText className="h-4 w-4" />
+                  Activity Log
+                </button>
+              )}
             </div>
           </div>
         </section>
@@ -252,16 +258,18 @@ export default function ExecutiveDashboard() {
           <KpiCard icon={DollarSign} label="Outstanding Balance" value={money(metrics.outstandingBalance)} note="Not marked paid" tone="warning" />
         </section>
 
-        <section className="grid gap-4 xl:grid-cols-2">
-          <BarListCard title="Revenue by Day" rows={charts.revenueByDay} valueFormatter={money} loading={loading} />
-          <BarListCard title="Jobs by Status" rows={charts.jobsByStatus} loading={loading} />
-          <BarListCard title="Jobs by City" rows={charts.jobsByCity} loading={loading} />
-          <BarListCard title="Jobs by Dispatcher" rows={charts.jobsByDispatcher} loading={loading} />
-          <BarListCard title="Jobs by Technician" rows={charts.jobsByTechnician} loading={loading} />
-          <BarListCard title="Payment Method Breakdown" rows={charts.paymentMethods} loading={loading} />
-          <BarListCard title="Invoice Status Breakdown" rows={charts.invoiceStatuses} loading={loading} />
-          <BarListCard title="Top 10 Companies by Revenue" rows={charts.topCompanies} valueFormatter={money} loading={loading} />
-          <BarListCard title="Top 10 Cities by Jobs" rows={charts.topCities} loading={loading} />
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm print:hidden">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-black text-slate-950">System Activity</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-500">Open the admin timeline for important business events.</p>
+            </div>
+            {onOpenActivity && (
+              <button type="button" onClick={onOpenActivity} className="w-fit rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+                Open Activity Log
+              </button>
+            )}
+          </div>
         </section>
       </div>
     </div>

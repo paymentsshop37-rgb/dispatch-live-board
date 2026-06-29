@@ -55,7 +55,7 @@ export default function UserManagement({ currentUser }) {
     setUsers(normalizedUsers);
 
     const activityData = await getRecentActivity({ limit: 100 });
-    setActivity(activityData.filter((item) => item.entity_type === "user"));
+    setActivity(activityData.filter((item) => item.entity_type === "user" && ["User Created", "User Disabled"].includes(item.action)));
 
     setWarnings(nextWarnings);
     setLoading(false);
@@ -105,7 +105,9 @@ export default function UserManagement({ currentUser }) {
       return;
     }
 
-    await logUserActivity(user.id, action, description);
+    if (patch.status === "Inactive") {
+      await logUserActivity(user.id, "User Disabled", `Disabled user ${user.username}`);
+    }
     setUsers((current) => current.map((item) => (item.id === user.id ? { ...item, ...patch } : item)));
     await loadUsers();
   }

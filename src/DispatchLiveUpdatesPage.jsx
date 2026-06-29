@@ -246,6 +246,8 @@ function fromDbJob(row) {
   return {
     photo_url: row.photo_url || "",
     id: row.id,
+    createdAt: row.created_at || "",
+    updatedAt: row.updated_at || "",
     date: row.job_date || "",
     time: row.job_time || "",
     reference: row.invoice_number || "",
@@ -969,7 +971,7 @@ async function uploadPhoto(jobId, file) {
     }
     const activityMessage = {
       id: Date.now(),
-      message: `${currentUserName || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
+      message: buildJobActivityMessage(field, oldValue, value, currentUserName || "Dispatcher"),
       time: new Date().toLocaleString(),
     };
 
@@ -986,14 +988,15 @@ async function uploadPhoto(jobId, file) {
         month_key: new Date().toISOString().slice(0, 7),
       },
     ]);
-    await logActivity({
-      entityType: "job",
-      entityId: id,
-      action: "Job Updated",
-      description: `${currentUserName || "Dispatcher"} updated ${field} from "${oldValue}" to "${value}"`,
-      createdBy: currentUserName || "Dispatcher",
-      metadata: { field, oldValue, value },
-    });
+    if (field === "invoice" && isPaidStatus(value) && !isPaidStatus(oldValue)) {
+      await logActivity({
+        entityType: "job",
+        entityId: id,
+        action: "Invoice Paid",
+        description: `${currentUserName || "Dispatcher"} marked invoice ${oldJob?.reference || id} paid`,
+        createdBy: currentUserName || "Dispatcher",
+      });
+    }
   }
 
   async function updateTechPaymentStatus(job, value) {
@@ -1039,10 +1042,11 @@ async function uploadPhoto(jobId, file) {
 
     if (error) {
       alert("Error updating tech payment: " + error.message);
-      loadJobs();
+      await loadJobs();
       return false;
     }
 
+    const previousJob = jobs.find((job) => job.id === jobId);
     setJobs((currentJobs) =>
       currentJobs.map((job) => (job.id === jobId ? { ...job, ...details } : job))
     );
@@ -1054,6 +1058,28 @@ async function uploadPhoto(jobId, file) {
       },
       ...logs,
     ]);
+
+    await supabase.from("change_logs").insert([
+      {
+        job_id: jobId,
+        action: "tech_payment",
+        field_name: "techPaymentStatus",
+        old_value: previousJob?.techPaymentStatus || "",
+        new_value: details.techPaymentStatus || previousJob?.techPaymentStatus || "",
+        user_name: currentUserName || "Dispatcher",
+        month_key: new Date().toISOString().slice(0, 7),
+      },
+    ]);
+
+    if (isPaidStatus(details.techPaymentStatus) && !isPaidStatus(previousJob?.techPaymentStatus)) {
+      await logActivity({
+        entityType: "job",
+        entityId: jobId,
+        action: "Technician Paid",
+        description: `${currentUserName || "Dispatcher"} marked technician payment paid for job ${previousJob?.reference || jobId}`,
+        createdBy: currentUserName || "Dispatcher",
+      });
+    }
     return true;
   }
 
@@ -1170,20 +1196,17 @@ await logActivity({
         }
       }
 
-      const assignedDate = new Date(assignedAt);
-      await logActivity({
-        entityType: "job",
-        entityId: job.id,
-        action: "Job Assigned",
-        description: [
-          `Job ID: ${job.id}`,
-          `Technician: ${technician.full_name || "Technician"}`,
-          `Dispatcher: ${dispatcher}`,
-          `Date: ${assignedDate.toLocaleDateString()}`,
-          `Time: ${assignedDate.toLocaleTimeString()}`,
-        ].join(" | "),
-        createdBy: dispatcher,
-      });
+      await supabase.from("change_logs").insert([
+        {
+          job_id: job.id,
+          action: "assigned",
+          field_name: "technician",
+          old_value: previousTechnician || "",
+          new_value: technician.full_name || "Technician",
+          user_name: dispatcher,
+          month_key: new Date().toISOString().slice(0, 7),
+        },
+      ]);
 
       setJobs((currentJobs) =>
         currentJobs.map((currentJob) =>
@@ -1616,27 +1639,27 @@ await logActivity({
           <div className="rounded-3xl bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-3">
               <ClipboardList className="h-5 w-5 text-orange-700" />
-              <h2 className="text-xl font-bold">Change History / Audit Logs</h2>
+              <h2 className="text-xl font-bold">Job Timeline Feed</h2>
             </div>
 
             <div className="max-h-80 space-y-3 overflow-auto">
               {changeLogs.length === 0 ? (
-                <p className="text-sm text-slate-500">No database audit logs yet.</p>
+                <p className="text-sm text-slate-500">No job timeline events yet.</p>
               ) : (
                 changeLogs.map((log) => (
                   <div key={log.id} className="rounded-2xl border border-orange-200 bg-orange-50 p-3">
-                    <p className="font-semibold text-orange-900">{log.user_name}</p>
+                    <p className="font-semibold text-orange-900">{timelineLabelFromChangeLog(log)}</p>
                     <p className="text-sm text-orange-700">
                       {log.action} · {log.field_name}
                     </p>
-                    <p className="text-sm text-gray-700">
-                      <span className="font-semibold">Old:</span> {log.old_value}
+                    <p className="hidden">
+                      {timelineMessageFromChangeLog(log)}
                     </p>
-                    <p className="text-sm text-gray-700">
-                      <span className="font-semibold">New:</span> {log.new_value}
+                    <p className="hidden">
+                      {log.created_at ? new Date(log.created_at).toLocaleString() : "Recent"} by {log.user_name || "Dispatcher"}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
-                      {log.created_at ? new Date(log.created_at).toLocaleString() : ""}
+                      {log.created_at ? new Date(log.created_at).toLocaleString() : "Recent"} by {log.user_name || "Dispatcher"}
                     </p>
                   </div>
                 ))
@@ -2068,7 +2091,7 @@ await logActivity({
                           defaultValue={job.updates}
                           onBlur={(e) => updateJob(job.id, "updates", e.target.value)}
                         />
-                        <JobTimeline job={job} />
+                        <JobTimeline job={job} changeLogs={changeLogs} />
                       </Td>
 
                       <Td>
@@ -2323,6 +2346,7 @@ await logActivity({
               onAssign={assignRecommendedTechnician}
               onAvailabilityChange={updateTechnicianAvailability}
               onClear={() => setAssignmentJob(null)}
+              changeLogs={changeLogs}
             />
           )}
         </div>
@@ -2479,7 +2503,7 @@ function DispatchCockpit({
                 <button type="button" onClick={onOpenTable} className="text-xs font-bold text-blue-700 hover:text-blue-800">Edit</button>
               </div>
               <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{selected.updates || "No updates yet."}</p>
-              <JobTimeline job={selected} />
+              <JobTimeline job={selected} changeLogs={changeLogs} />
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -2836,7 +2860,7 @@ function MoneyInput({ value, onChange, className = "" }) {
   );
 }
 
-function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, supportsAssignment, onAssign, onAvailabilityChange, onClear }) {
+function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, supportsAssignment, onAssign, onAvailabilityChange, onClear, changeLogs = [] }) {
   return (
     <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="mb-4 flex items-start justify-between gap-3">
@@ -2885,7 +2909,7 @@ function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, sup
             <DetailLine label="Reference #" value={job.reference} />
             <DetailLine label="Notes / Updates" value={job.updates} />
           </div>
-          <JobTimeline job={job} />
+          <JobTimeline job={job} changeLogs={changeLogs} />
         </div>
       ) : (
         <div className="mb-4 rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
@@ -3254,27 +3278,61 @@ function JobPipelineMini({ status }) {
   );
 }
 
-function JobTimeline({ job }) {
-  const timeline = buildJobTimeline(job);
+function JobTimeline({ job, changeLogs = [] }) {
+  const timeline = buildJobTimeline(job, changeLogs);
 
   return (
-    <div className="mt-3 max-w-sm space-y-1 rounded-xl bg-slate-50 p-2 text-xs text-slate-600">
+    <div className="mt-3 max-w-sm rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+      <p className="mb-2 font-black uppercase tracking-wide text-slate-500">Timeline</p>
+      <div className="space-y-2">
       {timeline.map((item) => (
-        <div key={`${item.label}-${item.time}`} className="flex gap-2">
-          <span className="min-w-14 font-bold text-slate-500">{item.time}</span>
-          <span>{item.label}</span>
+        <div key={`${item.label}-${item.time}-${item.message}`} className="flex gap-2">
+          <span className="mt-0.5 text-blue-600">{item.icon}</span>
+          <div>
+            <p className="font-bold text-slate-800">{item.label}</p>
+            <p>{item.message}</p>
+            <p className="text-[11px] font-semibold text-slate-400">{item.time} by {item.user || "Dispatcher"}</p>
+          </div>
         </div>
       ))}
+      </div>
     </div>
   );
 }
 
-function buildJobTimeline(job) {
-  const createdTime = formatTimelineTime(job.time);
-  const timeline = [{ time: createdTime, label: "Job Created" }];
+function buildJobTimeline(job, changeLogs = []) {
+  const jobLogs = changeLogs
+    .filter((log) => String(log.job_id || "") === String(job?.id || ""))
+    .map((log) => ({
+      icon: timelineIconForChangeLog(log),
+      label: timelineLabelFromChangeLog(log),
+      message: timelineMessageFromChangeLog(log),
+      user: log.user_name || "Dispatcher",
+      sortTime: log.created_at || "",
+      time: formatTimelineTime(log.created_at),
+    }));
+
+  const timeline = [
+    {
+      icon: <ClipboardList className="h-4 w-4" />,
+      label: "Job Created",
+      message: `Job ${job?.reference || job?.id || ""} created`,
+      user: job?.dispatch || "Dispatcher",
+      sortTime: buildDateTime(job?.date, job?.time),
+      time: formatTimelineTime(buildDateTime(job?.date, job?.time) || job?.time),
+    },
+    ...jobLogs,
+  ];
 
   if (job.assignedAt) {
-    timeline.push({ time: formatTimelineTime(job.assignedAt), label: "Assigned" });
+    timeline.push({
+      icon: <Truck className="h-4 w-4" />,
+      time: formatTimelineTime(job.assignedAt),
+      sortTime: job.assignedAt,
+      label: "Technician Assigned",
+      message: `${job.tech || "Technician"} assigned`,
+      user: job.assignedBy || "Dispatcher",
+    });
   }
 
   const updateLines = String(job.updates || "")
@@ -3284,14 +3342,138 @@ function buildJobTimeline(job) {
 
   updateLines.forEach((line) => {
     const [time, ...rest] = line.split(" ");
-    timeline.push({ time, label: rest.join(" ") || "Status Updated" });
+    timeline.push({
+      icon: <Edit3 className="h-4 w-4" />,
+      time,
+      sortTime: buildDateTime(job?.date, time),
+      label: /eta/i.test(line) ? "ETA Updates" : "Dispatcher Updates",
+      message: rest.join(" ") || "Dispatcher update",
+      user: "Dispatcher",
+    });
   });
 
-  if (timeline.length === 1 && job.status && job.status !== "New") {
-    timeline.push({ time: "Live", label: job.status });
+  if (job.status && job.status !== "New") {
+    timeline.push({
+      icon: <CheckCircle2 className="h-4 w-4" />,
+      time: "Live",
+      sortTime: job.updatedAt || "",
+      label: normalizedStatus(job.status) === "completed" ? "Completion" : "Status Changes",
+      message: `Status is ${job.status}`,
+      user: "Dispatcher",
+    });
   }
 
-  return timeline.slice(-8);
+  if (isPaidStatus(job.invoice)) {
+    timeline.push({
+      icon: <DollarSign className="h-4 w-4" />,
+      time: "Live",
+      sortTime: job.updatedAt || "",
+      label: "Invoice Paid",
+      message: `Invoice ${job.reference || job.id || ""} marked paid`,
+      user: "Dispatcher",
+    });
+  }
+
+  if (isPaidStatus(job.techPaymentStatus)) {
+    timeline.push({
+      icon: <DollarSign className="h-4 w-4" />,
+      time: formatTimelineTime(job.techPaidDate || ""),
+      sortTime: job.techPaidDate || "",
+      label: "Technician Paid",
+      message: `${job.tech || "Technician"} payment marked paid`,
+      user: "Dispatcher",
+    });
+  }
+
+  return dedupeTimeline(timeline)
+    .sort((a, b) => timelineSortValue(a.sortTime) - timelineSortValue(b.sortTime))
+    .slice(-10);
+}
+
+function timelineLabelFromChangeLog(log) {
+  const action = String(log?.action || "").toLowerCase();
+  const field = String(log?.field_name || "").toLowerCase();
+  if (action === "created") return "Job Created";
+  if (action === "assigned" || field.includes("technician")) return "Technician Assigned";
+  if (action === "tech_payment" || field.includes("techpayment")) return "Technician Paid";
+  if (field.includes("status")) return normalizedStatus(log?.new_value) === "completed" ? "Completion" : "Status Changes";
+  if (field.includes("invoice")) return isPaidStatus(log?.new_value) ? "Invoice Paid" : "Dispatcher Updates";
+  if (field.includes("eta")) return "ETA Updates";
+  return "Dispatcher Updates";
+}
+
+function timelineMessageFromChangeLog(log) {
+  const label = timelineLabelFromChangeLog(log);
+  const value = String(log?.new_value || "").trim();
+  if (label === "Job Created") return value ? `Created ${value}` : "Job created";
+  if (label === "Technician Assigned") return value ? `Assigned ${value}` : "Technician assigned";
+  if (label === "Technician Paid") return value ? `Tech payment set to ${value}` : "Technician payment updated";
+  if (label === "Invoice Paid") return "Invoice marked paid";
+  if (label === "Completion") return "Job marked completed";
+  if (label === "Status Changes") return value ? `Status changed to ${value}` : "Status changed";
+  if (label === "ETA Updates") return value ? `ETA updated: ${value}` : "ETA updated";
+  return readableFieldUpdate(log);
+}
+
+function timelineIconForChangeLog(log) {
+  const label = timelineLabelFromChangeLog(log);
+  if (label === "Job Created") return <ClipboardList className="h-4 w-4" />;
+  if (label === "Technician Assigned") return <Truck className="h-4 w-4" />;
+  if (label === "Invoice Paid" || label === "Technician Paid") return <DollarSign className="h-4 w-4" />;
+  if (label === "Completion") return <CheckCircle2 className="h-4 w-4" />;
+  if (label === "ETA Updates") return <Clock className="h-4 w-4" />;
+  return <Edit3 className="h-4 w-4" />;
+}
+
+function readableFieldUpdate(log) {
+  const field = String(log?.field_name || "job").replace(/_/g, " ");
+  const value = String(log?.new_value || "").trim();
+  return value ? `${titleFromText(field)} updated` : `${titleFromText(field)} updated`;
+}
+
+function buildJobActivityMessage(field, oldValue, value, userName) {
+  if (field === "status") return `${userName} changed job status to "${value}"`;
+  if (field === "invoice") return `${userName} updated invoice status to "${value}"`;
+  if (String(field).toLowerCase().includes("eta")) return `${userName} updated ETA`;
+  return `${userName} updated ${titleFromText(field)}`;
+}
+
+function isPaidStatus(value) {
+  return String(value || "").trim().toLowerCase() === "paid";
+}
+
+function normalizedStatus(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function titleFromText(value) {
+  return String(value || "")
+    .replace(/([A-Z])/g, " $1")
+    .replace(/_/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function buildDateTime(date, time) {
+  if (!date && !time) return "";
+  if (date && time) return `${date}T${String(time).slice(0, 5)}`;
+  return date || time || "";
+}
+
+function timelineSortValue(value) {
+  if (!value) return Date.now();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime();
+}
+
+function dedupeTimeline(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = `${item.label}-${item.message}-${item.time}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function formatTimelineTime(value) {
