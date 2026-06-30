@@ -36,13 +36,6 @@ import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
 import { AUTH_USERS, clearAuthSession } from "./authUsers";
 import { logActivity } from "./modules/activity";
-import {
-  buildSmartAlerts,
-  filterAlerts,
-  getVisibleAlerts,
-  logNewHighSeverityAlerts,
-  summarizeAlerts,
-} from "./modules/alerts";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 
@@ -419,8 +412,6 @@ export default function DispatchLiveUpdatesPage() {
   const [activityLogs, setActivityLogs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [jobContextMenu, setJobContextMenu] = useState(null);
-  const [alertSeverityFilter, setAlertSeverityFilter] = useState("All");
-  const [alertTypeFilter, setAlertTypeFilter] = useState("All");
   const [currentUserName, setCurrentUserName] = useState(
   localStorage.getItem("currentUserName") || ""
 );
@@ -429,21 +420,6 @@ export default function DispatchLiveUpdatesPage() {
   const normalizedUserRole = normalizeRole(currentUserRole);
   const isAdmin = normalizedUserRole === "admin";
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
-  const smartAlerts = useMemo(() => {
-    const allAlerts = buildSmartAlerts(jobs, { role: normalizedUserRole });
-    return getVisibleAlerts(allAlerts, { role: normalizedUserRole });
-  }, [jobs, normalizedUserRole]);
-  const alertSummary = useMemo(() => summarizeAlerts(smartAlerts), [smartAlerts]);
-  const alertTypes = useMemo(() => ["All", ...Array.from(new Set(smartAlerts.map((alert) => alert.type))).sort()], [smartAlerts]);
-  const visibleSmartAlerts = useMemo(
-    () => filterAlerts(smartAlerts, { severity: alertSeverityFilter, type: alertTypeFilter }),
-    [smartAlerts, alertSeverityFilter, alertTypeFilter]
-  );
-
-  useEffect(() => {
-    if (!accessGranted || !smartAlerts.length) return;
-    logNewHighSeverityAlerts(smartAlerts, { createdBy: currentUserName || "Dispatcher" });
-  }, [accessGranted, smartAlerts, currentUserName]);
 
   function handleLogin() {
   const input = accessCode.trim();
@@ -467,15 +443,6 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     alert("Invalid username or password");
   }
 }
-
-  function viewAlertJob(alert) {
-    const job = jobs.find((candidate) => String(candidate.id) === String(alert.jobId)) || alert.job?.raw || null;
-    if (job) {
-      setAssignmentJob(job);
-      setDispatchViewMode("cockpit");
-      setTimeout(() => document.getElementById("dispatch-smart-alerts")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-    }
-  }
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -583,6 +550,20 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
       window.removeEventListener("click", closeContextMenu);
     };
   }, [accessGranted]);
+
+  useEffect(() => {
+    if (!accessGranted || jobs.length === 0) return;
+    const pendingJobId = localStorage.getItem("nttr-open-job-id");
+    if (!pendingJobId) return;
+
+    const job = jobs.find((candidate) => String(candidate.id) === String(pendingJobId));
+    if (job) {
+      setAssignmentJob(job);
+      setDispatchViewMode("cockpit");
+      localStorage.removeItem("nttr-open-job-id");
+      setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    }
+  }, [accessGranted, jobs]);
 
   async function loadDispatchTechnicians() {
     try {
@@ -1587,60 +1568,6 @@ await logActivity({
                   <p className="mt-1 text-xs font-semibold text-slate-500">{notification.time}</p>
                 </div>
               ))}
-            </div>
-          )}
-        </div>
-
-        <div id="dispatch-smart-alerts" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
-                <h2 className="text-xl font-black text-slate-950">Alerts</h2>
-              </div>
-              <p className="mt-1 text-sm font-semibold text-slate-500">
-                Smart operational alerts based on live dispatch jobs.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-4 gap-2 text-center">
-              <DispatchAlertCount label="Total" value={alertSummary.total} tone="blue" />
-              <DispatchAlertCount label="High" value={alertSummary.high} tone="red" />
-              <DispatchAlertCount label="Medium" value={alertSummary.medium} tone="amber" />
-              <DispatchAlertCount label="Low" value={alertSummary.low} tone="slate" />
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-[180px_minmax(220px,1fr)]">
-            <select
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
-              value={alertSeverityFilter}
-              onChange={(event) => setAlertSeverityFilter(event.target.value)}
-            >
-              {["All", "High", "Medium", "Low"].map((option) => (
-                <option key={option}>{option}</option>
-              ))}
-            </select>
-            <select
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
-              value={alertTypeFilter}
-              onChange={(event) => setAlertTypeFilter(event.target.value)}
-            >
-              {alertTypes.map((option) => (
-                <option key={option}>{option}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="mt-4 grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
-            {visibleSmartAlerts.slice(0, 9).map((alert) => (
-              <DispatchSmartAlertItem key={alert.id} alert={alert} onViewJob={viewAlertJob} />
-            ))}
-          </div>
-
-          {visibleSmartAlerts.length === 0 && (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
-              All clear. No alerts need attention.
             </div>
           )}
         </div>
@@ -2919,66 +2846,6 @@ function JobContextMenu({ x, y, job, onAction }) {
       ))}
     </div>
   );
-}
-
-function DispatchAlertCount({ label, value, tone }) {
-  const tones = {
-    blue: "border-blue-200 bg-blue-50 text-blue-700",
-    red: "border-red-200 bg-red-50 text-red-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-700",
-    slate: "border-slate-200 bg-slate-50 text-slate-700",
-  };
-
-  return (
-    <div className={`min-w-20 rounded-2xl border px-3 py-2 ${tones[tone] || tones.blue}`}>
-      <p className="text-[10px] font-black uppercase tracking-wide">{label}</p>
-      <p className="text-xl font-black">{value}</p>
-    </div>
-  );
-}
-
-function DispatchSmartAlertItem({ alert, onViewJob }) {
-  const severityStyles = {
-    High: "border-red-200 bg-red-50 text-red-700",
-    Medium: "border-amber-200 bg-amber-50 text-amber-700",
-    Low: "border-slate-200 bg-slate-50 text-slate-700",
-  };
-
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
-          <AlertTriangle className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-sm font-black text-slate-950">{alert.title}</p>
-            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${severityStyles[alert.severity] || severityStyles.Medium}`}>
-              {alert.severity}
-            </span>
-          </div>
-          <p className="mt-1 truncate text-sm font-semibold text-slate-700">{alert.invoice || "No invoice"} · {alert.company || "No company"}</p>
-          <p className="mt-1 truncate text-xs text-slate-500">{alert.location || "No location"}</p>
-          <p className="mt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-            Last updated: {dispatchAlertDate(alert.updatedAt || alert.createdAt)}
-          </p>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={() => onViewJob(alert)}
-        className="mt-3 w-full rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700"
-      >
-        View Job
-      </button>
-    </div>
-  );
-}
-
-function dispatchAlertDate(value) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
   function StatCard({ icon, label, value, onClick }) {

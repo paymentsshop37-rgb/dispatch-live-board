@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Activity,
+  AlertTriangle,
+  Bell,
   ClipboardList,
   Cloud,
   CreditCard,
@@ -15,6 +17,7 @@ import {
   Shield,
   ShieldCheck,
   Users,
+  X,
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
 import { AUTH_USERS, clearAuthSession } from "./authUsers";
@@ -27,6 +30,12 @@ import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/techni
 import { UserManagement } from "./modules/users";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 import { supabase } from "./lib/supabase";
+import {
+  buildSmartAlerts,
+  getVisibleAlerts,
+  logNewHighSeverityAlerts,
+  summarizeAlerts,
+} from "./modules/alerts";
 
 const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
@@ -74,6 +83,8 @@ const sidebarSections = [
 export default function App() {
   const [activeView, setActiveView] = useState("dispatch");
   const [session, setSession] = useState(getSession());
+  const [alertJobs, setAlertJobs] = useState([]);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isAuthenticated = Boolean(session.isAuthenticated);
 
@@ -121,6 +132,51 @@ export default function App() {
     return true;
   });
   const canAccessActiveView = canAccessView(activeView, role, permissions);
+  const smartAlerts = useMemo(
+    () => getVisibleAlerts(buildSmartAlerts(alertJobs, { role }), { role }),
+    [alertJobs, role]
+  );
+  const alertSummary = useMemo(() => summarizeAlerts(smartAlerts), [smartAlerts]);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPublicRegistration) {
+      setAlertJobs([]);
+      return undefined;
+    }
+
+    let mounted = true;
+
+    async function loadAlertJobs() {
+      const { data, error } = await supabase.from("jobs").select("*");
+      if (!mounted) return;
+      setAlertJobs(error ? [] : data || []);
+    }
+
+    loadAlertJobs();
+
+    const channel = supabase
+      .channel("app-smart-alerts")
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, loadAlertJobs)
+      .subscribe();
+
+    return () => {
+      mounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, [isAuthenticated, isPublicRegistration]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !smartAlerts.length) return;
+    logNewHighSeverityAlerts(smartAlerts, { createdBy: session.name || session.username || "System" });
+  }, [isAuthenticated, smartAlerts, session.name, session.username]);
+
+  function openAlertJob(alert) {
+    if (alert?.jobId) {
+      localStorage.setItem("nttr-open-job-id", String(alert.jobId));
+    }
+    setAlertsOpen(false);
+    setActiveView("dispatch");
+  }
 
   useEffect(() => {
     if (!role && !visibleItems.some((item) => item.id === activeView)) {
@@ -226,14 +282,23 @@ export default function App() {
               <p className="text-xs font-bold uppercase tracking-wide text-blue-300">NTTR Command Center</p>
               <h2 className="text-2xl font-bold">{activeView === "dispatch" ? "Dispatch Cockpit" : viewTitle(activeView)}</h2>
             </div>
-            <div className="hidden items-center gap-3 md:flex">
-              <div className="rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold capitalize text-slate-100">
+            <div className="flex items-center gap-3">
+              <NotificationBell count={smartAlerts.length} onClick={() => setAlertsOpen(true)} />
+              <div className="hidden rounded-2xl bg-white/10 px-4 py-2 text-sm font-bold capitalize text-slate-100 md:block">
                 <p className="leading-tight">{session.name || session.username || "Not signed in"}</p>
                 <p className="text-xs font-semibold text-slate-400">{roleLabel(role)}</p>
               </div>
             </div>
           </div>
         </div>
+
+        <AlertsSlideOver
+          open={alertsOpen}
+          alerts={smartAlerts}
+          summary={alertSummary}
+          onClose={() => setAlertsOpen(false)}
+          onViewJob={openAlertJob}
+        />
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
@@ -373,6 +438,136 @@ function LoginScreen() {
       </div>
     </div>
   );
+}
+
+function NotificationBell({ count, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 text-slate-100 transition hover:bg-white/15"
+      title="Attention Required"
+    >
+      <Bell className="h-5 w-5" />
+      {count > 0 && (
+        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-black text-white shadow-lg">
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function AlertsSlideOver({ open, alerts, summary, onClose, onViewJob }) {
+  const grouped = {
+    High: alerts.filter((alert) => alert.severity === "High"),
+    Medium: alerts.filter((alert) => alert.severity === "Medium"),
+    Low: alerts.filter((alert) => alert.severity === "Low"),
+  };
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[90]">
+      <button type="button" aria-label="Close alerts" className="absolute inset-0 bg-slate-950/50" onClick={onClose} />
+      <aside className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl">
+        <div className="border-b border-slate-200 bg-[#0b1628] p-5 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-300">NTTR Notifications</p>
+              <h2 className="mt-1 text-2xl font-black">Attention Required</h2>
+              <p className="mt-1 text-sm font-semibold text-slate-400">
+                {summary.total} alerts · {summary.high} high · {summary.medium} medium · {summary.low} low
+              </p>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-xl bg-white/10 p-2 text-slate-100 hover:bg-white/15" title="Close">
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 space-y-6 overflow-y-auto bg-slate-50 p-5">
+          {alerts.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">
+              All clear. No alerts need attention.
+            </div>
+          ) : (
+            ["High", "Medium", "Low"].map((severity) => (
+              <AlertSeverityGroup
+                key={severity}
+                severity={severity}
+                alerts={grouped[severity]}
+                onViewJob={onViewJob}
+              />
+            ))
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function AlertSeverityGroup({ severity, alerts, onViewJob }) {
+  if (!alerts.length) return null;
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{severity}</h3>
+        <span className={alertSeverityClass(severity)}>{alerts.length}</span>
+      </div>
+      <div className="space-y-3">
+        {alerts.map((alert) => (
+          <AlertPanelItem key={alert.id} alert={alert} onViewJob={onViewJob} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AlertPanelItem({ alert, onViewJob }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-black text-slate-950">{alert.title}</p>
+            <span className={alertSeverityClass(alert.severity)}>{alert.severity}</span>
+          </div>
+          <p className="mt-1 truncate text-sm font-semibold text-slate-700">{alert.invoice || "No invoice"} · {alert.company || "No company"}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">{alert.location || "No location"}</p>
+          <p className="mt-2 text-[11px] font-black uppercase tracking-wide text-slate-400">
+            Last updated: {formatAlertDate(alert.updatedAt || alert.createdAt)}
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onViewJob(alert)}
+        className="mt-3 w-full rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700"
+      >
+        View Job
+      </button>
+    </div>
+  );
+}
+
+function alertSeverityClass(severity) {
+  const styles = {
+    High: "shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-red-700",
+    Medium: "shrink-0 rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700",
+    Low: "shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-slate-700",
+  };
+  return styles[severity] || styles.Medium;
+}
+
+function formatAlertDate(value) {
+  if (!value) return "N/A";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function DispatcherDashboard() {

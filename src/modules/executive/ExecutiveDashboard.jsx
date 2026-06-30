@@ -3,7 +3,6 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
-  Bell,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
@@ -13,7 +12,6 @@ import {
   Filter,
   MapPin,
   RefreshCw,
-  Route,
   ShieldAlert,
   TrendingDown,
   TrendingUp,
@@ -24,7 +22,6 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "../activity";
-import { buildSmartAlerts, filterAlerts, logNewHighSeverityAlerts, summarizeAlerts } from "../alerts";
 
 const columnAliases = {
   id: ["id"],
@@ -106,8 +103,6 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
   const [lastSync, setLastSync] = useState(null);
   const [filterMode, setFilterMode] = useState("This Month");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
-  const [alertSeverityFilter, setAlertSeverityFilter] = useState("All");
-  const [alertTypeFilter, setAlertTypeFilter] = useState("All");
 
   useEffect(() => {
     loadDashboard();
@@ -153,20 +148,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
   const cityRows = useMemo(() => groupJobs(filteredJobs, (job) => job.city || "Unknown").slice(0, 10), [filteredJobs]);
   const dispatcherRows = useMemo(() => buildDispatcherRows(filteredJobs), [filteredJobs]);
   const technicianRows = useMemo(() => buildTechnicianRows(filteredJobs), [filteredJobs]);
-  const activityFeed = useMemo(() => activityRows.slice(0, 10), [activityRows]);
-  const smartAlerts = useMemo(() => buildSmartAlerts(filteredJobs, { role: "admin" }), [filteredJobs]);
-  const alertSummary = useMemo(() => summarizeAlerts(smartAlerts), [smartAlerts]);
-  const alertTypes = useMemo(() => ["All", ...Array.from(new Set(smartAlerts.map((alert) => alert.type))).sort()], [smartAlerts]);
-  const visibleAlerts = useMemo(
-    () => filterAlerts(smartAlerts, { severity: alertSeverityFilter, type: alertTypeFilter }).slice(0, 8),
-    [smartAlerts, alertSeverityFilter, alertTypeFilter]
-  );
-
-  useEffect(() => {
-    if (smartAlerts.length) {
-      logNewHighSeverityAlerts(smartAlerts, { createdBy: "Executive Dashboard" });
-    }
-  }, [smartAlerts]);
+  const activityFeed = useMemo(() => activityRows.slice(0, 15), [activityRows]);
 
   function exportCsv() {
     const headers = ["Date", "Invoice #", "Company", "City", "Status", "Dispatcher", "Technician", "Payment Method", "Invoice Status", "Total Bill", "Parts", "Tech Labor", "Profit"];
@@ -226,7 +208,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
           <KpiCard title="Average ETA" value={`${analytics.averageEta} min`} detail="Operational estimate" icon={Clock} tone="cyan" trend={analytics.jobsWaitingEta} suffix="waiting ETA" />
         </section>
 
-        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_500px]">
           <main className="space-y-6">
             <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
               <Panel title="Jobs Status" subtitle="Completed, active, cancelled, pending and dry runs" icon={BarChart3}>
@@ -269,25 +251,8 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
           </main>
 
           <aside className="space-y-6">
-            <Panel title="Attention Required" subtitle="Smart operational alerts" icon={Bell}>
-              <AlertSummary summary={alertSummary} />
-              <AlertFilters
-                severity={alertSeverityFilter}
-                type={alertTypeFilter}
-                types={alertTypes}
-                onSeverity={setAlertSeverityFilter}
-                onType={setAlertTypeFilter}
-              />
-              <div className="mt-4 space-y-3">
-                {visibleAlerts.map((alert) => (
-                  <SmartAlertItem key={alert.id} alert={alert} />
-                ))}
-                {!visibleAlerts.length && <EmptyState label="All clear. No alerts need attention." />}
-              </div>
-            </Panel>
-
             <Panel title="Recent Activity" subtitle="Important events only" icon={Activity}>
-              <div className="space-y-3">
+              <div className="max-h-[820px] space-y-3 overflow-y-auto pr-1">
                 {activityFeed.map((item) => (
                   <ActivityItem key={item.id} item={item} jobs={jobs} />
                 ))}
@@ -535,109 +500,6 @@ function InvoiceTile({ item }) {
     <div className={`rounded-2xl border p-4 ${tones[item.label] || tones.Pending}`}>
       <p className="text-xs font-black uppercase tracking-wide text-slate-500">{item.label}</p>
       <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
-    </div>
-  );
-}
-
-function AlertSummary({ summary }) {
-  return (
-    <div className="grid grid-cols-2 gap-3">
-      <AlertCount label="Total" value={summary.total} tone="blue" />
-      <AlertCount label="High" value={summary.high} tone="red" />
-      <AlertCount label="Medium" value={summary.medium} tone="orange" />
-      <AlertCount label="Low" value={summary.low} tone="slate" />
-    </div>
-  );
-}
-
-function AlertCount({ label, value, tone }) {
-  const tones = {
-    blue: "border-blue-400/20 bg-blue-400/10 text-blue-200",
-    red: "border-red-400/20 bg-red-400/10 text-red-200",
-    orange: "border-orange-400/20 bg-orange-400/10 text-orange-200",
-    slate: "border-slate-400/20 bg-slate-400/10 text-slate-200",
-  };
-  return (
-    <div className={`rounded-2xl border p-3 ${tones[tone] || tones.blue}`}>
-      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-black text-white">{value}</p>
-    </div>
-  );
-}
-
-function AlertFilters({ severity, type, types, onSeverity, onType }) {
-  return (
-    <div className="mt-4 grid gap-2">
-      <select
-        className="h-10 rounded-xl border border-white/10 bg-[#111d31] px-3 text-sm font-bold text-slate-100 outline-none focus:border-blue-400"
-        value={severity}
-        onChange={(event) => onSeverity(event.target.value)}
-      >
-        {["All", "High", "Medium", "Low"].map((option) => (
-          <option key={option}>{option}</option>
-        ))}
-      </select>
-      <select
-        className="h-10 rounded-xl border border-white/10 bg-[#111d31] px-3 text-sm font-bold text-slate-100 outline-none focus:border-blue-400"
-        value={type}
-        onChange={(event) => onType(event.target.value)}
-      >
-        {types.map((option) => (
-          <option key={option}>{option}</option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function SmartAlertItem({ alert }) {
-  const severityClass = {
-    High: "border-red-400/30 bg-red-400/10 text-red-200",
-    Medium: "border-orange-400/30 bg-orange-400/10 text-orange-200",
-    Low: "border-slate-400/30 bg-slate-400/10 text-slate-200",
-  }[alert.severity] || "border-blue-400/30 bg-blue-400/10 text-blue-200";
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-300">
-          <AlertTriangle className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <p className="text-sm font-black text-white">{alert.title}</p>
-            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${severityClass}`}>{alert.severity}</span>
-          </div>
-          <p className="mt-1 text-xs font-semibold text-slate-400">{alert.invoice} · {alert.company}</p>
-          <p className="mt-1 text-xs text-slate-500">{alert.location}</p>
-          <p className="mt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Last updated: {formatDateTime(alert.updatedAt || alert.createdAt)}</p>
-        </div>
-      </div>
-      <button type="button" className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-slate-200">
-        View Job
-      </button>
-    </div>
-  );
-}
-
-function AlertRow({ icon: Icon, label, value, tone }) {
-  const tones = {
-    blue: "bg-blue-400/10 text-blue-200 border-blue-400/20",
-    green: "bg-emerald-400/10 text-emerald-200 border-emerald-400/20",
-    orange: "bg-orange-400/10 text-orange-200 border-orange-400/20",
-    red: "bg-red-400/10 text-red-200 border-red-400/20",
-    purple: "bg-violet-400/10 text-violet-200 border-violet-400/20",
-  };
-
-  return (
-    <div className={`flex items-center justify-between gap-4 rounded-2xl border p-4 ${tones[tone] || tones.blue}`}>
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="rounded-xl bg-white/10 p-2">
-          <Icon className="h-4 w-4" />
-        </div>
-        <span className="truncate text-sm font-black">{label}</span>
-      </div>
-      <span className="text-xl font-black text-white">{value}</span>
     </div>
   );
 }
@@ -1005,12 +867,6 @@ function shortTime(value) {
   if (!value) return "Now";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "Recent" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function formatDateTime(value) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function friendlyActivityTitle(action) {
