@@ -36,6 +36,13 @@ import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
 import { AUTH_USERS, clearAuthSession } from "./authUsers";
 import { logActivity } from "./modules/activity";
+import {
+  buildSmartAlerts,
+  filterAlerts,
+  getVisibleAlerts,
+  logNewHighSeverityAlerts,
+  summarizeAlerts,
+} from "./modules/alerts";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 
@@ -85,20 +92,24 @@ const invoiceStyles = {
 };
 
 const paymentMethods = ["EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire", "Pending"];
+const techPaymentMethods = ["Zelle", "ACH", "Check", "Cash", "Card", "Other"];
 const paymentReceivers = ["A", "B"];
 const jobPipeline = ["New", "Assigned", "Tech Accepted", "En Route", "On Site", "Working", "Completed", "Invoiced", "Paid"];
 const jobStatusOptions = [...jobPipeline, "Declined", "Canceled", "Dry Run"];
-const techPaymentStatusOptions = ["Pending", "Paid", "Hold", "Not Required"];
+const techPaymentStatusOptions = ["Pending", "Reviewing", "Approved", "Paid", "Hold"];
 const techPaymentStatusStyles = {
-  Paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
   Pending: "bg-yellow-100 text-yellow-800 border-yellow-200",
+  Reviewing: "bg-orange-100 text-orange-800 border-orange-200",
+  Approved: "bg-blue-100 text-blue-800 border-blue-200",
+  Paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
   Hold: "bg-red-100 text-red-800 border-red-200",
-  "Not Required": "bg-slate-100 text-slate-700 border-slate-200",
 };
 const techPaymentFieldAliases = {
   status: ["tech_payment_status", "technician_payment_status", "tech_paid_status"],
   method: ["tech_payment_method", "technician_payment_method"],
-  paidDate: ["tech_paid_date", "technician_paid_date", "tech_payment_paid_at"],
+  paidDate: ["tech_paid_date", "technician_paid_date", "tech_payment_paid_at", "paid_date"],
+  paidBy: ["tech_paid_by", "technician_paid_by", "tech_payment_paid_by", "paid_by"],
+  reference: ["tech_payment_reference", "technician_payment_reference", "tech_paid_reference"],
   notes: ["tech_payment_notes", "technician_payment_notes"],
 };
 
@@ -113,6 +124,22 @@ const fieldMap = {
   paymentReceiver: "received",
   totalBill: "total_bill",
   techLabor: "tech_labor",
+};
+
+const jobFinancialActivityActions = {
+  invoice: "Invoice Status changed",
+  paymentMethod: "Payment Method changed",
+  totalBill: "Total Bill changed",
+  parts: "Parts changed",
+  techLabor: "Tech Labor changed",
+};
+
+const jobFinancialActivityLabels = {
+  invoice: "Invoice Status",
+  paymentMethod: "Payment Method",
+  totalBill: "Total Bill",
+  parts: "Parts",
+  techLabor: "Tech Labor",
 };
 
 function money(value) {
@@ -271,6 +298,8 @@ function fromDbJob(row) {
     techPaymentStatus: readFirstColumn(row, techPaymentFieldAliases.status) || "Pending",
     techPaymentMethod: readFirstColumn(row, techPaymentFieldAliases.method) || "",
     techPaidDate: readFirstColumn(row, techPaymentFieldAliases.paidDate) || "",
+    techPaidBy: readFirstColumn(row, techPaymentFieldAliases.paidBy) || "",
+    techPaymentReference: readFirstColumn(row, techPaymentFieldAliases.reference) || "",
     techPaymentNotes: readFirstColumn(row, techPaymentFieldAliases.notes) || "",
   };
 }
@@ -356,6 +385,7 @@ export default function DispatchLiveUpdatesPage() {
   const [toDate, setToDate] = useState("");
   const [dispatchFilter, setDispatchFilter] = useState("All");
   const [techFilter, setTechFilter] = useState("All");
+  const [companyFilter, setCompanyFilter] = useState("All");
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
@@ -374,10 +404,12 @@ export default function DispatchLiveUpdatesPage() {
   const [jobsSupportsPreviousTechnician, setJobsSupportsPreviousTechnician] = useState(false);
   const [jobsSupportsReassignedCount, setJobsSupportsReassignedCount] = useState(false);
   const [techPaymentColumns, setTechPaymentColumns] = useState({
-    status: "",
-    method: "",
-    paidDate: "",
-    notes: "",
+    status: "tech_payment_status",
+    method: "tech_payment_method",
+    paidDate: "tech_paid_date",
+    paidBy: "tech_paid_by",
+    reference: "tech_payment_reference",
+    notes: "tech_payment_notes",
   });
   const [technicianAvailabilityColumn, setTechnicianAvailabilityColumn] = useState("");
   const [techniciansSupportCurrentJobId, setTechniciansSupportCurrentJobId] = useState(false);
@@ -387,12 +419,31 @@ export default function DispatchLiveUpdatesPage() {
   const [activityLogs, setActivityLogs] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [jobContextMenu, setJobContextMenu] = useState(null);
+  const [alertSeverityFilter, setAlertSeverityFilter] = useState("All");
+  const [alertTypeFilter, setAlertTypeFilter] = useState("All");
   const [currentUserName, setCurrentUserName] = useState(
   localStorage.getItem("currentUserName") || ""
 );
   
   const permissions = getPermissions(currentUserRole);
-  const isAdmin = normalizeRole(currentUserRole) === "admin";
+  const normalizedUserRole = normalizeRole(currentUserRole);
+  const isAdmin = normalizedUserRole === "admin";
+  const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
+  const smartAlerts = useMemo(() => {
+    const allAlerts = buildSmartAlerts(jobs, { role: normalizedUserRole });
+    return getVisibleAlerts(allAlerts, { role: normalizedUserRole });
+  }, [jobs, normalizedUserRole]);
+  const alertSummary = useMemo(() => summarizeAlerts(smartAlerts), [smartAlerts]);
+  const alertTypes = useMemo(() => ["All", ...Array.from(new Set(smartAlerts.map((alert) => alert.type))).sort()], [smartAlerts]);
+  const visibleSmartAlerts = useMemo(
+    () => filterAlerts(smartAlerts, { severity: alertSeverityFilter, type: alertTypeFilter }),
+    [smartAlerts, alertSeverityFilter, alertTypeFilter]
+  );
+
+  useEffect(() => {
+    if (!accessGranted || !smartAlerts.length) return;
+    logNewHighSeverityAlerts(smartAlerts, { createdBy: currentUserName || "Dispatcher" });
+  }, [accessGranted, smartAlerts, currentUserName]);
 
   function handleLogin() {
   const input = accessCode.trim();
@@ -416,6 +467,15 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     alert("Invalid username or password");
   }
 }
+
+  function viewAlertJob(alert) {
+    const job = jobs.find((candidate) => String(candidate.id) === String(alert.jobId)) || alert.job?.raw || null;
+    if (job) {
+      setAssignmentJob(job);
+      setDispatchViewMode("cockpit");
+      setTimeout(() => document.getElementById("dispatch-smart-alerts")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+    }
+  }
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -569,18 +629,22 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     setTechnicianAvailabilityColumn(!technicianAvailabilityError ? "availability" : !technicianAvailabilityStatusError ? "availability_status" : "");
     setTechniciansSupportCurrentJobId(!technicianCurrentJobIdError);
     setSupportsActivityLog(!activityLogError);
-    const [statusColumn, methodColumn, paidDateColumn, notesColumn] = await Promise.all([
+    const [statusColumn, methodColumn, paidDateColumn, paidByColumn, referenceColumn, notesColumn] = await Promise.all([
       detectJobsColumn(techPaymentFieldAliases.status),
       detectJobsColumn(techPaymentFieldAliases.method),
       detectJobsColumn(techPaymentFieldAliases.paidDate),
+      detectJobsColumn(techPaymentFieldAliases.paidBy),
+      detectJobsColumn(techPaymentFieldAliases.reference),
       detectJobsColumn(techPaymentFieldAliases.notes),
     ]);
 
     setTechPaymentColumns({
-      status: statusColumn,
-      method: methodColumn,
-      paidDate: paidDateColumn,
-      notes: notesColumn,
+      status: statusColumn || "tech_payment_status",
+      method: methodColumn || "tech_payment_method",
+      paidDate: paidDateColumn || "tech_paid_date",
+      paidBy: paidByColumn || "tech_paid_by",
+      reference: referenceColumn || "tech_payment_reference",
+      notes: notesColumn || "tech_payment_notes",
     });
   }
 
@@ -626,6 +690,7 @@ const { data: logsData } = await supabase
         const matchesCity = cityFilter === "All" || job.location === cityFilter;
         const matchesDispatch = dispatchFilter === "All" || job.dispatch === dispatchFilter;
         const matchesTech = techFilter === "All" || job.tech === techFilter;
+        const matchesCompany = companyFilter === "All" || job.company === companyFilter;
         const matchesInvoice = invoiceFilter === "All" || job.invoice === invoiceFilter;
 const today = new Date();
 const jobDate = new Date(job.date + " 00:00:00");
@@ -723,6 +788,7 @@ return (
   matchesCity &&
   matchesDispatch &&
   matchesTech &&
+  matchesCompany &&
   matchesInvoice &&
   matchesPeriod &&
   matchesDateRange
@@ -734,7 +800,7 @@ return (
 
   return dateTimeA - dateTimeB;
 });
-  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, invoiceFilter, periodFilter, fromDate, toDate]);
+  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, periodFilter, fromDate, toDate]);
 
   const dates = useMemo(
     () => [...new Set(jobs.map((job) => job.date).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b)),
@@ -753,6 +819,11 @@ return (
 
   const techs = useMemo(
     () => [...new Set(jobs.map((job) => job.tech).filter(Boolean))].sort(),
+    [jobs]
+  );
+
+  const companies = useMemo(
+    () => [...new Set(jobs.map((job) => job.company).filter(Boolean))].sort(),
     [jobs]
   );
 
@@ -987,12 +1058,13 @@ async function uploadPhoto(jobId, file) {
         month_key: new Date().toISOString().slice(0, 7),
       },
     ]);
-    if (field === "invoice" && isPaidStatus(value) && !isPaidStatus(oldValue)) {
+
+    if (jobFinancialActivityActions[field] && valueActuallyChanged(oldValue, value)) {
       await logActivity({
         entityType: "job",
         entityId: id,
-        action: "Invoice Paid",
-        description: `${currentUserName || "Dispatcher"} marked invoice ${oldJob?.reference || id} paid`,
+        action: jobFinancialActivityActions[field],
+        description: `${currentUserName || "Dispatcher"} changed ${jobFinancialActivityLabels[field]} for job ${oldJob?.reference || id}.`,
         createdBy: currentUserName || "Dispatcher",
       });
     }
@@ -1018,6 +1090,15 @@ async function uploadPhoto(jobId, file) {
       return false;
     }
 
+    const previousJob = jobs.find((job) => job.id === jobId);
+    const markedPaid = isPaidStatus(details.techPaymentStatus) && !isPaidStatus(previousJob?.techPaymentStatus);
+    const paidTimestamp = markedPaid ? new Date().toISOString() : details.techPaidDate;
+    const paidBy = markedPaid ? currentUserName || "Admin" : details.techPaidBy;
+    const nextDetails = {
+      ...details,
+      ...(markedPaid ? { techPaidDate: paidTimestamp, techPaidBy: paidBy } : {}),
+    };
+
     const update = {};
     if (techPaymentColumns.status && details.techPaymentStatus !== undefined) {
       update[techPaymentColumns.status] = details.techPaymentStatus || "Pending";
@@ -1025,8 +1106,14 @@ async function uploadPhoto(jobId, file) {
     if (techPaymentColumns.method && details.techPaymentMethod !== undefined) {
       update[techPaymentColumns.method] = details.techPaymentMethod || "";
     }
-    if (techPaymentColumns.paidDate && details.techPaidDate !== undefined) {
-      update[techPaymentColumns.paidDate] = details.techPaidDate || null;
+    if (techPaymentColumns.paidDate && (details.techPaidDate !== undefined || markedPaid)) {
+      update[techPaymentColumns.paidDate] = paidTimestamp || null;
+    }
+    if (techPaymentColumns.paidBy && (details.techPaidBy !== undefined || markedPaid)) {
+      update[techPaymentColumns.paidBy] = paidBy || "";
+    }
+    if (techPaymentColumns.reference && details.techPaymentReference !== undefined) {
+      update[techPaymentColumns.reference] = details.techPaymentReference || "";
     }
     if (techPaymentColumns.notes && details.techPaymentNotes !== undefined) {
       update[techPaymentColumns.notes] = details.techPaymentNotes || "";
@@ -1045,9 +1132,8 @@ async function uploadPhoto(jobId, file) {
       return false;
     }
 
-    const previousJob = jobs.find((job) => job.id === jobId);
     setJobs((currentJobs) =>
-      currentJobs.map((job) => (job.id === jobId ? { ...job, ...details } : job))
+      currentJobs.map((job) => (job.id === jobId ? { ...job, ...nextDetails } : job))
     );
     setActivityLogs((logs) => [
       {
@@ -1070,13 +1156,19 @@ async function uploadPhoto(jobId, file) {
       },
     ]);
 
-    if (isPaidStatus(details.techPaymentStatus) && !isPaidStatus(previousJob?.techPaymentStatus)) {
+    const statusChanged =
+      details.techPaymentStatus !== undefined &&
+      String(details.techPaymentStatus || "") !== String(previousJob?.techPaymentStatus || "");
+
+    if (statusChanged && techPaymentStatusOptions.includes(details.techPaymentStatus)) {
       await logActivity({
         entityType: "job",
         entityId: jobId,
-        action: "Technician Paid",
-        description: `${currentUserName || "Dispatcher"} marked technician payment paid for job ${previousJob?.reference || jobId}`,
-        createdBy: currentUserName || "Dispatcher",
+        action: `Tech Payment ${details.techPaymentStatus}`,
+        description: isPaidStatus(details.techPaymentStatus)
+          ? "Tech Payment marked as Paid"
+          : `Tech Payment marked as ${details.techPaymentStatus}`,
+        createdBy: currentUserName || "Admin",
       });
     }
     return true;
@@ -1499,6 +1591,60 @@ await logActivity({
           )}
         </div>
 
+        <div id="dispatch-smart-alerts" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <h2 className="text-xl font-black text-slate-950">Alerts</h2>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-slate-500">
+                Smart operational alerts based on live dispatch jobs.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <DispatchAlertCount label="Total" value={alertSummary.total} tone="blue" />
+              <DispatchAlertCount label="High" value={alertSummary.high} tone="red" />
+              <DispatchAlertCount label="Medium" value={alertSummary.medium} tone="amber" />
+              <DispatchAlertCount label="Low" value={alertSummary.low} tone="slate" />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-[180px_minmax(220px,1fr)]">
+            <select
+              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
+              value={alertSeverityFilter}
+              onChange={(event) => setAlertSeverityFilter(event.target.value)}
+            >
+              {["All", "High", "Medium", "Low"].map((option) => (
+                <option key={option}>{option}</option>
+              ))}
+            </select>
+            <select
+              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 outline-none focus:border-blue-500"
+              value={alertTypeFilter}
+              onChange={(event) => setAlertTypeFilter(event.target.value)}
+            >
+              {alertTypes.map((option) => (
+                <option key={option}>{option}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+            {visibleSmartAlerts.slice(0, 9).map((alert) => (
+              <DispatchSmartAlertItem key={alert.id} alert={alert} onViewJob={viewAlertJob} />
+            ))}
+          </div>
+
+          {visibleSmartAlerts.length === 0 && (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500">
+              All clear. No alerts need attention.
+            </div>
+          )}
+        </div>
+
         <div className={`sticky top-0 z-30 grid gap-4 rounded-xl border border-slate-200 bg-slate-100/95 p-2 backdrop-blur md:grid-cols-3 ${isAdmin ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
           <StatCard icon={<ClipboardList />} label="Active Jobs" value={stats.activeJobs} />
           <StatCard icon={<AlertTriangle />} label="Pending Jobs" value={stats.pendingJobs} />
@@ -1675,7 +1821,7 @@ await logActivity({
                 />
               </label>
 
-              {isAdmin && (
+              {canEditJobFinancial && (
                 <>
                   <Input label="Total Bill" type="number" value={form.totalBill} onChange={(v) => setForm({ ...form, totalBill: v })} />
                   <Input label="Parts" type="number" value={form.parts} onChange={(v) => setForm({ ...form, parts: v })} />
@@ -1774,7 +1920,7 @@ await logActivity({
               activityLogs={activityLogs}
               changeLogs={changeLogs}
               filters={assignmentFilters}
-              isAdmin={isAdmin}
+              canEditJobFinancial={canEditJobFinancial}
               onSelectJob={setAssignmentJob}
               onFiltersChange={setAssignmentFilters}
               onAssign={assignRecommendedTechnician}
@@ -1794,10 +1940,10 @@ await logActivity({
           )}
 
           {dispatchViewMode === "table" && (
-          <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
+          <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-5 flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
               <div>
-                <h2 className="text-xl font-bold text-slate-950">Live Jobs</h2>
+                <h2 className="text-3xl font-black tracking-tight text-slate-950">Live Jobs</h2>
                 <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Ordered oldest to newest</p>
               </div>
 
@@ -1806,7 +1952,7 @@ await logActivity({
                   <button
                     type="button"
                     onClick={() => exportJobsToCSV(filteredJobs)}
-                    className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700"
+                    className="flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
                     Export Excel
@@ -1814,7 +1960,7 @@ await logActivity({
                 )}
                 <button
                   type="button"
-                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
                 >
                   <Columns3 className="h-4 w-4" />
                   Columns
@@ -1822,7 +1968,7 @@ await logActivity({
                 <button
                   type="button"
                   onClick={loadJobs}
-                  className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                  className="flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-700"
                 >
                   <RefreshCw className="h-4 w-4" />
                   Refresh
@@ -1830,41 +1976,20 @@ await logActivity({
               </div>
             </div>
 
-            <div className="mb-4 w-full max-w-none overflow-hidden rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="grid w-full min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_150px_170px_170px_160px_160px] xl:items-center">
+            <div className="mb-4 w-full max-w-none overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <div className="grid w-full min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_160px_160px_190px_150px_150px_auto_auto] 2xl:items-center">
                 <div className="relative min-w-0">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <input
-                    className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-slate-500"
-                    placeholder="Search job, city, tech..."
+                    className="h-10 w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500"
+                    placeholder="Search jobs"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
 
                 <select
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                >
-                  {["All", ...jobStatusOptions].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-
-                <select
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
-                  value={dispatchFilter}
-                  onChange={(e) => setDispatchFilter(e.target.value)}
-                >
-                  <option>All</option>
-                  {dispatchers.map((dispatch) => (
-                    <option key={dispatch}>{dispatch}</option>
-                  ))}
-                </select>
-
-                <select
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-500"
                   value={techFilter}
                   onChange={(e) => setTechFilter(e.target.value)}
                 >
@@ -1874,25 +1999,44 @@ await logActivity({
                   ))}
                 </select>
 
+                <select
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-500"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  {["All", ...jobStatusOptions].map((s) => (
+                    <option key={s}>{s}</option>
+                  ))}
+                </select>
+
+                <select
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-500"
+                  value={companyFilter}
+                  onChange={(e) => setCompanyFilter(e.target.value)}
+                >
+                  <option>All</option>
+                  {companies.map((company) => (
+                    <option key={company}>{company}</option>
+                  ))}
+                </select>
+
                 <input
                   type="date"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                 />
 
                 <input
                   type="date"
-                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-500"
+                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                 />
-              </div>
 
-              <div className="mt-3 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
-                  className="whitespace-nowrap rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                  className="h-10 whitespace-nowrap rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
                 >
                   Filter
                 </button>
@@ -1904,21 +2048,22 @@ await logActivity({
                     setStatusFilter("All");
                     setDispatchFilter("All");
                     setTechFilter("All");
+                    setCompanyFilter("All");
                     setFromDate("");
                     setToDate("");
                     setInvoiceFilter("All");
                     setPeriodFilter("All");
                   }}
-                  className="whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  className="h-10 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100"
                 >
                   Reset
                 </button>
               </div>
             </div>
 
-            <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-[1800px] table-auto border-collapse whitespace-nowrap text-left text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table className="min-w-[1900px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-[#0b1628] text-xs uppercase tracking-wide text-slate-200">
                   <tr>
                     <Th>#</Th>
                     <Th>Flag</Th>
@@ -1934,11 +2079,11 @@ await logActivity({
                     <Th>Payment</Th>
                     <Th>Received</Th>
                     <Th>Updates</Th>
-                    {isAdmin && <Th>Total Bill</Th>}
-                    {isAdmin && <Th>Parts</Th>}
-                    {isAdmin && <Th>Tech Labor</Th>}
+                    {canEditJobFinancial && <Th>Total Bill</Th>}
+                    {canEditJobFinancial && <Th>Parts</Th>}
+                    {canEditJobFinancial && <Th>Tech Labor</Th>}
                     <Th>Tech Payment</Th>
-                    {isAdmin && <Th>Profit</Th>}
+                    {canEditJobFinancial && <Th>Profit</Th>}
                     <Th>Photo</Th>
                     <Th>Actions</Th>
                   </tr>
@@ -1949,9 +2094,9 @@ await logActivity({
                     <tr
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
-                      className={`border-t border-slate-200 align-top hover:brightness-[0.98] ${
+                      className={`align-middle transition hover:bg-blue-50/70 ${
                         job.rowFlag === "Problem" || job.status === "Dry Run"
-                          ? "bg-red-300 border-l-8 border-red-800 shadow-lg"
+                          ? "border-l-4 border-red-500 bg-red-50"
                           : rowStyles[job.rowFlag && job.rowFlag !== "Normal" ? job.rowFlag : job.status] || rowStyles.Normal
                       }`}
                     >
@@ -1963,7 +2108,7 @@ await logActivity({
 
                       <Td>
                         <select
-                          className="rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold"
+                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold outline-none focus:border-blue-500"
                           value={job.rowFlag || "Normal"}
                           onChange={(e) => updateJob(job.id, "rowFlag", e.target.value)}
                         >
@@ -1978,7 +2123,7 @@ await logActivity({
                       <Td>
                         <input
                           type="date"
-                          className="rounded-lg border p-1"
+                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-blue-500"
                           value={job.date}
                           onChange={(e) => updateJob(job.id, "date", e.target.value)}
                         />
@@ -1986,7 +2131,7 @@ await logActivity({
 
                       <Td>
                         <select
-                          className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[job.status] || ""}`}
+                          className={`h-8 rounded-full border px-3 text-xs font-bold outline-none focus:border-blue-500 ${statusStyles[job.status] || ""}`}
                           value={job.status}
                           onChange={(e) => updateJob(job.id, "status", e.target.value)}
                         >
@@ -1994,8 +2139,7 @@ await logActivity({
                             <option key={s}>{s}</option>
                           ))}
                         </select>
-                        <JobPipelineMini status={job.status} />
-                        <p className="mt-2 text-xs font-semibold text-slate-500">ETA: {job.manualEta || extractEta(job.updates) || "Manual ETA not set"}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-500">ETA: {job.manualEta || extractEta(job.updates) || "Not set"}</p>
                       </Td>
 
                       <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
@@ -2019,9 +2163,10 @@ await logActivity({
                             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.location || "")}`}
                             target="_blank"
                             rel="noreferrer"
-                            className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            title="View Map"
                           >
-                            Map
+                            <MapPin className="h-4 w-4" />
                           </a>
                         </div>
                       </Td>
@@ -2040,7 +2185,7 @@ await logActivity({
 
                       <Td>
                         <select
-                          className="rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold"
+                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold outline-none focus:border-blue-500"
                           value={job.paymentMethod || "Pending"}
                           onChange={(e) => updateJob(job.id, "paymentMethod", e.target.value)}
                         >
@@ -2052,7 +2197,7 @@ await logActivity({
 
                       <Td>
                         <select
-                          className="rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold"
+                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold outline-none focus:border-blue-500"
                           value={job.paymentReceiver || "A"}
                           onChange={(e) => updateJob(job.id, "paymentReceiver", e.target.value)}
                         >
@@ -2064,39 +2209,39 @@ await logActivity({
 
                       <Td>
                         <textarea
-                          className="min-h-20 w-72 rounded-xl border border-slate-200 p-2 outline-none focus:border-slate-500"
+                          className="h-16 max-h-16 w-72 resize-none overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs leading-5 outline-none focus:border-blue-500"
                           defaultValue={job.updates}
                           onBlur={(e) => updateJob(job.id, "updates", e.target.value)}
                         />
                       </Td>
 
-                      {isAdmin && (
+                      {canEditJobFinancial && (
                         <Td>
                           <input
                             type="number"
-                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 font-bold outline-none focus:border-slate-500"
+                            className="h-9 w-24 rounded-lg border border-slate-200 bg-white px-2 text-right font-bold outline-none focus:border-blue-500"
                             defaultValue={job.totalBill}
                             onBlur={(e) => updateJob(job.id, "totalBill", Number(e.target.value || 0))}
                           />
                         </Td>
                       )}
 
-                      {isAdmin && (
+                      {canEditJobFinancial && (
                         <Td>
                           <input
                             type="number"
-                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+                            className="h-9 w-24 rounded-lg border border-slate-200 bg-white px-2 text-right outline-none focus:border-blue-500"
                             defaultValue={job.parts}
                             onBlur={(e) => updateJob(job.id, "parts", Number(e.target.value || 0))}
                           />
                         </Td>
                       )}
 
-                      {isAdmin && (
+                      {canEditJobFinancial && (
                         <Td>
                           <input
                             type="number"
-                            className="w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+                            className="h-9 w-24 rounded-lg border border-slate-200 bg-white px-2 text-right outline-none focus:border-blue-500"
                             defaultValue={job.techLabor}
                             onBlur={(e) => updateJob(job.id, "techLabor", Number(e.target.value || 0))}
                           />
@@ -2104,34 +2249,21 @@ await logActivity({
                       )}
 
                       <Td>
-                        <div className="grid gap-2">
-                          <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${techPaymentStatusStyles[job.techPaymentStatus] || techPaymentStatusStyles.Pending}`}>
-                            {job.techPaymentStatus || "Pending"}
-                          </span>
-                          {isAdmin && (
-                            <>
-                              <select
-                                className="w-36 rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold outline-none focus:border-slate-500"
-                                value={job.techPaymentStatus || "Pending"}
-                                onChange={(e) => updateTechPaymentStatus(job, e.target.value)}
-                              >
-                                {techPaymentStatusOptions.map((status) => (
-                                  <option key={status}>{status}</option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => setTechPaymentJob(job)}
-                                className="w-fit rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700"
-                              >
-                                Tech Payment
-                              </button>
-                            </>
-                          )}
+                        <div className="flex min-h-10 items-center justify-center">
+                          <select
+                            className="h-9 w-36 rounded-xl border border-slate-200 bg-white px-2 text-center text-xs font-bold outline-none focus:border-blue-500"
+                            value={job.techPaymentStatus || "Pending"}
+                            onChange={(e) => updateTechPaymentStatus(job, e.target.value)}
+                            disabled={!canEditJobFinancial}
+                          >
+                            {techPaymentStatusOptions.map((status) => (
+                              <option key={status}>{status}</option>
+                            ))}
+                          </select>
                         </div>
                       </Td>
 
-                      {isAdmin && (
+                      {canEditJobFinancial && (
                         <Td>
                           <div
                             className={`rounded-xl px-3 py-2 text-center text-xs font-bold ${
@@ -2194,31 +2326,27 @@ await logActivity({
                       </Td>
 
                       <Td>
-                        <div className="flex gap-2">
-                          <button type="button" title="Call Customer" onClick={() => handleJobContextAction("call", job)} className="rounded-xl bg-slate-100 px-2 py-2 text-xs hover:bg-slate-200">📞</button>
-                          <button type="button" title="WhatsApp Customer" onClick={() => handleJobContextAction("whatsapp", job)} className="rounded-xl bg-emerald-100 px-2 py-2 text-xs hover:bg-emerald-200">💬</button>
-                          <button type="button" title="Open Maps" onClick={() => handleJobContextAction("maps", job)} className="rounded-xl bg-blue-100 px-2 py-2 text-xs hover:bg-blue-200">📍</button>
-                          <button type="button" title="Edit Job" onClick={() => handleJobContextAction("edit", job)} className="rounded-xl bg-slate-100 px-2 py-2 text-xs hover:bg-slate-200">✏️</button>
-                          <button type="button" title="Copy Job" onClick={() => handleJobContextAction("copy", job)} className="rounded-xl bg-slate-100 px-2 py-2 text-xs hover:bg-slate-200">📄</button>
-                          <button type="button" title="Assign Technician" onClick={() => handleJobContextAction("assign", job)} className="rounded-xl bg-indigo-100 px-2 py-2 text-xs hover:bg-indigo-200">🚚</button>
+                        <div className="flex items-center gap-1.5">
+                          <IconAction title="Call Customer" onClick={() => handleJobContextAction("call", job)} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
+                            <Phone className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="WhatsApp Customer" onClick={() => handleJobContextAction("whatsapp", job)} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200">
+                            <MessageCircle className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="Open Maps" onClick={() => handleJobContextAction("maps", job)} className="bg-blue-100 text-blue-700 hover:bg-blue-200">
+                            <MapPin className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="View / Edit" onClick={() => handleJobContextAction("edit", job)} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
+                            <Edit3 className="h-4 w-4" />
+                          </IconAction>
                           <button
                             type="button"
                             onClick={() => setAssignmentJob(job)}
-                            className="rounded-xl bg-blue-100 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-200"
+                            className="h-8 rounded-lg bg-indigo-100 px-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200"
                           >
                             Workspace
                           </button>
-                          <button
-                            type="button"
-                            title="Edit inline"
-                            className="rounded-xl bg-slate-100 p-2 text-slate-700 hover:bg-slate-200"
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            title="View job"
-                            onClick={() => {
+                          <IconAction title="View Job" onClick={() => {
                               alert(
                                 [
                                   `Invoice: ${job.reference || "N/A"}`,
@@ -2228,26 +2356,19 @@ await logActivity({
                                   `Status: ${job.status || "N/A"}`,
                                 ].join("\n")
                               );
-                            }}
-                            className="rounded-xl bg-emerald-100 p-2 text-emerald-700 hover:bg-emerald-200"
-                          >
+                            }} className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200">
                             <Eye className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => requestDelete(job)}
-                            className="rounded-xl bg-red-100 p-2 text-red-700 hover:bg-red-200"
-                          >
+                          </IconAction>
+                          <IconAction title="Delete" onClick={() => requestDelete(job)} className="bg-red-100 text-red-700 hover:bg-red-200">
                             <Trash2 className="h-4 w-4" />
-                          </button>
+                          </IconAction>
                         </div>
                       </Td>
                     </tr>
                   ))}
                   {filteredJobs.length === 0 && (
                     <tr>
-                      <td colSpan={isAdmin ? 21 : 20} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
+                      <td colSpan={canEditJobFinancial ? 21 : 17} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
                         No live jobs yet.
                       </td>
                     </tr>
@@ -2289,10 +2410,11 @@ await logActivity({
               </div>
             )}
 
-            {isAdmin && techPaymentJob && (
+            {canEditJobFinancial && techPaymentJob && (
               <TechPaymentModal
                 job={techPaymentJob}
                 columnsAvailable={Boolean(techPaymentColumns.status)}
+                columns={techPaymentColumns}
                 onClose={() => setTechPaymentJob(null)}
                 onSave={async (details) => {
                   const saved = await saveTechPaymentDetails(techPaymentJob.id, details);
@@ -2303,14 +2425,14 @@ await logActivity({
               />
             )}
 
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-              <div className="rounded-full bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
+              <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-bold text-emerald-700 shadow-sm">
                 Auto Save Enabled
               </div>
-              <div className="rounded-full bg-blue-50 px-3 py-1 font-semibold text-blue-700">
+              <div className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 font-bold text-blue-700 shadow-sm">
                 Cloud Backup Active
               </div>
-              <div className="rounded-full bg-red-50 px-3 py-1 font-semibold text-red-700">
+              <div className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 font-bold text-red-700 shadow-sm">
                 Delete Protection Confirmation
               </div>
             </div>
@@ -2348,7 +2470,7 @@ function DispatchCockpit({
   activityLogs,
   changeLogs,
   filters,
-  isAdmin,
+  canEditJobFinancial,
   onSelectJob,
   onFiltersChange,
   onAssign,
@@ -2476,7 +2598,7 @@ function DispatchCockpit({
               <CockpitDetail label="Technician" value={selected.tech} />
             </div>
 
-            {isAdmin && (
+            {canEditJobFinancial && (
               <div className="mt-4 grid gap-3 md:grid-cols-4">
                 <FinancialCard label="Total Bill" value={money(selected.totalBill)} />
                 <FinancialCard label="Parts" value={money(selected.parts)} />
@@ -2585,14 +2707,23 @@ function DispatchCockpit({
   );
 }
 
-function TechPaymentModal({ job, columnsAvailable, onClose, onSave }) {
+function TechPaymentModal({ job, columnsAvailable, columns = {}, onClose, onSave }) {
   const [details, setDetails] = useState({
     techPaymentStatus: job.techPaymentStatus || "Pending",
     techPaymentMethod: job.techPaymentMethod || job.paymentMethod || "",
     techPaidDate: job.techPaidDate || "",
+    techPaidBy: job.techPaidBy || "",
+    techPaymentReference: job.techPaymentReference || "",
     techPaymentNotes: job.techPaymentNotes || "",
   });
-  const amountOwed = Number(job.techLabor || 0);
+  const missingColumns = [
+    ["tech_payment_status", columns.status],
+    ["tech_paid_date", columns.paidDate],
+    ["tech_paid_by", columns.paidBy],
+    ["tech_payment_method", columns.method],
+    ["tech_payment_reference", columns.reference],
+    ["tech_payment_notes", columns.notes],
+  ].filter(([, available]) => !available);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -2614,13 +2745,17 @@ function TechPaymentModal({ job, columnsAvailable, onClose, onSave }) {
           </div>
         )}
 
+        {columnsAvailable && missingColumns.length > 0 && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+            Safe mode: missing optional tech payment columns: {missingColumns.map(([column]) => column).join(", ")}.
+          </div>
+        )}
+
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <PaymentDetail label="Technician name" value={job.tech || "Not assigned"} />
-          <PaymentDetail label="Job / Invoice #" value={job.reference || job.id || "N/A"} />
-          <PaymentDetail label="Total Bill" value={money(job.totalBill)} />
-          <PaymentDetail label="Parts" value={money(job.parts)} />
+          <PaymentDetail label="Invoice #" value={job.reference || job.id || "N/A"} />
+          <PaymentDetail label="Job location" value={job.location || "Not recorded"} />
           <PaymentDetail label="Tech Labor" value={money(job.techLabor)} />
-          <PaymentDetail label="Amount owed to technician" value={money(amountOwed)} highlight />
         </div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
@@ -2645,7 +2780,7 @@ function TechPaymentModal({ job, columnsAvailable, onClose, onSave }) {
               onChange={(event) => setDetails((current) => ({ ...current, techPaymentMethod: event.target.value }))}
             >
               <option value="">Not set</option>
-              {paymentMethods.map((method) => (
+              {techPaymentMethods.map((method) => (
                 <option key={method}>{method}</option>
               ))}
             </select>
@@ -2656,8 +2791,28 @@ function TechPaymentModal({ job, columnsAvailable, onClose, onSave }) {
             <input
               type="date"
               className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
-              value={details.techPaidDate || ""}
+              value={dateInputValue(details.techPaidDate)}
               onChange={(event) => setDetails((current) => ({ ...current, techPaidDate: event.target.value }))}
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-bold text-slate-600">
+            Paid By
+            <input
+              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              value={details.techPaidBy || ""}
+              onChange={(event) => setDetails((current) => ({ ...current, techPaidBy: event.target.value }))}
+              placeholder="Admin user"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm font-bold text-slate-600">
+            Reference #
+            <input
+              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              value={details.techPaymentReference || ""}
+              onChange={(event) => setDetails((current) => ({ ...current, techPaymentReference: event.target.value }))}
+              placeholder="Confirmation, check, or transaction number"
             />
           </label>
 
@@ -2764,6 +2919,66 @@ function JobContextMenu({ x, y, job, onAction }) {
       ))}
     </div>
   );
+}
+
+function DispatchAlertCount({ label, value, tone }) {
+  const tones = {
+    blue: "border-blue-200 bg-blue-50 text-blue-700",
+    red: "border-red-200 bg-red-50 text-red-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-700",
+    slate: "border-slate-200 bg-slate-50 text-slate-700",
+  };
+
+  return (
+    <div className={`min-w-20 rounded-2xl border px-3 py-2 ${tones[tone] || tones.blue}`}>
+      <p className="text-[10px] font-black uppercase tracking-wide">{label}</p>
+      <p className="text-xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function DispatchSmartAlertItem({ alert, onViewJob }) {
+  const severityStyles = {
+    High: "border-red-200 bg-red-50 text-red-700",
+    Medium: "border-amber-200 bg-amber-50 text-amber-700",
+    Low: "border-slate-200 bg-slate-50 text-slate-700",
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-black text-slate-950">{alert.title}</p>
+            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${severityStyles[alert.severity] || severityStyles.Medium}`}>
+              {alert.severity}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-sm font-semibold text-slate-700">{alert.invoice || "No invoice"} · {alert.company || "No company"}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">{alert.location || "No location"}</p>
+          <p className="mt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+            Last updated: {dispatchAlertDate(alert.updatedAt || alert.createdAt)}
+          </p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onViewJob(alert)}
+        className="mt-3 w-full rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white hover:bg-blue-700"
+      >
+        View Job
+      </button>
+    </div>
+  );
+}
+
+function dispatchAlertDate(value) {
+  if (!value) return "N/A";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
   function StatCard({ icon, label, value, onClick }) {
@@ -3237,11 +3452,24 @@ function averageEta(jobs) {
 }
 
 function Th({ children }) {
-  return <th className="whitespace-nowrap px-4 py-3 font-bold">{children}</th>;
+  return <th className="whitespace-nowrap border-b border-slate-700 px-4 py-3.5 font-black">{children}</th>;
 }
 
 function Td({ children, className = "" }) {
-  return <td className={`whitespace-nowrap px-4 py-3 align-top ${className}`}>{children}</td>;
+  return <td className={`border-b border-slate-200 px-4 py-3 align-middle ${className}`}>{children}</td>;
+}
+
+function IconAction({ title, onClick, className = "", children }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${className}`}
+    >
+      {children}
+    </button>
+  );
 }
 
 function JobPipelineMini({ status }) {
@@ -3272,6 +3500,15 @@ function buildJobActivityMessage(field, oldValue, value, userName) {
 
 function isPaidStatus(value) {
   return String(value || "").trim().toLowerCase() === "paid";
+}
+
+function dateInputValue(value) {
+  if (!value) return "";
+  return String(value).slice(0, 10);
+}
+
+function valueActuallyChanged(oldValue, newValue) {
+  return String(oldValue ?? "").trim() !== String(newValue ?? "").trim();
 }
 
 function titleFromText(value) {

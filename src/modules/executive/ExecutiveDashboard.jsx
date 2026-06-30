@@ -3,28 +3,35 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  Bell,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
+  Clock,
   Download,
+  FileText,
   Filter,
-  LogIn,
-  Printer,
+  MapPin,
   RefreshCw,
-  ShieldCheck,
+  Route,
+  ShieldAlert,
+  TrendingDown,
   TrendingUp,
+  Truck,
   UserCheck,
   Users,
   XCircle,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "../activity";
+import { buildSmartAlerts, filterAlerts, logNewHighSeverityAlerts, summarizeAlerts } from "../alerts";
 
 const columnAliases = {
   id: ["id"],
   date: ["job_date", "date", "created_at"],
   time: ["job_time", "time", "created_at"],
   invoiceNumber: ["invoice_number", "invoice", "invoice_no", "reference"],
+  reference: ["reference", "reference_number", "po_number"],
   company: ["company", "company_name", "customer"],
   location: ["location", "address", "service_location"],
   city: ["city", "service_city"],
@@ -37,6 +44,8 @@ const columnAliases = {
   totalBill: ["total_bill", "totalBill", "amount", "invoice_total"],
   parts: ["parts", "parts_cost", "partsCost"],
   techLabor: ["tech_labor", "techLabor", "labor", "labor_cost"],
+  updates: ["updates", "notes", "job_notes"],
+  techPaymentStatus: ["tech_payment_status"],
 };
 
 const requiredFields = [
@@ -53,21 +62,40 @@ const requiredFields = [
   "techLabor",
 ];
 
-const filterPresets = ["Today", "This Week", "This Month", "Last Month", "This Year", "Custom Date Range"];
+const filterPresets = ["Today", "This Week", "This Month", "Last Month", "This Year", "Custom Range"];
 
-const activityIcons = {
+const importantActivityActions = new Set([
+  ...SYSTEM_ACTIVITY_ACTIONS,
+  "Status Changed",
+  "Invoice Sent",
+  "Tech Assigned",
+  "Dispatcher Updated Notes",
+  "Photo Uploaded",
+  "Delete Job",
+  "Delete Technician",
+]);
+
+const activityIconMap = {
   "Job Created": Activity,
   "Job Deleted": XCircle,
+  "Delete Job": XCircle,
   "Technician Invited": Users,
   "Technician Registered": UserCheck,
-  "Technician Approved": ShieldCheck,
+  "Technician Approved": CheckCircle2,
   "Technician Deleted": XCircle,
-  "User Created": Users,
-  "User Disabled": XCircle,
+  "Delete Technician": XCircle,
   "Invoice Paid": CircleDollarSign,
+  "Invoice Sent": FileText,
   "Technician Paid": CircleDollarSign,
-  "Login Success": LogIn,
-  "Login Failure": AlertTriangle,
+  "Tech Payment Paid": CircleDollarSign,
+  "Status Changed": Activity,
+  "Invoice Status changed": FileText,
+  "Tech Assigned": Truck,
+  "Dispatcher Updated Notes": FileText,
+  "Photo Uploaded": FileText,
+  "Smart Alert triggered": AlertTriangle,
+  "Login Success": UserCheck,
+  "Login Failure": ShieldAlert,
 };
 
 export default function ExecutiveDashboard({ onOpenActivity }) {
@@ -75,8 +103,11 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
   const [activityRows, setActivityRows] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastSync, setLastSync] = useState(null);
   const [filterMode, setFilterMode] = useState("This Month");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
+  const [alertSeverityFilter, setAlertSeverityFilter] = useState("All");
+  const [alertTypeFilter, setAlertTypeFilter] = useState("All");
 
   useEffect(() => {
     loadDashboard();
@@ -100,59 +131,42 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
       const missingFields = requiredFields.filter((field) => !columnAliases[field].some((column) => availableColumns.has(column)));
 
       if (!rows.length) {
-        nextWarnings.push("Safe mode: no jobs found yet. Dashboard totals will show zero until dispatch data exists.");
+        nextWarnings.push("No jobs found yet. Executive Dashboard totals will show zero until dispatch data exists.");
       }
 
       if (missingFields.length) {
         nextWarnings.push(`Safe mode: missing dashboard columns or no rows available for: ${missingFields.join(", ")}.`);
       }
 
-      setJobs(rows.map(normalizeJob).sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))));
+      setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
     }
 
-    setActivityRows((recentActivity || []).filter((item) => SYSTEM_ACTIVITY_ACTIONS.includes(item.action)).slice(0, 12));
+    setActivityRows(normalizeActivity(recentActivity || []));
     setWarnings(nextWarnings);
+    setLastSync(new Date());
     setLoading(false);
   }
 
   const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange]);
   const filteredJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, dateRange)), [jobs, dateRange]);
+  const analytics = useMemo(() => buildAnalytics(filteredJobs), [filteredJobs]);
+  const cityRows = useMemo(() => groupJobs(filteredJobs, (job) => job.city || "Unknown").slice(0, 10), [filteredJobs]);
+  const dispatcherRows = useMemo(() => buildDispatcherRows(filteredJobs), [filteredJobs]);
+  const technicianRows = useMemo(() => buildTechnicianRows(filteredJobs), [filteredJobs]);
+  const activityFeed = useMemo(() => activityRows.slice(0, 10), [activityRows]);
+  const smartAlerts = useMemo(() => buildSmartAlerts(filteredJobs, { role: "admin" }), [filteredJobs]);
+  const alertSummary = useMemo(() => summarizeAlerts(smartAlerts), [smartAlerts]);
+  const alertTypes = useMemo(() => ["All", ...Array.from(new Set(smartAlerts.map((alert) => alert.type))).sort()], [smartAlerts]);
+  const visibleAlerts = useMemo(
+    () => filterAlerts(smartAlerts, { severity: alertSeverityFilter, type: alertTypeFilter }).slice(0, 8),
+    [smartAlerts, alertSeverityFilter, alertTypeFilter]
+  );
 
-  const analytics = useMemo(() => {
-    const revenue = sumBy(filteredJobs, "totalBill");
-    const partsCost = sumBy(filteredJobs, "parts");
-    const techLabor = sumBy(filteredJobs, "techLabor");
-    const totalExpenses = partsCost + techLabor;
-    const netProfit = revenue - totalExpenses;
-    const completedJobs = filteredJobs.filter((job) => isCompleted(job.status)).length;
-    const cancelledJobs = filteredJobs.filter((job) => isCancelled(job.status)).length;
-    const dryRuns = filteredJobs.filter((job) => normalized(job.status).includes("dry")).length;
-    const openInvoices = filteredJobs.filter((job) => !isPaid(job.invoiceStatus)).length;
-    const inProgressJobs = Math.max(filteredJobs.length - completedJobs - cancelledJobs - dryRuns, 0);
-
-    return {
-      revenue,
-      partsCost,
-      techLabor,
-      totalExpenses,
-      netProfit,
-      profitMargin: revenue ? (netProfit / revenue) * 100 : 0,
-      totalJobs: filteredJobs.length,
-      totalCustomers: uniqueCount(filteredJobs.map((job) => job.company).filter((company) => company && company !== "Unknown Company")),
-      averageTicket: filteredJobs.length ? revenue / filteredJobs.length : 0,
-      statuses: [
-        { label: "Completed", value: completedJobs, tone: "green" },
-        { label: "In Progress", value: inProgressJobs, tone: "blue" },
-        { label: "Cancelled", value: cancelledJobs, tone: "red" },
-        { label: "Dry Runs", value: dryRuns, tone: "purple" },
-        { label: "Open Invoices", value: openInvoices, tone: "orange" },
-      ],
-    };
-  }, [filteredJobs]);
-
-  const dispatcherRows = useMemo(() => groupByCount(filteredJobs, (job) => job.dispatch || "Unassigned"), [filteredJobs]);
-  const technicianRows = useMemo(() => groupByCount(filteredJobs, (job) => job.technician || "Unassigned"), [filteredJobs]);
-  const cityRows = useMemo(() => groupByCount(filteredJobs, (job) => job.city || "Unknown").slice(0, 8), [filteredJobs]);
+  useEffect(() => {
+    if (smartAlerts.length) {
+      logNewHighSeverityAlerts(smartAlerts, { createdBy: "Executive Dashboard" });
+    }
+  }, [smartAlerts]);
 
   function exportCsv() {
     const headers = ["Date", "Invoice #", "Company", "City", "Status", "Dispatcher", "Technician", "Payment Method", "Invoice Status", "Total Bill", "Parts", "Tech Labor", "Profit"];
@@ -184,145 +198,103 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
   }
 
   return (
-    <div className="min-h-screen w-full max-w-none bg-[#07111f] p-4 text-slate-100 md:p-8 print:bg-white print:text-slate-950">
-      <div className="space-y-6">
-        <header className="rounded-3xl border border-white/10 bg-[#0b182b] p-5 shadow-2xl shadow-blue-950/20 print:border-slate-200 print:bg-white print:shadow-none">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-emerald-300">LIVE</span>
-                <span className="text-xs font-bold uppercase tracking-[0.18em] text-blue-300">Data updated just now</span>
-              </div>
-              <h1 className="mt-4 text-3xl font-black tracking-tight text-white md:text-4xl">Executive Dashboard</h1>
-              <p className="mt-2 text-sm font-semibold text-slate-400">Real-time overview of your operations</p>
-            </div>
-
-            <div className="flex flex-wrap gap-2 print:hidden">
-              <button type="button" onClick={loadDashboard} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/10">
-                <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Refresh
-              </button>
-              <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-blue-400/30 bg-blue-500/10 px-4 py-2 text-sm font-bold text-blue-200">
-                <Filter className="h-4 w-4" />
-                Filters
-              </button>
-              <button type="button" onClick={exportCsv} className="inline-flex items-center gap-2 rounded-xl bg-blue-500 px-4 py-2 text-sm font-black text-white hover:bg-blue-400">
-                <Download className="h-4 w-4" />
-                Export CSV
-              </button>
-              <button type="button" onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/10">
-                <Printer className="h-4 w-4" />
-                Print
-              </button>
-            </div>
-          </div>
-        </header>
+    <div className="min-h-screen w-full max-w-none bg-[#06111f] p-4 text-slate-100 md:p-6 xl:p-8">
+      <div className="mx-auto w-full max-w-none space-y-6">
+        <ExecutiveHeader
+          loading={loading}
+          lastSync={lastSync}
+          filterMode={filterMode}
+          customRange={customRange}
+          onRefresh={loadDashboard}
+          onExport={exportCsv}
+          onFilterMode={setFilterMode}
+          onCustomRange={setCustomRange}
+        />
 
         {warnings.map((warning) => (
-          <div key={warning} className="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4 text-sm font-semibold text-amber-200">
+          <div key={warning} className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">
             {warning}
           </div>
         ))}
 
-        <section className="rounded-3xl border border-white/10 bg-[#0b182b] p-4 shadow-xl shadow-blue-950/10 print:border-slate-200 print:bg-white">
-          <div className="grid gap-3 xl:grid-cols-[1fr_auto_auto] xl:items-end">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Date Range</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {filterPresets.map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setFilterMode(preset)}
-                    className={`rounded-xl px-4 py-2 text-sm font-bold transition ${
-                      filterMode === preset
-                        ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
-                        : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
-                    }`}
-                  >
-                    {preset}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <DateInput label="Start Date" value={customRange.from} disabled={filterMode !== "Custom Date Range"} onChange={(value) => setCustomRange((current) => ({ ...current, from: value }))} />
-            <DateInput label="End Date" value={customRange.to} disabled={filterMode !== "Custom Date Range"} onChange={(value) => setCustomRange((current) => ({ ...current, to: value }))} />
-          </div>
+        <section className="grid gap-4 lg:grid-cols-3 2xl:grid-cols-6">
+          <KpiCard title="Revenue" value={money(analytics.revenue)} detail="Today's trend" icon={CircleDollarSign} tone="blue" trend={analytics.todayRevenue} />
+          <KpiCard title="Expenses" value={money(analytics.expenses)} detail="Parts + labor" icon={TrendingDown} tone="orange" trend={analytics.todayExpenses} />
+          <KpiCard title="Profit" value={money(analytics.profit)} detail={`${analytics.profitMargin.toFixed(1)}% margin`} icon={TrendingUp} tone="green" trend={analytics.todayProfit} />
+          <KpiCard title="Total Jobs" value={analytics.totalJobs} detail="Filtered range" icon={Truck} tone="purple" trend={analytics.jobsToday} suffix="today" />
+          <KpiCard title="Open Invoices" value={analytics.openInvoices} detail="Not paid/cancelled" icon={FileText} tone="orange" trend={analytics.needReviewInvoices} suffix="need review" />
+          <KpiCard title="Average ETA" value={`${analytics.averageEta} min`} detail="Operational estimate" icon={Clock} tone="cyan" trend={analytics.jobsWaitingEta} suffix="waiting ETA" />
         </section>
 
         <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_380px]">
           <main className="space-y-6">
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <FinancialCard label="Total Revenue" value={money(analytics.revenue)} trend="Live jobs revenue" tone="blue" />
-              <FinancialCard label="Total Expenses" value={money(analytics.totalExpenses)} trend="Parts + tech labor" tone="orange" />
-              <FinancialCard label="Net Profit" value={money(analytics.netProfit)} trend={analytics.netProfit >= 0 ? "Positive margin" : "Below cost"} tone={analytics.netProfit >= 0 ? "green" : "red"} />
-              <FinancialCard label="Profit Margin" value={`${analytics.profitMargin.toFixed(1)}%`} trend="Revenue efficiency" tone="green" />
-            </section>
-
-            <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-              <Panel title="Jobs by Status" subtitle={`${analytics.totalJobs} total jobs`}>
-                <div className="grid gap-5 lg:grid-cols-[180px_1fr] lg:items-center">
-                  <Donut total={analytics.totalJobs} segments={analytics.statuses} />
+            <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+              <Panel title="Jobs Status" subtitle="Completed, active, cancelled, pending and dry runs" icon={BarChart3}>
+                <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:items-center">
+                  <DonutChart segments={analytics.statusSegments} total={analytics.totalJobs} />
                   <div className="space-y-3">
-                    {analytics.statuses.map((item) => (
-                      <StatusRow key={item.label} item={item} total={analytics.totalJobs} />
+                    {analytics.statusSegments.map((segment) => (
+                      <MetricBar key={segment.label} label={segment.label} value={segment.value} total={analytics.totalJobs} tone={segment.tone} />
                     ))}
-                    {!loading && analytics.totalJobs === 0 && <EmptyState label="No job status data yet." />}
                   </div>
                 </div>
               </Panel>
 
-              <Panel title="Jobs by City" subtitle={`${cityRows.length} cities tracked`}>
-                <div className="mb-4 grid gap-3 sm:grid-cols-3">
-                  <MiniStat label="Top City" value={cityRows[0]?.label || "None"} tone="blue" />
-                  <MiniStat label="Total Cities" value={cityRows.length} tone="purple" />
-                  <MiniStat label="Total Jobs" value={analytics.totalJobs} tone="green" />
-                </div>
-                <BarList rows={cityRows} total={analytics.totalJobs} color="bg-blue-400" emptyLabel="No city data yet." />
+              <Panel title="Financial Performance" subtitle="Revenue, expenses and profit" icon={CircleDollarSign}>
+                <FinancialBars revenue={analytics.revenue} expenses={analytics.expenses} profit={analytics.profit} />
               </Panel>
             </section>
 
             <section className="grid gap-6 xl:grid-cols-2">
-              <PerformancePanel title="Dispatcher Performance" rows={dispatcherRows} total={analytics.totalJobs} accent="blue" />
-              <PerformancePanel title="Tech Performance" rows={technicianRows} total={analytics.totalJobs} accent="purple" />
+              <Panel title="Dispatcher Performance" subtitle="Completion rate and ranking" icon={Users}>
+                <PerformanceTable type="dispatcher" rows={dispatcherRows} />
+              </Panel>
+              <Panel title="Technician Performance" subtitle="Production and average ETA" icon={UserCheck}>
+                <PerformanceTable type="technician" rows={technicianRows} />
+              </Panel>
+            </section>
+
+            <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+              <Panel title="Jobs by City" subtitle="Top 10 service markets" icon={MapPin}>
+                <HorizontalBars rows={cityRows} emptyLabel="No city data yet." />
+              </Panel>
+              <Panel title="Invoice Center" subtitle="Invoice workflow summary" icon={FileText}>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  {analytics.invoiceSegments.map((item) => (
+                    <InvoiceTile key={item.label} item={item} />
+                  ))}
+                </div>
+              </Panel>
             </section>
           </main>
 
           <aside className="space-y-6">
-            <Panel title="Quick Summary" subtitle="Operational totals">
-              <div className="grid gap-3">
-                <SummaryLine label="Total Jobs" value={analytics.totalJobs} />
-                <SummaryLine label="Total Customers" value={analytics.totalCustomers} />
-                <SummaryLine label="Average Ticket" value={money(analytics.averageTicket)} />
-                <SummaryLine label="Total Parts" value={money(analytics.partsCost)} />
-                <SummaryLine label="Total Labor" value={money(analytics.techLabor)} />
+            <Panel title="Attention Required" subtitle="Smart operational alerts" icon={Bell}>
+              <AlertSummary summary={alertSummary} />
+              <AlertFilters
+                severity={alertSeverityFilter}
+                type={alertTypeFilter}
+                types={alertTypes}
+                onSeverity={setAlertSeverityFilter}
+                onType={setAlertTypeFilter}
+              />
+              <div className="mt-4 space-y-3">
+                {visibleAlerts.map((alert) => (
+                  <SmartAlertItem key={alert.id} alert={alert} />
+                ))}
+                {!visibleAlerts.length && <EmptyState label="All clear. No alerts need attention." />}
               </div>
             </Panel>
 
-            <Panel title="Activity Log" subtitle="Important internal events">
+            <Panel title="Recent Activity" subtitle="Important events only" icon={Activity}>
               <div className="space-y-3">
-                {activityRows.map((item) => {
-                  const Icon = activityIcons[item.action] || Activity;
-                  return (
-                    <div key={item.id} className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300">
-                        <Icon className="h-4 w-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-black text-white">{friendlyActivityTitle(item.action)}</p>
-                        <p className="mt-1 line-clamp-2 text-xs font-medium text-slate-400">{item.description || item.entity_type || "System activity"}</p>
-                        <div className="mt-2 flex items-center justify-between gap-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                          <span>{item.created_by || "System"}</span>
-                          <span>{shortTime(item.created_at)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                {!loading && activityRows.length === 0 && <EmptyState label="No important activity yet." />}
+                {activityFeed.map((item) => (
+                  <ActivityItem key={item.id} item={item} jobs={jobs} />
+                ))}
+                {!activityFeed.length && <EmptyState label="No important activity yet." />}
               </div>
               {onOpenActivity && (
-                <button type="button" onClick={onOpenActivity} className="mt-4 w-full rounded-xl bg-blue-500 px-4 py-3 text-sm font-black text-white hover:bg-blue-400">
+                <button type="button" onClick={onOpenActivity} className="mt-4 w-full rounded-xl bg-blue-500 px-4 py-3 text-sm font-black text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-400">
                   View Full Activity Log
                 </button>
               )}
@@ -334,139 +306,216 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
   );
 }
 
-function FinancialCard({ label, value, trend, tone }) {
-  const toneMap = {
-    blue: "from-blue-500/25 to-blue-500/5 text-blue-300 border-blue-400/20",
-    green: "from-emerald-500/25 to-emerald-500/5 text-emerald-300 border-emerald-400/20",
-    orange: "from-orange-500/25 to-orange-500/5 text-orange-300 border-orange-400/20",
-    red: "from-red-500/25 to-red-500/5 text-red-300 border-red-400/20",
-  };
-
+function ExecutiveHeader({ loading, lastSync, filterMode, customRange, onRefresh, onExport, onFilterMode, onCustomRange }) {
   return (
-    <div className={`rounded-3xl border bg-gradient-to-br p-5 shadow-xl shadow-blue-950/10 ${toneMap[tone] || toneMap.blue}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">{label}</p>
-          <p className="mt-3 text-3xl font-black text-white">{value}</p>
-        </div>
-        <div className="rounded-2xl bg-white/10 p-3">
-          <TrendingUp className="h-5 w-5" />
+    <header className="overflow-hidden rounded-[1.75rem] border border-blue-300/10 bg-[#0a1830] shadow-2xl shadow-blue-950/25">
+      <div className="border-b border-white/10 bg-gradient-to-r from-[#0c2140] via-[#0a1830] to-[#091426] px-5 py-5 md:px-7">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-black uppercase tracking-[0.24em] text-blue-300">NTTR Command Center</span>
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-wide text-emerald-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,0.9)]" />
+                LIVE
+              </span>
+            </div>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-white md:text-4xl">Executive Dashboard</h1>
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-400">
+              <span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-blue-300" />{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</span>
+              <span className="hidden h-1 w-1 rounded-full bg-slate-600 md:block" />
+              <span>Last Sync: {lastSync ? lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Waiting"}</span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={onRefresh} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-100 transition hover:bg-white/10">
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
+            <button type="button" onClick={onExport} className="inline-flex items-center gap-2 rounded-xl border border-blue-400/30 bg-blue-500 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-400">
+              <Download className="h-4 w-4" />
+              Export
+            </button>
+            <button type="button" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-black text-slate-100 transition hover:bg-white/10">
+              <Filter className="h-4 w-4" />
+              Date Filter
+            </button>
+          </div>
         </div>
       </div>
-      <div className="mt-5 flex items-center justify-between gap-3">
-        <p className="text-xs font-bold text-slate-400">{trend}</p>
-        <Sparkline />
+
+      <div className="grid gap-3 px-5 py-4 md:px-7 xl:grid-cols-[1fr_auto_auto] xl:items-end">
+        <div className="flex flex-wrap gap-2">
+          {filterPresets.map((preset) => (
+            <button
+              key={preset}
+              type="button"
+              onClick={() => onFilterMode(preset)}
+              className={`rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-wide transition ${
+                filterMode === preset ? "bg-blue-500 text-white shadow-lg shadow-blue-950/30" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/10 hover:text-slate-100"
+              }`}
+            >
+              {preset}
+            </button>
+          ))}
+        </div>
+        <DateInput label="Start" value={customRange.from} disabled={filterMode !== "Custom Range"} onChange={(value) => onCustomRange((current) => ({ ...current, from: value }))} />
+        <DateInput label="End" value={customRange.to} disabled={filterMode !== "Custom Range"} onChange={(value) => onCustomRange((current) => ({ ...current, to: value }))} />
       </div>
-    </div>
+    </header>
   );
 }
 
-function Panel({ title, subtitle, children }) {
+function KpiCard({ title, value, detail, icon: Icon, tone, trend, suffix }) {
+  const tones = {
+    blue: "border-blue-400/20 from-blue-500/20 text-blue-300",
+    green: "border-emerald-400/20 from-emerald-500/20 text-emerald-300",
+    orange: "border-orange-400/20 from-orange-500/20 text-orange-300",
+    purple: "border-violet-400/20 from-violet-500/20 text-violet-300",
+    cyan: "border-cyan-400/20 from-cyan-500/20 text-cyan-300",
+  };
+
   return (
-    <section className="rounded-3xl border border-white/10 bg-[#0b182b] p-5 shadow-xl shadow-blue-950/10 print:border-slate-200 print:bg-white">
-      <div className="mb-5 flex items-start justify-between gap-3">
+    <article className={`group rounded-3xl border bg-gradient-to-br to-[#0b1728] p-5 shadow-xl shadow-blue-950/15 transition duration-200 hover:-translate-y-1 hover:shadow-2xl ${tones[tone] || tones.blue}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{title}</p>
+          <p className="mt-3 truncate text-3xl font-black text-white">{value}</p>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-white/10 p-3">
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+      <div className="mt-5 flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-black text-white print:text-slate-950">{title}</h2>
+          <p className="text-xs font-bold text-slate-400">{detail}</p>
+          <p className="mt-1 text-xs font-black uppercase tracking-wide text-current">{formatTrend(trend, suffix)}</p>
+        </div>
+        <Sparkline />
+      </div>
+    </article>
+  );
+}
+
+function Panel({ title, subtitle, icon: Icon, children }) {
+  return (
+    <section className="rounded-[1.5rem] border border-white/10 bg-[#0b1728] p-5 shadow-xl shadow-blue-950/10">
+      <div className="mb-5 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-lg font-black text-white">{title}</h2>
           <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">{subtitle}</p>
         </div>
+        {Icon && (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-blue-300">
+            <Icon className="h-5 w-5" />
+          </div>
+        )}
       </div>
       {children}
     </section>
   );
 }
 
-function Donut({ total, segments }) {
-  const completed = segments.find((item) => item.label === "Completed")?.value || 0;
-  const percent = total ? Math.round((completed / total) * 100) : 0;
-
+function DonutChart({ segments, total }) {
+  const gradient = buildDonutGradient(segments, total);
   return (
-    <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-full bg-[conic-gradient(#22c55e_var(--value),#1d2a3d_0)] p-4" style={{ "--value": `${percent}%` }}>
-      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-[#0b182b] text-center">
-        <p className="text-3xl font-black text-white">{percent}%</p>
-        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Completed</p>
+    <div className="mx-auto flex h-56 w-56 items-center justify-center rounded-full p-5 shadow-inner shadow-black/40" style={{ background: gradient }}>
+      <div className="flex h-full w-full flex-col items-center justify-center rounded-full border border-white/10 bg-[#0b1728] text-center">
+        <p className="text-4xl font-black text-white">{total}</p>
+        <p className="mt-1 text-xs font-black uppercase tracking-[0.18em] text-slate-500">Total Jobs</p>
       </div>
     </div>
   );
 }
 
-function StatusRow({ item, total }) {
-  const percent = total ? Math.round((item.value / total) * 100) : 0;
-  const colors = {
-    blue: "bg-blue-400 text-blue-300",
-    green: "bg-emerald-400 text-emerald-300",
-    orange: "bg-orange-400 text-orange-300",
-    red: "bg-red-400 text-red-300",
-    purple: "bg-violet-400 text-violet-300",
-  };
+function FinancialBars({ revenue, expenses, profit }) {
+  const rows = [
+    { label: "Revenue", value: revenue, tone: "bg-blue-400" },
+    { label: "Expenses", value: expenses, tone: "bg-orange-400" },
+    { label: "Profit", value: profit, tone: profit >= 0 ? "bg-emerald-400" : "bg-red-400" },
+  ];
+  const max = Math.max(...rows.map((row) => Math.abs(row.value)), 1);
 
   return (
-    <div>
-      <div className="mb-1 flex items-center justify-between gap-3 text-sm">
-        <span className="font-bold text-slate-300">{item.label}</span>
-        <span className={`font-black ${colors[item.tone]?.split(" ")[1] || "text-blue-300"}`}>{item.value} ({percent}%)</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-white/10">
-        <div className={`h-full rounded-full ${colors[item.tone]?.split(" ")[0] || "bg-blue-400"}`} style={{ width: `${percent}%` }} />
+    <div className="space-y-5">
+      {rows.map((row) => {
+        const width = Math.max(4, (Math.abs(row.value) / max) * 100);
+        return (
+          <div key={row.label}>
+            <div className="mb-2 flex items-center justify-between gap-4">
+              <span className="text-sm font-black text-slate-300">{row.label}</span>
+              <span className="text-sm font-black text-white">{money(row.value)}</span>
+            </div>
+            <div className="h-12 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-2">
+              <div className={`h-full rounded-xl ${row.tone} shadow-lg`} style={{ width: `${width}%` }} />
+            </div>
+          </div>
+        );
+      })}
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MiniStat label="Revenue" value={money(revenue)} tone="blue" />
+        <MiniStat label="Expenses" value={money(expenses)} tone="orange" />
+        <MiniStat label="Profit" value={money(profit)} tone={profit >= 0 ? "green" : "red"} />
       </div>
     </div>
   );
 }
 
-function PerformancePanel({ title, rows, total, accent }) {
-  const top = rows[0];
+function PerformanceTable({ type, rows }) {
+  const isTech = type === "technician";
   return (
-    <Panel title={title} subtitle={`${total} total jobs`}>
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <MiniStat label="Total Jobs" value={total} tone={accent} />
-        <MiniStat label={title.includes("Tech") ? "Top Technician" : "Top Dispatcher"} value={top?.label || "None"} tone={accent} />
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-white/10">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-white/[0.04] text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <th className="px-4 py-3">{title.includes("Tech") ? "Technician" : "Dispatcher"}</th>
-              <th className="px-4 py-3">Jobs</th>
-              <th className="px-4 py-3">Percentage</th>
+    <div className="overflow-x-auto rounded-2xl border border-white/10">
+      <table className="w-full min-w-[620px] text-left text-sm">
+        <thead className="bg-[#10213a] text-xs uppercase tracking-wide text-slate-400">
+          <tr>
+            <th className="px-4 py-3">{isTech ? "Tech" : "Dispatcher"}</th>
+            <th className="px-4 py-3">Jobs</th>
+            <th className="px-4 py-3">Completed</th>
+            {!isTech && <th className="px-4 py-3">Cancelled</th>}
+            <th className="px-4 py-3">{isTech ? "Revenue Produced" : "Completion %"}</th>
+            <th className="px-4 py-3">{isTech ? "Average ETA" : "Ranking"}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.label} className="border-t border-white/10">
+              <td className="px-4 py-3 font-black text-white">{row.label}</td>
+              <td className="px-4 py-3 font-bold text-slate-300">{row.jobs}</td>
+              <td className="px-4 py-3 font-bold text-emerald-300">{row.completed}</td>
+              {!isTech && <td className="px-4 py-3 font-bold text-red-300">{row.cancelled}</td>}
+              <td className="px-4 py-3 font-bold text-slate-300">{isTech ? money(row.revenue) : `${row.completionPercent}%`}</td>
+              <td className="px-4 py-3 font-bold text-blue-300">{isTech ? `${row.averageEta} min` : `#${index + 1}`}</td>
             </tr>
-          </thead>
-          <tbody>
-            {rows.slice(0, 6).map((row) => (
-              <tr key={row.label} className="border-t border-white/10">
-                <td className="px-4 py-3 font-bold text-slate-200">{row.label}</td>
-                <td className="px-4 py-3 font-black text-white">{row.value}</td>
-                <td className="px-4 py-3 text-slate-400">{total ? Math.round((row.value / total) * 100) : 0}%</td>
-              </tr>
-            ))}
-            {!rows.length && (
-              <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-sm font-semibold text-slate-500">No performance data yet.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </Panel>
+          ))}
+          {!rows.length && (
+            <tr>
+              <td colSpan={isTech ? 5 : 6} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
+                No performance data yet.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
-function BarList({ rows, total, color, emptyLabel }) {
+function HorizontalBars({ rows, emptyLabel }) {
   const max = Math.max(...rows.map((row) => row.value), 0);
   if (!rows.length) return <EmptyState label={emptyLabel} />;
 
   return (
     <div className="space-y-4">
-      {rows.map((row) => {
-        const width = max ? Math.max(4, (row.value / max) * 100) : 0;
-        const percent = total ? Math.round((row.value / total) * 100) : 0;
+      {rows.map((row, index) => {
+        const width = max ? Math.max(5, (row.value / max) * 100) : 0;
         return (
-          <div key={row.label}>
-            <div className="mb-1 flex items-center justify-between gap-3 text-sm">
-              <span className="font-bold text-slate-300">{row.label}</span>
-              <span className="font-black text-white">{row.value} jobs · {percent}%</span>
-            </div>
+          <div key={row.label} className="grid grid-cols-[34px_120px_minmax(0,1fr)_56px] items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/[0.05] text-xs font-black text-slate-400">#{index + 1}</span>
+            <span className="truncate text-sm font-black text-white">{row.label}</span>
             <div className="h-3 overflow-hidden rounded-full bg-white/10">
-              <div className={`h-full rounded-full ${color}`} style={{ width: `${width}%` }} />
+              <div className="h-full rounded-full bg-blue-400" style={{ width: `${width}%` }} />
             </div>
+            <span className="text-right text-sm font-black text-blue-300">{row.value}</span>
           </div>
         );
       })}
@@ -474,35 +523,211 @@ function BarList({ rows, total, color, emptyLabel }) {
   );
 }
 
-function MiniStat({ label, value, tone = "blue" }) {
-  const toneClasses = {
-    blue: "border-blue-400/20 bg-blue-500/10 text-blue-200",
-    green: "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
-    purple: "border-violet-400/20 bg-violet-500/10 text-violet-200",
+function InvoiceTile({ item }) {
+  const tones = {
+    Pending: "border-amber-400/20 bg-amber-400/10 text-amber-200",
+    "Need Review": "border-orange-400/20 bg-orange-400/10 text-orange-200",
+    Sent: "border-blue-400/20 bg-blue-400/10 text-blue-200",
+    Paid: "border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
+    Cancelled: "border-red-400/20 bg-red-400/10 text-red-200",
+  };
+  return (
+    <div className={`rounded-2xl border p-4 ${tones[item.label] || tones.Pending}`}>
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{item.label}</p>
+      <p className="mt-2 text-3xl font-black text-white">{item.value}</p>
+    </div>
+  );
+}
+
+function AlertSummary({ summary }) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <AlertCount label="Total" value={summary.total} tone="blue" />
+      <AlertCount label="High" value={summary.high} tone="red" />
+      <AlertCount label="Medium" value={summary.medium} tone="orange" />
+      <AlertCount label="Low" value={summary.low} tone="slate" />
+    </div>
+  );
+}
+
+function AlertCount({ label, value, tone }) {
+  const tones = {
+    blue: "border-blue-400/20 bg-blue-400/10 text-blue-200",
+    red: "border-red-400/20 bg-red-400/10 text-red-200",
+    orange: "border-orange-400/20 bg-orange-400/10 text-orange-200",
+    slate: "border-slate-400/20 bg-slate-400/10 text-slate-200",
+  };
+  return (
+    <div className={`rounded-2xl border p-3 ${tones[tone] || tones.blue}`}>
+      <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function AlertFilters({ severity, type, types, onSeverity, onType }) {
+  return (
+    <div className="mt-4 grid gap-2">
+      <select
+        className="h-10 rounded-xl border border-white/10 bg-[#111d31] px-3 text-sm font-bold text-slate-100 outline-none focus:border-blue-400"
+        value={severity}
+        onChange={(event) => onSeverity(event.target.value)}
+      >
+        {["All", "High", "Medium", "Low"].map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+      <select
+        className="h-10 rounded-xl border border-white/10 bg-[#111d31] px-3 text-sm font-bold text-slate-100 outline-none focus:border-blue-400"
+        value={type}
+        onChange={(event) => onType(event.target.value)}
+      >
+        {types.map((option) => (
+          <option key={option}>{option}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function SmartAlertItem({ alert }) {
+  const severityClass = {
+    High: "border-red-400/30 bg-red-400/10 text-red-200",
+    Medium: "border-orange-400/30 bg-orange-400/10 text-orange-200",
+    Low: "border-slate-400/30 bg-slate-400/10 text-slate-200",
+  }[alert.severity] || "border-blue-400/30 bg-blue-400/10 text-blue-200";
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-300">
+          <AlertTriangle className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-black text-white">{alert.title}</p>
+            <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide ${severityClass}`}>{alert.severity}</span>
+          </div>
+          <p className="mt-1 text-xs font-semibold text-slate-400">{alert.invoice} · {alert.company}</p>
+          <p className="mt-1 text-xs text-slate-500">{alert.location}</p>
+          <p className="mt-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Last updated: {formatDateTime(alert.updatedAt || alert.createdAt)}</p>
+        </div>
+      </div>
+      <button type="button" className="mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black text-slate-200">
+        View Job
+      </button>
+    </div>
+  );
+}
+
+function AlertRow({ icon: Icon, label, value, tone }) {
+  const tones = {
+    blue: "bg-blue-400/10 text-blue-200 border-blue-400/20",
+    green: "bg-emerald-400/10 text-emerald-200 border-emerald-400/20",
+    orange: "bg-orange-400/10 text-orange-200 border-orange-400/20",
+    red: "bg-red-400/10 text-red-200 border-red-400/20",
+    purple: "bg-violet-400/10 text-violet-200 border-violet-400/20",
   };
 
   return (
-    <div className={`rounded-2xl border p-4 ${toneClasses[tone] || toneClasses.blue}`}>
+    <div className={`flex items-center justify-between gap-4 rounded-2xl border p-4 ${tones[tone] || tones.blue}`}>
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="rounded-xl bg-white/10 p-2">
+          <Icon className="h-4 w-4" />
+        </div>
+        <span className="truncate text-sm font-black">{label}</span>
+      </div>
+      <span className="text-xl font-black text-white">{value}</span>
+    </div>
+  );
+}
+
+function ActivityItem({ item, jobs }) {
+  const Icon = activityIconMap[item.action] || Activity;
+  const job = jobs.find((candidate) => String(candidate.id) === String(item.entity_id));
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
+      <div className="flex gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-300">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-white">{friendlyActivityTitle(item.action)}</p>
+              <p className="mt-1 text-xs font-semibold text-slate-400">{item.created_by || "System"}</p>
+            </div>
+            <span className="shrink-0 text-xs font-black uppercase text-slate-500">{shortTime(item.created_at)}</span>
+          </div>
+          <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-400 sm:grid-cols-2">
+            <span>Job #: {job?.invoiceNumber || item.entity_id || "N/A"}</span>
+            <span>City: {job?.city || "N/A"}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MetricBar({ label, value, total, tone }) {
+  const percent = total ? Math.round((value / total) * 100) : 0;
+  const tones = {
+    green: "bg-emerald-400 text-emerald-300",
+    blue: "bg-blue-400 text-blue-300",
+    red: "bg-red-400 text-red-300",
+    orange: "bg-orange-400 text-orange-300",
+    purple: "bg-violet-400 text-violet-300",
+  };
+  const [barColor, textColor] = (tones[tone] || tones.blue).split(" ");
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+        <span className="font-bold text-slate-300">{label}</span>
+        <span className={`font-black ${textColor}`}>{value} ({percent}%)</span>
+      </div>
+      <div className="h-3 overflow-hidden rounded-full bg-white/10">
+        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, tone = "blue" }) {
+  const tones = {
+    blue: "border-blue-400/20 bg-blue-400/10 text-blue-200",
+    green: "border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
+    orange: "border-orange-400/20 bg-orange-400/10 text-orange-200",
+    red: "border-red-400/20 bg-red-400/10 text-red-200",
+  };
+  return (
+    <div className={`rounded-2xl border p-4 ${tones[tone] || tones.blue}`}>
       <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 truncate text-xl font-black text-white">{value}</p>
     </div>
   );
 }
 
-function SummaryLine({ label, value }) {
+function DateInput({ label, value, disabled, onChange }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-      <span className="text-sm font-bold text-slate-400">{label}</span>
-      <span className="font-black text-white">{value}</span>
-    </div>
+    <label className="grid gap-1 text-xs font-black uppercase tracking-wide text-slate-500">
+      {label}
+      <input
+        type="date"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-sm font-bold text-slate-100 outline-none transition focus:border-blue-400 disabled:text-slate-600"
+      />
+    </label>
   );
 }
 
 function Sparkline() {
   return (
-    <div className="flex h-8 w-20 items-end gap-1">
-      <span className="h-2 flex-1 rounded-t bg-current opacity-30" />
-      <span className="h-4 flex-1 rounded-t bg-current opacity-40" />
+    <div className="flex h-8 w-20 items-end gap-1 text-current">
+      <span className="h-2 flex-1 rounded-t bg-current opacity-25" />
+      <span className="h-4 flex-1 rounded-t bg-current opacity-35" />
       <span className="h-3 flex-1 rounded-t bg-current opacity-50" />
       <span className="h-6 flex-1 rounded-t bg-current opacity-70" />
       <span className="h-5 flex-1 rounded-t bg-current" />
@@ -511,26 +736,75 @@ function Sparkline() {
 }
 
 function EmptyState({ label }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-slate-500">
-      {label}
-    </div>
-  );
+  return <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm font-semibold text-slate-500">{label}</div>;
 }
 
-function DateInput({ label, value, disabled, onChange }) {
-  return (
-    <label className="grid gap-2 text-sm font-bold text-slate-400">
-      {label}
-      <input
-        type="date"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-semibold text-slate-100 outline-none focus:border-blue-400 disabled:bg-white/[0.03] disabled:text-slate-600"
-      />
-    </label>
-  );
+function buildAnalytics(rows) {
+  const revenue = sumBy(rows, "totalBill");
+  const expenses = sumBy(rows, "parts") + sumBy(rows, "techLabor");
+  const profit = revenue - expenses;
+  const today = localDate(new Date());
+  const todayRows = rows.filter((job) => job.date === today);
+  const completed = rows.filter((job) => isCompleted(job.status)).length;
+  const cancelled = rows.filter((job) => isCancelled(job.status)).length;
+  const dryRuns = rows.filter((job) => normalized(job.status).includes("dry")).length;
+  const pending = rows.filter((job) => isPending(job.status)).length;
+  const inProgress = Math.max(rows.length - completed - cancelled - dryRuns - pending, 0);
+  const avgEta = average(rows.map((job) => job.etaMinutes).filter((value) => value > 0));
+
+  return {
+    revenue,
+    expenses,
+    profit,
+    profitMargin: revenue ? (profit / revenue) * 100 : 0,
+    totalJobs: rows.length,
+    openInvoices: rows.filter((job) => !isPaid(job.invoiceStatus) && !isCancelled(job.invoiceStatus)).length,
+    averageEta: Math.round(avgEta || 0),
+    todayRevenue: sumBy(todayRows, "totalBill"),
+    todayExpenses: sumBy(todayRows, "parts") + sumBy(todayRows, "techLabor"),
+    todayProfit: sumBy(todayRows, "totalBill") - sumBy(todayRows, "parts") - sumBy(todayRows, "techLabor"),
+    jobsToday: todayRows.length,
+    statusSegments: [
+      { label: "Completed", value: completed, tone: "green" },
+      { label: "In Progress", value: inProgress, tone: "blue" },
+      { label: "Cancelled", value: cancelled, tone: "red" },
+      { label: "Pending", value: pending, tone: "orange" },
+      { label: "Dry Runs", value: dryRuns, tone: "purple" },
+    ],
+    invoiceSegments: [
+      { label: "Pending", value: rows.filter((job) => normalized(job.invoiceStatus).includes("pending")).length },
+      { label: "Need Review", value: rows.filter((job) => normalized(job.invoiceStatus).includes("review")).length },
+      { label: "Sent", value: rows.filter((job) => normalized(job.invoiceStatus).includes("sent")).length },
+      { label: "Paid", value: rows.filter((job) => isPaid(job.invoiceStatus)).length },
+      { label: "Cancelled", value: rows.filter((job) => isCancelled(job.invoiceStatus)).length },
+    ],
+    pendingInvoices: rows.filter((job) => normalized(job.invoiceStatus).includes("pending")).length,
+    needReviewInvoices: rows.filter((job) => normalized(job.invoiceStatus).includes("review")).length,
+    jobsWaitingEta: rows.filter((job) => !isCompleted(job.status) && !isCancelled(job.status) && !job.etaMinutes).length,
+    jobsWithoutTechnician: rows.filter((job) => !job.technician || normalized(job.technician) === "unassigned").length,
+    jobsWithoutUpdates: rows.filter((job) => !job.updates).length,
+    pendingTechPayments: rows.filter((job) => ["pending", "reviewing", "hold"].includes(normalized(job.techPaymentStatus))).length,
+  };
+}
+
+function buildDispatcherRows(rows) {
+  return groupJobRows(rows, (job) => job.dispatch || "Unassigned").map((row) => ({
+    label: row.label,
+    jobs: row.jobs.length,
+    completed: row.jobs.filter((job) => isCompleted(job.status)).length,
+    cancelled: row.jobs.filter((job) => isCancelled(job.status)).length,
+    completionPercent: row.jobs.length ? Math.round((row.jobs.filter((job) => isCompleted(job.status)).length / row.jobs.length) * 100) : 0,
+  }));
+}
+
+function buildTechnicianRows(rows) {
+  return groupJobRows(rows, (job) => job.technician || "Unassigned").map((row) => ({
+    label: row.label,
+    jobs: row.jobs.length,
+    completed: row.jobs.filter((job) => isCompleted(job.status)).length,
+    revenue: sumBy(row.jobs, "totalBill"),
+    averageEta: Math.round(average(row.jobs.map((job) => job.etaMinutes).filter((value) => value > 0)) || 0),
+  }));
 }
 
 function normalizeJob(row) {
@@ -540,12 +814,14 @@ function normalizeJob(row) {
   const totalBill = numberValue(readAlias(row, columnAliases.totalBill));
   const parts = numberValue(readAlias(row, columnAliases.parts));
   const techLabor = numberValue(readAlias(row, columnAliases.techLabor));
+  const updates = stringValue(readAlias(row, columnAliases.updates));
 
   return {
     id: readAlias(row, columnAliases.id) || crypto.randomUUID(),
     date,
     time: timeOnly(readAlias(row, columnAliases.time)),
     invoiceNumber: stringValue(readAlias(row, columnAliases.invoiceNumber)),
+    reference: stringValue(readAlias(row, columnAliases.reference)),
     company: stringValue(readAlias(row, columnAliases.company)) || "Unknown Company",
     location,
     city: city || "Unknown",
@@ -559,7 +835,20 @@ function normalizeJob(row) {
     parts,
     techLabor,
     profit: totalBill - parts - techLabor,
+    updates,
+    etaMinutes: extractEtaMinutes(updates),
+    techPaymentStatus: titleCase(stringValue(readAlias(row, columnAliases.techPaymentStatus)) || "Pending"),
   };
+}
+
+function normalizeActivity(rows) {
+  return rows
+    .filter((item) => {
+      if (importantActivityActions.has(item.action)) return true;
+      const action = normalized(item.action);
+      return action.includes("invoice") || action.includes("payment") || action.includes("assigned") || action.includes("deleted") || action.includes("created") || action.includes("login");
+    })
+    .slice(0, 20);
 }
 
 function readAlias(row, aliases) {
@@ -596,7 +885,7 @@ function isWithinRange(value, range) {
   return value >= range.from && value <= range.to;
 }
 
-function groupByCount(rows, labelGetter) {
+function groupJobs(rows, labelGetter) {
   const grouped = new Map();
   rows.forEach((row) => {
     const label = cleanLabel(labelGetter(row));
@@ -605,12 +894,23 @@ function groupByCount(rows, labelGetter) {
   return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 }
 
+function groupJobRows(rows, labelGetter) {
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const label = cleanLabel(labelGetter(row));
+    if (!grouped.has(label)) grouped.set(label, []);
+    grouped.get(label).push(row);
+  });
+  return Array.from(grouped, ([label, jobs]) => ({ label, jobs })).sort((a, b) => b.jobs.length - a.jobs.length);
+}
+
 function sumBy(rows, field) {
   return rows.reduce((sum, row) => sum + numberValue(row[field]), 0);
 }
 
-function uniqueCount(values) {
-  return new Set(values.filter(Boolean)).size;
+function average(values) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + numberValue(value), 0) / values.length;
 }
 
 function numberValue(value) {
@@ -664,12 +964,18 @@ function titleCase(value) {
 }
 
 function isCompleted(status) {
-  return normalized(status).includes("completed") || normalized(status).includes("paid");
+  const value = normalized(status);
+  return value.includes("completed") || value.includes("complete") || value.includes("paid");
 }
 
 function isCancelled(status) {
   const value = normalized(status);
   return value.includes("cancel") || value.includes("void");
+}
+
+function isPending(status) {
+  const value = normalized(status);
+  return value.includes("pending") || value.includes("new") || value.includes("open");
 }
 
 function isPaid(status) {
@@ -680,20 +986,58 @@ function normalized(value) {
   return String(value || "").toLowerCase();
 }
 
+function extractEtaMinutes(value) {
+  const match = String(value || "").match(/eta[^0-9]*(\d{1,3})/i);
+  return match ? numberValue(match[1]) : 0;
+}
+
 function money(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(numberValue(value));
 }
 
-function friendlyActivityTitle(action) {
-  return String(action || "Activity")
-    .replace("Technician Paid", "Technician paid")
-    .replace("Invoice Paid", "Invoice paid")
-    .replace("Login Success", "User login")
-    .replace("Login Failure", "Login failure");
+function formatTrend(value, suffix) {
+  if (typeof value === "number" && suffix) return `${value} ${suffix}`;
+  if (typeof value === "number") return money(value);
+  return value || "0";
 }
 
 function shortTime(value) {
   if (!value) return "Now";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "Recent" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatDateTime(value) {
+  if (!value) return "N/A";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function friendlyActivityTitle(action) {
+  const text = String(action || "Activity");
+  if (text === "Job Deleted") return "Delete Job";
+  if (text === "Technician Deleted") return "Delete Technician";
+  if (text === "Technician Paid") return "Tech Payment Paid";
+  if (text === "Invoice Status changed") return "Status Changed";
+  return text;
+}
+
+function buildDonutGradient(segments, total) {
+  if (!total) return "conic-gradient(#1e293b 0deg 360deg)";
+  const colors = {
+    green: "#22c55e",
+    blue: "#38bdf8",
+    red: "#ef4444",
+    orange: "#f97316",
+    purple: "#8b5cf6",
+  };
+  let cursor = 0;
+  const stops = segments.map((segment) => {
+    const degrees = (segment.value / total) * 360;
+    const start = cursor;
+    cursor += degrees;
+    return `${colors[segment.tone] || colors.blue} ${start}deg ${cursor}deg`;
+  });
+  if (cursor < 360) stops.push(`#1e293b ${cursor}deg 360deg`);
+  return `conic-gradient(${stops.join(", ")})`;
 }
