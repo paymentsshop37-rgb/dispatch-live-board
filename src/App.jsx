@@ -41,7 +41,7 @@ const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
   { id: "dispatch", label: "Dispatch Center", icon: ClipboardList },
   { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
-  { id: "customers", label: "Customers", icon: Building2, adminOnly: true },
+  { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher"] },
   { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "users", label: "Users", icon: Users, adminOnly: true },
@@ -58,7 +58,7 @@ const sidebarSections = [
       { id: "dispatch", label: "Dispatch Board", icon: ClipboardList },
       { id: "technicians-quick", label: "Technicians", icon: Users, target: "technicians", requires: "canViewTechnicianCenter" },
       { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher"] },
-      { id: "customers", label: "Customers", icon: Building2, adminOnly: true },
+      { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher"] },
       { id: "reports", label: "Reports", icon: BarChart3, target: "dashboard", adminOnly: true },
     ],
   },
@@ -326,7 +326,8 @@ function canAccessView(view, role, permissions) {
   if (view === "dashboard") return role === "admin" || role === "dispatcher";
   if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
   if (view === "activity") return role === "admin" || role === "dispatcher";
-  if (["customers", "billing", "administration", "users", "reports", "settings"].includes(view)) {
+  if (view === "customers") return role === "admin" || role === "dispatcher";
+  if (["billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";
   }
   return false;

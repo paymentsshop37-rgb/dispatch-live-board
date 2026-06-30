@@ -1,12 +1,18 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BriefcaseBusiness, Mail, Phone, Plus, RefreshCw } from "lucide-react";
+import { BriefcaseBusiness, Edit3, Mail, Phone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 
 const profileTabs = ["Overview", "Contacts", "Locations", "Invoices", "Jobs", "Notes", "Payment History", "Activity Timeline"];
+const defaultContactRoles = ["Fleet Manager", "Dispatcher", "Accounting", "After Hours"];
 
 export default function CustomerCRM() {
   const [jobs, setJobs] = useState([]);
+  const [customerRows, setCustomerRows] = useState([]);
+  const [contactRows, setContactRows] = useState([]);
+  const [locationRows, setLocationRows] = useState([]);
+  const [tableSupport, setTableSupport] = useState({ customers: false, contacts: false, locations: false });
   const [warnings, setWarnings] = useState([]);
+  const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [activeTab, setActiveTab] = useState("Overview");
@@ -18,27 +24,77 @@ export default function CustomerCRM() {
   async function loadCustomers() {
     setLoading(true);
     const nextWarnings = [];
+    const [customerResult, contactsResult, locationsResult, jobsResult] = await Promise.all([
+      supabase.from("customers").select("*"),
+      supabase.from("customer_contacts").select("*"),
+      supabase.from("customer_locations").select("*"),
+      supabase.from("jobs").select("*"),
+    ]);
 
-    const { error: customerTableError } = await supabase.from("customers").select("id").limit(1);
-    if (customerTableError) {
-      nextWarnings.push("Safe mode: dedicated customers table is not available yet. CRM is using Dispatch jobs as the customer source.");
-    }
+    setTableSupport({
+      customers: !customerResult.error,
+      contacts: !contactsResult.error,
+      locations: !locationsResult.error,
+    });
 
-    const { data, error } = await supabase.from("jobs").select("*");
-    if (error) {
-      setWarnings([...nextWarnings, `Safe mode: unable to load jobs table (${error.message}).`]);
+    if (customerResult.error) nextWarnings.push("Safe mode: customers table is not available. CRM is using Dispatch jobs as the customer source.");
+    if (contactsResult.error) nextWarnings.push("Safe mode: customer_contacts table is not available. Contact edits will not persist until the table exists.");
+    if (locationsResult.error) nextWarnings.push("Safe mode: customer_locations table is not available. Location edits will not persist until the table exists.");
+
+    if (jobsResult.error) {
+      nextWarnings.push(`Safe mode: unable to load jobs table (${jobsResult.error.message}).`);
       setJobs([]);
-      setLoading(false);
-      return;
+    } else {
+      setJobs((jobsResult.data || []).map(normalizeJob));
     }
 
+    setCustomerRows(customerResult.data || []);
+    setContactRows(contactsResult.data || []);
+    setLocationRows(locationsResult.data || []);
     setWarnings(nextWarnings);
-    setJobs((data || []).map(normalizeJob));
     setLoading(false);
   }
 
-  const customers = useMemo(() => buildCustomers(jobs), [jobs]);
+  const customers = useMemo(() => buildCustomers(jobs, customerRows, contactRows, locationRows), [jobs, customerRows, contactRows, locationRows]);
   const stats = useMemo(() => buildStats(customers), [customers]);
+
+  async function saveCustomerProfile(draft) {
+    const saveWarnings = [];
+    let customerId = draft.id;
+
+    if (!tableSupport.customers) {
+      saveWarnings.push("Safe mode: customers table is not available. Customer profile fields were not saved.");
+    } else {
+      const result = await saveCustomerRow(customerPayloadFromDraft(draft));
+      if (!result.ok) saveWarnings.push(result.message);
+      if (result.id) customerId = result.id;
+    }
+
+    if (!tableSupport.contacts) {
+      saveWarnings.push("Safe mode: customer_contacts table is not available. Contact changes were not saved.");
+    } else if (customerId) {
+      const result = await replaceChildRows("customer_contacts", "customer_id", customerId, draft.contacts.map(contactPayloadFromDraft));
+      if (!result.ok) saveWarnings.push(result.message);
+    }
+
+    if (!tableSupport.locations) {
+      saveWarnings.push("Safe mode: customer_locations table is not available. Location changes were not saved.");
+    } else if (customerId) {
+      const result = await replaceChildRows("customer_locations", "customer_id", customerId, draft.locations.map(locationPayloadFromDraft));
+      if (!result.ok) saveWarnings.push(result.message);
+    }
+
+    if (saveWarnings.length) setWarnings((current) => [...new Set([...current, ...saveWarnings])]);
+    await loadCustomers();
+    setSuccessMessage("Customer information updated successfully.");
+    setTimeout(() => setSuccessMessage(""), 4000);
+    return true;
+  }
+
+  function openProfile(customer, tab) {
+    setSelectedCustomer(customer);
+    setActiveTab(tab);
+  }
 
   return (
     <div className="min-h-screen w-full max-w-none bg-slate-100 p-4 md:p-8">
@@ -56,10 +112,9 @@ export default function CustomerCRM() {
         </div>
 
         {warnings.map((warning) => (
-          <div key={warning} className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
-            {warning}
-          </div>
+          <div key={warning} className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">{warning}</div>
         ))}
+        {successMessage && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-800">{successMessage}</div>}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <CrmCard label="Total Customers" value={stats.totalCustomers} />
@@ -89,16 +144,16 @@ export default function CustomerCRM() {
               </thead>
               <tbody>
                 {customers.map((customer) => (
-                  <tr key={customer.company} className="border-t border-slate-200">
+                  <tr key={customer.key} className="border-t border-slate-200">
                     <td className="px-4 py-3 font-bold text-slate-950">{customer.company}</td>
-                    <td className="px-4 py-3">{customer.primaryContact.name}</td>
+                    <td className="px-4 py-3">{customer.primaryContact.name || "Not stored"}</td>
                     <td className="px-4 py-3">{customer.primaryContact.phone || "Not stored"}</td>
                     <td className="px-4 py-3">{customer.primaryContact.email || "Not stored"}</td>
                     <td className="px-4 py-3">{customer.city || "Not set"}</td>
                     <td className="px-4 py-3">{customer.state || "Not set"}</td>
                     <td className="px-4 py-3">{customer.jobs.length}</td>
                     <td className="px-4 py-3 font-bold">{money(customer.totalRevenue)}</td>
-                    <td className="px-4 py-3"><StatusBadge status={customer.status} /></td>
+                    <td className="px-4 py-3"><StatusBadge status={customer.customerStatus || customer.status} /></td>
                     <td className="px-4 py-3">
                       <button type="button" onClick={() => openProfile(customer, "Overview")} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">
                         View Profile
@@ -107,9 +162,7 @@ export default function CustomerCRM() {
                   </tr>
                 ))}
                 {!loading && customers.length === 0 && (
-                  <tr>
-                    <td colSpan={10} className="px-4 py-8 text-center text-slate-500">No customer records found from Dispatch jobs.</td>
-                  </tr>
+                  <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-500">No customer records found.</td></tr>
                 )}
               </tbody>
             </table>
@@ -124,18 +177,49 @@ export default function CustomerCRM() {
           setActiveTab={setActiveTab}
           onClose={() => setSelectedCustomer(null)}
           openProfile={openProfile}
+          onSave={saveCustomerProfile}
+          tableSupport={tableSupport}
         />
       )}
     </div>
   );
-
-  function openProfile(customer, tab) {
-    setSelectedCustomer(customer);
-    setActiveTab(tab);
-  }
 }
 
-function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfile }) {
+function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfile, onSave, tableSupport }) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(() => createCustomerDraft(customer));
+
+  useEffect(() => {
+    setDraft(createCustomerDraft(customer));
+    setEditing(false);
+  }, [customer]);
+
+  function updateField(field, value) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateContact(index, field, value) {
+    setDraft((current) => ({
+      ...current,
+      contacts: current.contacts.map((contact, contactIndex) => (contactIndex === index ? { ...contact, [field]: value } : contact)),
+    }));
+  }
+
+  function updateLocation(index, field, value) {
+    setDraft((current) => ({
+      ...current,
+      locations: current.locations.map((location, locationIndex) => (locationIndex === index ? { ...location, [field]: value } : location)),
+    }));
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    const saved = await onSave(draft);
+    setSaving(false);
+    if (saved) setEditing(false);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
       <div className="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -143,18 +227,31 @@ function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfi
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-wide text-blue-600">Customer Profile</p>
-              <h2 className="text-2xl font-bold text-slate-950">{customer.company}</h2>
-              <p className="mt-1 text-sm text-slate-500">{customer.city}, {customer.state} · {customer.jobs.length} jobs · {money(customer.totalRevenue)} revenue</p>
+              <h2 className="text-2xl font-bold text-slate-950">{draft.company}</h2>
+              <p className="mt-1 text-sm text-slate-500">{draft.city}, {draft.state} - {customer.jobs.length} jobs - {money(customer.totalRevenue)} revenue</p>
             </div>
             <div className="flex flex-wrap gap-2">
-              <QuickAction href={customer.primaryContact.phone ? `tel:${customer.primaryContact.phone}` : undefined} icon={<Phone />} label="Call" />
-              <QuickAction href={customer.primaryContact.email ? `mailto:${customer.primaryContact.email}` : undefined} icon={<Mail />} label="Email" />
+              <QuickAction href={draft.mainPhone ? `tel:${draft.mainPhone}` : undefined} icon={<Phone />} label="Call" />
+              <QuickAction href={draft.mainEmail ? `mailto:${draft.mainEmail}` : undefined} icon={<Mail />} label="Email" />
               <QuickAction onClick={() => alert("Open Dispatch Center to create a new dispatch for this company.")} icon={<Plus />} label="Create Dispatch" />
               <QuickAction onClick={() => openProfile(customer, "Invoices")} icon={<BriefcaseBusiness />} label="View Invoices" />
               <QuickAction onClick={() => openProfile(customer, "Jobs")} icon={<BriefcaseBusiness />} label="View Jobs" />
+              {!editing && <QuickAction onClick={() => setEditing(true)} icon={<Edit3 />} label="Edit" />}
+              {editing && (
+                <>
+                  <QuickAction onClick={handleSave} icon={<Save />} label={saving ? "Saving..." : "Save Changes"} />
+                  <QuickAction onClick={() => { setDraft(createCustomerDraft(customer)); setEditing(false); }} icon={<X />} label="Cancel" />
+                </>
+              )}
               <button type="button" onClick={onClose} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">Close</button>
             </div>
           </div>
+
+          {editing && (!tableSupport.customers || !tableSupport.contacts || !tableSupport.locations) && (
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
+              Safe mode: some customer tables are missing. Available tables will save; missing table sections will be skipped.
+            </div>
+          )}
 
           <div className="mt-4 flex gap-2 overflow-x-auto">
             {profileTabs.map((tab) => (
@@ -166,12 +263,20 @@ function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfi
         </div>
 
         <div className="overflow-y-auto p-5">
-          {activeTab === "Overview" && <OverviewTab customer={customer} />}
-          {activeTab === "Contacts" && <ContactsTab customer={customer} />}
-          {activeTab === "Locations" && <LocationsTab customer={customer} />}
+          {activeTab === "Overview" && <OverviewTab customer={customer} draft={draft} editing={editing} updateField={updateField} />}
+          {activeTab === "Contacts" && <ContactsTab draft={draft} editing={editing} updateContact={updateContact} addContact={() => setDraft((current) => ({ ...current, contacts: [...current.contacts, { role: "Additional Contact", name: "", phone: "", email: "" }] }))} />}
+          {activeTab === "Locations" && (
+            <LocationsTab
+              draft={draft}
+              editing={editing}
+              updateLocation={updateLocation}
+              addLocation={() => setDraft((current) => ({ ...current, locations: [...current.locations, { locationName: "", address: "", city: "", state: "", zip: "", notes: "" }] }))}
+              deleteLocation={(index) => setDraft((current) => ({ ...current, locations: current.locations.filter((_, locationIndex) => locationIndex !== index) }))}
+            />
+          )}
           {activeTab === "Invoices" && <InvoicesTab jobs={customer.jobs} />}
           {activeTab === "Jobs" && <JobsTab jobs={customer.jobs} />}
-          {activeTab === "Notes" && <NotesTab customer={customer} />}
+          {activeTab === "Notes" && <NotesTab draft={draft} editing={editing} updateField={updateField} />}
           {activeTab === "Payment History" && <PaymentHistoryTab jobs={customer.jobs} />}
           {activeTab === "Activity Timeline" && <TimelineTab customer={customer} />}
         </div>
@@ -180,25 +285,75 @@ function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfi
   );
 }
 
-function OverviewTab({ customer }) {
+function OverviewTab({ customer, draft, editing, updateField }) {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <CrmCard label="Total Revenue" value={money(customer.totalRevenue)} />
-      <CrmCard label="Average Invoice" value={money(customer.averageInvoice)} />
-      <CrmCard label="Jobs This Month" value={customer.jobsThisMonth} />
-      <CrmCard label="Most Requested Service" value={customer.mostRequestedService} />
-      <CrmCard label="Last Service Date" value={customer.lastServiceDate || "Not set"} />
-      <CrmCard label="Outstanding Balance" value={money(customer.outstandingBalance)} />
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <EditableField label="Company name" value={draft.company} editing={editing} onChange={(value) => updateField("company", value)} />
+        <EditableField label="Main phone" value={draft.mainPhone} editing={editing} onChange={(value) => updateField("mainPhone", value)} />
+        <EditableField label="Main email" value={draft.mainEmail} editing={editing} onChange={(value) => updateField("mainEmail", value)} />
+        <EditableField label="Billing email" value={draft.billingEmail} editing={editing} onChange={(value) => updateField("billingEmail", value)} />
+        <EditableField label="Address" value={draft.address} editing={editing} onChange={(value) => updateField("address", value)} />
+        <EditableField label="City" value={draft.city} editing={editing} onChange={(value) => updateField("city", value)} />
+        <EditableField label="State" value={draft.state} editing={editing} onChange={(value) => updateField("state", value)} />
+        <EditableField label="ZIP" value={draft.zip} editing={editing} onChange={(value) => updateField("zip", value)} />
+        <EditableField label="Preferred payment method" value={draft.preferredPaymentMethod} editing={editing} onChange={(value) => updateField("preferredPaymentMethod", value)} options={["", "EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire", "Other"]} />
+        <EditableField label="Credit status" value={draft.creditStatus} editing={editing} onChange={(value) => updateField("creditStatus", value)} options={["", "Good", "Hold", "COD", "Need Review"]} />
+        <EditableField label="Customer status" value={draft.customerStatus} editing={editing} onChange={(value) => updateField("customerStatus", value)} options={["Active", "Inactive", "Prospect", "On Hold"]} />
+      </div>
+      <EditableField label="Notes" value={draft.notes} editing={editing} onChange={(value) => updateField("notes", value)} multiline />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <CrmCard label="Total Revenue" value={money(customer.totalRevenue)} />
+        <CrmCard label="Average Invoice" value={money(customer.averageInvoice)} />
+        <CrmCard label="Jobs This Month" value={customer.jobsThisMonth} />
+        <CrmCard label="Most Requested Service" value={customer.mostRequestedService} />
+        <CrmCard label="Last Service Date" value={customer.lastServiceDate || "Not set"} />
+        <CrmCard label="Outstanding Balance" value={money(customer.outstandingBalance)} />
+      </div>
     </div>
   );
 }
 
-function ContactsTab({ customer }) {
-  return <InfoGrid items={customer.contacts.map((contact) => ({ title: contact.role, lines: [contact.name, contact.phone || "Phone not stored", contact.email || "Email not stored"] }))} />;
+function ContactsTab({ draft, editing, updateContact, addContact }) {
+  return (
+    <div className="space-y-4">
+      {editing && <button type="button" onClick={addContact} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"><Plus className="h-4 w-4" />Add Contact</button>}
+      <div className="grid gap-4 md:grid-cols-2">
+        {draft.contacts.map((contact, index) => (
+          <div key={`${contact.role}-${index}`} className="rounded-xl border border-slate-200 p-4">
+            <EditableField label="Role" value={contact.role} editing={editing} onChange={(value) => updateContact(index, "role", value)} />
+            <EditableField label="Name" value={contact.name} editing={editing} onChange={(value) => updateContact(index, "name", value)} />
+            <EditableField label="Phone" value={contact.phone} editing={editing} onChange={(value) => updateContact(index, "phone", value)} />
+            <EditableField label="Email" value={contact.email} editing={editing} onChange={(value) => updateContact(index, "email", value)} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
-function LocationsTab({ customer }) {
-  return <InfoGrid items={customer.locations.map((location) => ({ title: location.locationName, lines: [location.address, `${location.city}, ${location.state} ${location.zip}`, "GPS: future"] }))} />;
+function LocationsTab({ draft, editing, updateLocation, addLocation, deleteLocation }) {
+  return (
+    <div className="space-y-4">
+      {editing && <button type="button" onClick={addLocation} className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"><Plus className="h-4 w-4" />Add Location</button>}
+      <div className="grid gap-4 md:grid-cols-2">
+        {draft.locations.map((location, index) => (
+          <div key={`${location.locationName}-${index}`} className="rounded-xl border border-slate-200 p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <p className="font-bold text-slate-950">{location.locationName || `Location ${index + 1}`}</p>
+              {editing && <button type="button" onClick={() => deleteLocation(index)} className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100"><Trash2 className="h-4 w-4" /></button>}
+            </div>
+            <EditableField label="Location name" value={location.locationName} editing={editing} onChange={(value) => updateLocation(index, "locationName", value)} />
+            <EditableField label="Address" value={location.address} editing={editing} onChange={(value) => updateLocation(index, "address", value)} />
+            <EditableField label="City" value={location.city} editing={editing} onChange={(value) => updateLocation(index, "city", value)} />
+            <EditableField label="State" value={location.state} editing={editing} onChange={(value) => updateLocation(index, "state", value)} />
+            <EditableField label="ZIP" value={location.zip} editing={editing} onChange={(value) => updateLocation(index, "zip", value)} />
+            <EditableField label="Notes" value={location.notes} editing={editing} onChange={(value) => updateLocation(index, "notes", value)} multiline />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function InvoicesTab({ jobs }) {
@@ -209,14 +364,8 @@ function JobsTab({ jobs }) {
   return <JobsTable jobs={jobs} />;
 }
 
-function NotesTab({ customer }) {
-  return (
-    <div className="space-y-3">
-      {customer.notes.length ? customer.notes.map((note, index) => (
-        <div key={`${note}-${index}`} className="rounded-xl bg-slate-50 p-4 text-sm text-slate-700">{note}</div>
-      )) : <Empty text="No customer notes stored yet." />}
-    </div>
-  );
+function NotesTab({ draft, editing, updateField }) {
+  return <EditableField label="Notes" value={draft.notes} editing={editing} onChange={(value) => updateField("notes", value)} multiline />;
 }
 
 function PaymentHistoryTab({ jobs }) {
@@ -228,10 +377,11 @@ function TimelineTab({ customer }) {
     <div className="space-y-3">
       {customer.jobs.map((job) => (
         <div key={job.id} className="rounded-xl border border-slate-200 p-4">
-          <p className="font-bold text-slate-950">{job.date || "No date"} · {job.invoiceNumber || "No invoice"}</p>
+          <p className="font-bold text-slate-950">{job.date || "No date"} - {job.invoiceNumber || "No invoice"}</p>
           <p className="mt-1 text-sm text-slate-600">{job.status || "Job updated"} at {job.location || "unknown location"}</p>
         </div>
       ))}
+      {customer.jobs.length === 0 && <Empty text="No activity available." />}
     </div>
   );
 }
@@ -279,49 +429,89 @@ function JobsTable({ jobs, invoiceMode = false }) {
   );
 }
 
-function buildCustomers(jobs) {
+function EditableField({ label, value, editing, onChange, options, multiline = false }) {
+  if (!editing) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p>
+        <p className="mt-2 whitespace-pre-wrap text-sm font-semibold text-slate-900">{value || "Not stored"}</p>
+      </div>
+    );
+  }
+
+  return (
+    <label className="grid gap-1 text-sm font-bold text-slate-600">
+      {label}
+      {options ? (
+        <select className="rounded-xl border border-slate-200 px-3 py-2 font-semibold outline-none focus:border-blue-500" value={value || ""} onChange={(event) => onChange(event.target.value)}>
+          {options.map((option) => <option key={option} value={option}>{option || "Not set"}</option>)}
+        </select>
+      ) : multiline ? (
+        <textarea className="min-h-28 rounded-xl border border-slate-200 px-3 py-2 font-semibold outline-none focus:border-blue-500" value={value || ""} onChange={(event) => onChange(event.target.value)} />
+      ) : (
+        <input className="rounded-xl border border-slate-200 px-3 py-2 font-semibold outline-none focus:border-blue-500" value={value || ""} onChange={(event) => onChange(event.target.value)} />
+      )}
+    </label>
+  );
+}
+
+function buildCustomers(jobs, customerRows, contactRows, locationRows) {
   const groups = new Map();
   jobs.forEach((job) => {
     const company = job.company || "Unknown Company";
-    if (!groups.has(company)) groups.set(company, []);
-    groups.get(company).push(job);
+    if (!groups.has(normalizeKey(company))) groups.set(normalizeKey(company), { company, jobs: [] });
+    groups.get(normalizeKey(company)).jobs.push(job);
   });
 
-  return [...groups.entries()]
-    .map(([company, companyJobs]) => {
-      const sortedJobs = [...companyJobs].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-      const locations = buildLocations(company, companyJobs);
-      const totalRevenue = companyJobs.reduce((sum, job) => sum + job.totalBill, 0);
-      const outstandingBalance = companyJobs.filter((job) => !isPaid(job.invoiceStatus)).reduce((sum, job) => sum + job.totalBill, 0);
-      const jobsThisMonth = companyJobs.filter((job) => String(job.date || "").startsWith(new Date().toISOString().slice(0, 7))).length;
+  customerRows.forEach((row) => {
+    const company = read(row, ["company_name", "company", "name"]) || "Unknown Company";
+    if (!groups.has(normalizeKey(company))) groups.set(normalizeKey(company), { company, jobs: [] });
+  });
 
-      return {
-        company,
-        jobs: sortedJobs,
-        locations,
-        city: locations[0]?.city || "",
-        state: locations[0]?.state || "",
-        primaryContact: { role: "Fleet Manager", name: "Not stored", phone: "", email: "" },
-        contacts: [
-          { role: "Fleet Manager", name: "Not stored", phone: "", email: "" },
-          { role: "Dispatcher", name: "Not stored", phone: "", email: "" },
-          { role: "Accounting", name: "Not stored", phone: "", email: "" },
-          { role: "After Hours", name: "Not stored", phone: "", email: "" },
-        ],
-        totalRevenue,
-        outstandingBalance,
-        averageInvoice: companyJobs.length ? totalRevenue / companyJobs.length : 0,
-        jobsThisMonth,
-        mostRequestedService: mostRequestedService(companyJobs),
-        lastServiceDate: sortedJobs[0]?.date || "",
-        notes: companyJobs.map((job) => job.updates).filter(Boolean).slice(0, 8),
-        status: companyJobs.some((job) => !["Completed", "Canceled", "Cancelled", "Paid"].includes(job.status)) ? "Active" : "Inactive",
-      };
-    })
-    .sort((a, b) => a.company.localeCompare(b.company));
+  return [...groups.values()].map(({ company, jobs: companyJobs }) => {
+    const customerRow = findCustomerRow(customerRows, company);
+    const sortedJobs = [...companyJobs].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    const fallbackLocations = buildLocationsFromJobs(company, companyJobs);
+    const savedLocations = customerRow?.id ? locationRows.filter((row) => String(row.customer_id || "") === String(customerRow.id)).map(locationFromRow) : [];
+    const locations = savedLocations.length ? savedLocations : fallbackLocations;
+    const contacts = customerRow?.id ? mergeContacts(contactRows.filter((row) => String(row.customer_id || "") === String(customerRow.id)).map(contactFromRow)) : defaultContacts();
+    const primaryContact = contacts[0] || { role: "Fleet Manager", name: "", phone: "", email: "" };
+    const totalRevenue = companyJobs.reduce((sum, job) => sum + job.totalBill, 0);
+    const outstandingBalance = companyJobs.filter((job) => !isPaid(job.invoiceStatus)).reduce((sum, job) => sum + job.totalBill, 0);
+    const jobsThisMonth = companyJobs.filter((job) => String(job.date || "").startsWith(new Date().toISOString().slice(0, 7))).length;
+
+    return {
+      key: customerRow?.id || normalizeKey(company),
+      id: customerRow?.id || "",
+      company: read(customerRow, ["company_name", "company", "name"]) || company,
+      companyKey: company,
+      mainPhone: read(customerRow, ["main_phone", "phone"]),
+      mainEmail: read(customerRow, ["main_email", "email"]),
+      billingEmail: read(customerRow, ["billing_email"]),
+      address: read(customerRow, ["address"]),
+      city: read(customerRow, ["city"]) || locations[0]?.city || "",
+      state: read(customerRow, ["state"]) || locations[0]?.state || "",
+      zip: read(customerRow, ["zip", "zip_code"]) || locations[0]?.zip || "",
+      notes: read(customerRow, ["notes"]),
+      preferredPaymentMethod: read(customerRow, ["preferred_payment_method", "payment_method"]),
+      creditStatus: read(customerRow, ["credit_status"]),
+      customerStatus: read(customerRow, ["customer_status", "status"]) || (companyJobs.some((job) => !["Completed", "Canceled", "Cancelled", "Paid"].includes(job.status)) ? "Active" : "Inactive"),
+      primaryContact,
+      contacts,
+      locations,
+      jobs: sortedJobs,
+      totalRevenue,
+      outstandingBalance,
+      averageInvoice: companyJobs.length ? totalRevenue / companyJobs.length : 0,
+      jobsThisMonth,
+      mostRequestedService: mostRequestedService(companyJobs),
+      lastServiceDate: sortedJobs[0]?.date || "",
+      status: companyJobs.some((job) => !["Completed", "Canceled", "Cancelled", "Paid"].includes(job.status)) ? "Active" : "Inactive",
+    };
+  }).sort((a, b) => a.company.localeCompare(b.company));
 }
 
-function buildLocations(company, jobs) {
+function buildLocationsFromJobs(company, jobs) {
   const locations = new Map();
   jobs.forEach((job) => {
     const parsed = parseLocation(job.location);
@@ -334,6 +524,7 @@ function buildLocations(company, jobs) {
         city: parsed.city,
         state: parsed.state,
         zip: parsed.zip,
+        notes: "",
       });
     }
   });
@@ -345,7 +536,7 @@ function buildStats(customers) {
   const totalRevenue = totalJobs.reduce((sum, job) => sum + job.totalBill, 0);
   return {
     totalCustomers: customers.length,
-    activeCompanies: customers.filter((customer) => customer.status === "Active").length,
+    activeCompanies: customers.filter((customer) => customer.customerStatus === "Active" || customer.status === "Active").length,
     newThisMonth: customers.filter((customer) => String(customer.jobs.at(-1)?.date || "").startsWith(new Date().toISOString().slice(0, 7))).length,
     outstandingBalance: customers.reduce((sum, customer) => sum + customer.outstandingBalance, 0),
     activeJobs: totalJobs.filter((job) => !["Completed", "Canceled", "Cancelled", "Paid"].includes(job.status)).length,
@@ -376,13 +567,165 @@ function normalizeJob(row) {
   };
 }
 
+function createCustomerDraft(customer) {
+  return {
+    id: customer.id || "",
+    originalCompany: customer.companyKey || customer.company,
+    company: customer.company || "",
+    mainPhone: customer.mainPhone || customer.primaryContact?.phone || "",
+    mainEmail: customer.mainEmail || customer.primaryContact?.email || "",
+    billingEmail: customer.billingEmail || "",
+    address: customer.address || "",
+    city: customer.city || "",
+    state: customer.state || "",
+    zip: customer.zip || "",
+    notes: customer.notes || "",
+    preferredPaymentMethod: customer.preferredPaymentMethod || "",
+    creditStatus: customer.creditStatus || "",
+    customerStatus: customer.customerStatus || customer.status || "Active",
+    contacts: mergeContacts(customer.contacts || []),
+    locations: customer.locations?.length ? customer.locations.map((location) => ({ ...location })) : [{ locationName: "", address: "", city: "", state: "", zip: "", notes: "" }],
+  };
+}
+
+function customerPayloadFromDraft(draft) {
+  return {
+    ...(draft.id ? { id: draft.id } : {}),
+    company_name: draft.company,
+    name: draft.company,
+    main_phone: draft.mainPhone,
+    phone: draft.mainPhone,
+    main_email: draft.mainEmail,
+    email: draft.mainEmail,
+    billing_email: draft.billingEmail,
+    address: draft.address,
+    city: draft.city,
+    state: draft.state,
+    zip: draft.zip,
+    zip_code: draft.zip,
+    notes: draft.notes,
+    preferred_payment_method: draft.preferredPaymentMethod,
+    credit_status: draft.creditStatus,
+    customer_status: draft.customerStatus,
+    status: draft.customerStatus,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function saveCustomerRow(payload) {
+  const insertPayload = { ...payload, created_at: new Date().toISOString() };
+  const result = await retryingWrite("customers", insertPayload, "upsert");
+  if (!result.error) return { ok: true, id: result.data?.id || payload.id };
+  return { ok: false, message: `Safe mode: unable to save customer (${result.error.message}).` };
+}
+
+async function replaceChildRows(table, foreignKey, parentId, rows) {
+  const deleteResult = await supabase.from(table).delete().eq(foreignKey, parentId);
+  if (deleteResult.error) return { ok: false, message: `Safe mode: unable to update ${table} (${deleteResult.error.message}).` };
+  const payload = rows.filter((row) => Object.values(row).some(Boolean)).map((row) => ({ ...row, [foreignKey]: parentId }));
+  if (!payload.length) return { ok: true };
+  const result = await retryingWrite(table, payload, "insert");
+  if (!result.error) return { ok: true };
+  return { ok: false, message: `Safe mode: unable to save ${table} (${result.error.message}).` };
+}
+
+function contactPayloadFromDraft(contact) {
+  return {
+    role: contact.role,
+    contact_role: contact.role,
+    name: contact.name,
+    phone: contact.phone,
+    email: contact.email,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function locationPayloadFromDraft(location) {
+  return {
+    location_name: location.locationName,
+    name: location.locationName,
+    address: location.address,
+    city: location.city,
+    state: location.state,
+    zip: location.zip,
+    zip_code: location.zip,
+    notes: location.notes,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function retryingWrite(table, payload, mode) {
+  let nextPayload = Array.isArray(payload) ? payload : [payload];
+  let lastError = null;
+
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const query = mode === "upsert"
+      ? supabase.from(table).upsert(nextPayload).select("*").single()
+      : supabase.from(table).insert(nextPayload);
+    const result = await query;
+    if (!result.error) return result;
+
+    lastError = result.error;
+    const missingColumn = missingColumnFromMessage(result.error.message);
+    if (!missingColumn) return result;
+    nextPayload = nextPayload.map((row) => stripColumn(row, missingColumn));
+  }
+
+  return { data: null, error: lastError || { message: "Unknown save error" } };
+}
+
+function missingColumnFromMessage(message = "") {
+  const match = String(message).match(/'([^']+)' column|column "([^"]+)"/i);
+  return match?.[1] || match?.[2] || "";
+}
+
+function stripColumn(payload, column) {
+  const { [column]: _removed, ...rest } = payload;
+  return rest;
+}
+
+function findCustomerRow(rows, company) {
+  const key = normalizeKey(company);
+  return rows.find((row) => normalizeKey(read(row, ["company_name", "company", "name"])) === key);
+}
+
+function contactFromRow(row) {
+  return {
+    role: read(row, ["role", "contact_role", "type"]) || "Contact",
+    name: read(row, ["name", "contact_name"]),
+    phone: read(row, ["phone", "contact_phone"]),
+    email: read(row, ["email", "contact_email"]),
+  };
+}
+
+function locationFromRow(row) {
+  return {
+    locationName: read(row, ["location_name", "name"]) || "Service Location",
+    address: read(row, ["address"]),
+    city: read(row, ["city"]),
+    state: read(row, ["state"]),
+    zip: read(row, ["zip", "zip_code"]),
+    notes: read(row, ["notes"]),
+  };
+}
+
+function mergeContacts(contacts) {
+  const byRole = new Map(contacts.map((contact) => [contact.role, { ...contact }]));
+  defaultContactRoles.forEach((role) => {
+    if (!byRole.has(role)) byRole.set(role, { role, name: "", phone: "", email: "" });
+  });
+  return [...byRole.values()];
+}
+
+function defaultContacts() {
+  return defaultContactRoles.map((role) => ({ role, name: "", phone: "", email: "" }));
+}
+
 function parseLocation(location) {
   const parts = String(location || "").split(",").map((part) => part.trim());
-  return {
-    city: parts[0] || "",
-    state: parts[1] || "",
-    zip: parts[2] || "",
-  };
+  return { city: parts[0] || "", state: parts[1] || "", zip: parts[2] || "" };
 }
 
 function mostRequestedService(jobs) {
@@ -398,6 +741,17 @@ function extractService(job) {
   if (job.requestedService) return job.requestedService;
   const line = String(job.updates || "").split(/\n+/).find((item) => /tire|brake|roadside|repair|tow|reefer|jump|fuel|service/i.test(item));
   return line || "Roadside service";
+}
+
+function read(row, aliases) {
+  for (const alias of aliases) {
+    if (row?.[alias] !== undefined && row?.[alias] !== null) return String(row[alias]).trim();
+  }
+  return "";
+}
+
+function normalizeKey(value) {
+  return String(value || "").trim().toLowerCase();
 }
 
 function isPaid(status) {
@@ -418,7 +772,7 @@ function CrmCard({ label, value }) {
 }
 
 function StatusBadge({ status }) {
-  return <span className={`rounded-full px-3 py-1 text-xs font-bold ${status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>{status}</span>;
+  return <span className={`rounded-full px-3 py-1 text-xs font-bold ${status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>{status || "Inactive"}</span>;
 }
 
 function QuickAction({ icon, label, href, onClick }) {
@@ -429,24 +783,8 @@ function QuickAction({ icon, label, href, onClick }) {
     </>
   );
 
-  if (href) {
-    return <a href={href} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">{content}</a>;
-  }
-
+  if (href) return <a href={href} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">{content}</a>;
   return <button type="button" onClick={onClick} className="flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">{content}</button>;
-}
-
-function InfoGrid({ items }) {
-  return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-      {items.map((item) => (
-        <div key={item.title} className="rounded-xl border border-slate-200 p-4">
-          <p className="font-bold text-slate-950">{item.title}</p>
-          {item.lines.map((line) => <p key={line} className="mt-1 text-sm text-slate-600">{line}</p>)}
-        </div>
-      ))}
-    </div>
-  );
 }
 
 function Empty({ text }) {
