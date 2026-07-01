@@ -59,7 +59,7 @@ const requiredFields = [
   "techLabor",
 ];
 
-const filterPresets = ["Today", "This Week", "This Month", "Last Month", "This Year", "Custom Range"];
+const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "This Year", "Custom Range"];
 
 const importantActivityActions = new Set([
   ...SYSTEM_ACTIVITY_ACTIONS,
@@ -728,6 +728,13 @@ function getDateRange(mode, customRange) {
 
   if (mode === "Today") return { from: today, to: today };
   if (mode === "This Week") return { from: localDate(startOfWeek), to: today };
+  if (mode === "Last Week") {
+    const first = new Date(startOfWeek);
+    first.setDate(startOfWeek.getDate() - 7);
+    const last = new Date(startOfWeek);
+    last.setDate(startOfWeek.getDate() - 1);
+    return { from: localDate(first), to: localDate(last) };
+  }
   if (mode === "This Month") return { from: `${today.slice(0, 7)}-01`, to: today };
   if (mode === "Last Month") {
     const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
