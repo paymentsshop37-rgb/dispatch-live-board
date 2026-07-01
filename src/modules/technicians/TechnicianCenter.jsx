@@ -79,6 +79,7 @@ export default function TechnicianCenter() {
   const [technicianToDelete, setTechnicianToDelete] = useState(null);
   const [invitationToDelete, setInvitationToDelete] = useState(null);
   const [invitations, setInvitations] = useState([]);
+  const [addTechnicianModalOpen, setAddTechnicianModalOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -199,13 +200,20 @@ export default function TechnicianCenter() {
 
   async function addTechnician(event) {
     event.preventDefault();
+    await saveNewTechnician(form);
+  }
+
+  async function saveNewTechnician(values) {
     setSaving(true);
     setError("");
 
     try {
-      const technician = await createTechnician(form, knownColumns);
-      setTechnicians((current) => [technician, ...current]);
+      await createTechnician(values, knownColumns);
+      await refreshTechnicians();
       setForm(emptyTechnician);
+      setAddTechnicianModalOpen(false);
+      setActiveTab("Directory");
+      setCopyMessage("Technician added successfully.");
     } catch (saveError) {
       setError(saveError.message || "Unable to save technician.");
     } finally {
@@ -430,6 +438,7 @@ export default function TechnicianCenter() {
             </div>
 
             <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
+              {canApproveTechnicians && <ActionButton onClick={() => setAddTechnicianModalOpen(true)} icon={<UserPlus />} label="+ Add Technician" tone="blue" />}
               <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />
               <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />
               <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />
@@ -731,6 +740,14 @@ export default function TechnicianCenter() {
         />
       )}
 
+      {addTechnicianModalOpen && (
+        <AddTechnicianModal
+          saving={saving}
+          onClose={() => setAddTechnicianModalOpen(false)}
+          onSave={saveNewTechnician}
+        />
+      )}
+
       {technicianToDelete && (
         <DeleteTechnicianModal
           technician={technicianToDelete}
@@ -868,6 +885,47 @@ function TechnicianDirectory({
         </table>
       </div>
     </section>
+  );
+}
+
+function AddTechnicianModal({ saving, onClose, onSave }) {
+  const [form, setForm] = useState(emptyTechnician);
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <form onSubmit={(event) => { event.preventDefault(); onSave(form); }} className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-950">Add Technician</h2>
+            <p className="mt-1 text-sm text-slate-500">Create a technician manually in the directory.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Close</button>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Full Name" value={form.full_name} onChange={(value) => update("full_name", value)} required />
+          <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} required />
+          <Field label="Company" value={form.company_name} onChange={(value) => update("company_name", value)} />
+          <Field label="Email" value={form.email} onChange={(value) => update("email", value)} type="email" />
+          <Field label="City" value={form.city} onChange={(value) => update("city", value)} />
+          <Field label="State" value={form.state} onChange={(value) => update("state", value)} />
+          <TextArea label="Services" value={form.services} onChange={(value) => update("services", value)} />
+          <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => update("coverage", value)} />
+          <Select label="Availability" value={form.availabilityStatus} options={availabilityOptions} onChange={(value) => update("availabilityStatus", value)} />
+          <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />
+          <TextArea label="Notes" value={form.notes} onChange={(value) => update("notes", value)} />
+        </div>
+
+        <button type="submit" disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+          <UserPlus className="h-5 w-5" />
+          {saving ? "Saving..." : "Save Technician"}
+        </button>
+      </form>
+    </div>
   );
 }
 
@@ -1695,6 +1753,10 @@ function availabilityRank(status) {
 }
 
 function splitCoverageAreas(value) {
+  if (Array.isArray(value)) {
+    return value.map((area) => String(area).trim()).filter(Boolean);
+  }
+
   return String(value || "")
     .split(/[\n\r;]+/)
     .map((area) => area.trim())

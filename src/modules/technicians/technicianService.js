@@ -156,11 +156,17 @@ function buildPayload(technician, knownColumns = DEFAULT_COLUMNS) {
   Object.keys(fieldAliases).forEach((field) => {
     const column = resolveColumn(field, knownColumns);
     if (knownColumns.includes(column) && Object.prototype.hasOwnProperty.call(technician, field)) {
-      payload[column] = field === "services" ? splitServices(technician[field]) : technician[field];
+      payload[column] = arrayBackedField(field)
+        ? splitList(technician[field], field === "services" ? /[,\n\r;]+/ : /[\n\r;]+/)
+        : technician[field];
     }
   });
 
   return payload;
+}
+
+function arrayBackedField(field) {
+  return ["services", "coverage", "serviceArea"].includes(field);
 }
 
 export async function loadTechnicians() {
@@ -274,13 +280,17 @@ export function getKnownColumns(technicians) {
 }
 
 function splitServices(services) {
-  if (Array.isArray(services)) {
-    return services.map((service) => String(service).trim()).filter(Boolean);
+  return splitList(services, /[,\n\r;]+/);
+}
+
+function splitList(value, separator) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
   }
 
-  return String(services || "")
-    .split(/[,\n\r;]+/)
-    .map((service) => service.trim())
+  return String(value || "")
+    .split(separator)
+    .map((item) => item.trim())
     .filter(Boolean);
 }
 
