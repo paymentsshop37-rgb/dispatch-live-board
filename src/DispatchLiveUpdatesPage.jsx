@@ -889,25 +889,26 @@ profit: filteredJobs.reduce(
     return dispatchTechnicians
       .filter((technician) => {
       const services = splitServices(technician.services).join(" ").toLowerCase();
-      const coverage = [technician.coverage, technician.serviceArea].join(" ").toLowerCase();
+      const coverage = technicianCoverageText(technician);
+      const homeCity = String(technician.city || "").toLowerCase();
+      const homeState = String(technician.state || "").toLowerCase();
 
-      const matchesCity =
-        !city ||
-        String(technician.city || "").toLowerCase().includes(city) ||
-        coverage.includes(city);
-      const matchesState = !state || String(technician.state || "").toLowerCase().includes(state);
+      const matchesLocation =
+        (!city && !state) ||
+        (city && homeCity.includes(city)) ||
+        (state && homeState.includes(state)) ||
+        (city && coverage.includes(city)) ||
+        (state && coverage.includes(state));
       const matchesService = !service || services.includes(service);
 
-      return matchesCity && matchesState && matchesService;
+      return matchesLocation && matchesService;
     })
       .sort((a, b) => {
-        const aCityExact = String(a.city || "").trim().toLowerCase() === city ? 1 : 0;
-        const bCityExact = String(b.city || "").trim().toLowerCase() === city ? 1 : 0;
-        if (aCityExact !== bCityExact) return bCityExact - aCityExact;
+        const scoreDifference = technicianLocationScore(b, city, state) - technicianLocationScore(a, city, state);
+        if (scoreDifference !== 0) return scoreDifference;
 
-        const aStateMatch = state && String(a.state || "").trim().toLowerCase() === state ? 1 : 0;
-        const bStateMatch = state && String(b.state || "").trim().toLowerCase() === state ? 1 : 0;
-        if (aStateMatch !== bStateMatch) return bStateMatch - aStateMatch;
+        const availabilityDifference = technicianAvailabilityRank(b.availabilityStatus) - technicianAvailabilityRank(a.availabilityStatus);
+        if (availabilityDifference !== 0) return availabilityDifference;
 
         const ratingDifference = Number(b.rating || 0) - Number(a.rating || 0);
         if (ratingDifference !== 0) return ratingDifference;
@@ -3290,6 +3291,34 @@ function splitServices(services) {
     .split(/[,\n\r]+/)
     .map((service) => service.trim())
     .filter(Boolean);
+}
+
+function technicianCoverageText(technician) {
+  return [technician.coverage, technician.serviceArea]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function technicianLocationScore(technician, city, state) {
+  const homeCity = String(technician.city || "").trim().toLowerCase();
+  const homeState = String(technician.state || "").trim().toLowerCase();
+  const coverage = technicianCoverageText(technician);
+  let score = 0;
+
+  if (city && homeCity === city) score += 40;
+  if (state && homeState === state) score += 30;
+  if (city && coverage.includes(city)) score += 20;
+  if (state && coverage.includes(state)) score += 10;
+  return score;
+}
+
+function technicianAvailabilityRank(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("available")) return 4;
+  if (normalized.includes("busy")) return 3;
+  if (normalized.includes("off")) return 2;
+  return 1;
 }
 
 function parseLocation(location) {

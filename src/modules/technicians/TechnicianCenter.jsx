@@ -4,8 +4,10 @@ import {
   Ban,
   BriefcaseBusiness,
   Clipboard,
+  Edit3,
   FileCheck2,
   FileWarning,
+  LocateFixed,
   Mail,
   MapPin,
   MessageCircle,
@@ -47,13 +49,18 @@ const emptyTechnician = {
   company_name: "",
   city: "",
   state: "",
+  address: "",
+  zip_code: "",
   serviceArea: "",
+  coverage: "",
   services: "",
   status: "Approved",
+  availabilityStatus: "Available",
+  paymentMethod: "",
   notes: "",
 };
 
-const tabs = ["Dashboard", "Pending", "Approved", "Inactive", "Documents", "Performance"];
+const tabs = ["Dashboard", "Directory", "Pending", "Approved", "Inactive", "Documents", "Performance"];
 const statuses = ["All", "Pending", "Approved", "Rejected", "Inactive", "Missing Documents"];
 const sortOptions = ["Newest", "Rating", "Completed Jobs"];
 const availabilityOptions = ["Available", "Busy", "Off Duty", "Offline"];
@@ -67,6 +74,8 @@ export default function TechnicianCenter() {
   const [serviceFilter, setServiceFilter] = useState("All");
   const [sortBy, setSortBy] = useState("Newest");
   const [selectedTechnician, setSelectedTechnician] = useState(null);
+  const [editingTechnician, setEditingTechnician] = useState(null);
+  const [coverageTechnician, setCoverageTechnician] = useState(null);
   const [technicianToDelete, setTechnicianToDelete] = useState(null);
   const [invitationToDelete, setInvitationToDelete] = useState(null);
   const [invitations, setInvitations] = useState([]);
@@ -82,6 +91,7 @@ export default function TechnicianCenter() {
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
   const knownColumns = useMemo(() => getKnownColumns(technicians), [technicians]);
+  const missingDirectoryColumns = useMemo(() => directoryColumnsNeeded(knownColumns), [knownColumns]);
   const registrationLink = buildRegistrationLink();
 
   async function refreshTechnicians() {
@@ -269,11 +279,6 @@ export default function TechnicianCenter() {
       return;
     }
 
-    if (String(technician.status || "").toLowerCase() !== "pending") {
-      setError("Only Pending technicians can be deleted.");
-      return;
-    }
-
     setTechnicianToDelete(technician);
   }
 
@@ -281,12 +286,6 @@ export default function TechnicianCenter() {
     if (!technicianToDelete) return;
     if (!canApproveTechnicians) {
       setError("Only administrators can delete technicians.");
-      setTechnicianToDelete(null);
-      return;
-    }
-
-    if (String(technicianToDelete.status || "").toLowerCase() !== "pending") {
-      setError("Only Pending technicians can be deleted.");
       setTechnicianToDelete(null);
       return;
     }
@@ -450,6 +449,12 @@ export default function TechnicianCenter() {
               Dispatcher-safe mode is active. Only approved technicians are visible.
             </p>
           )}
+
+          {missingDirectoryColumns.length > 0 && (
+            <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700">
+              Safe mode: missing optional directory columns ({missingDirectoryColumns.join(", ")}). Those fields stay visible and the app will only save them when the technicians table supports them.
+            </p>
+          )}
         </section>
 
         <div className="flex gap-2 overflow-x-auto">
@@ -467,12 +472,37 @@ export default function TechnicianCenter() {
           ))}
         </div>
 
-          {activeTab === "Dashboard" && <Dashboard stats={stats} />}
+        {activeTab === "Dashboard" && <Dashboard stats={stats} />}
 
-        <TechnicianCardGrid
-          technicians={filteredTechnicians}
-          onOpen={setSelectedTechnician}
-        />
+        {activeTab === "Directory" && (
+          <TechnicianDirectory
+            technicians={filteredTechnicians}
+            loading={loading}
+            search={search}
+            statusFilter={statusFilter}
+            serviceFilter={serviceFilter}
+            sortBy={sortBy}
+            serviceOptions={serviceOptions}
+            canManage={canApproveTechnicians}
+            canAssign={permissions.canAssignTechnicians}
+            onSearch={setSearch}
+            onStatusFilter={setStatusFilter}
+            onServiceFilter={setServiceFilter}
+            onSort={setSortBy}
+            onOpen={setSelectedTechnician}
+            onEdit={setEditingTechnician}
+            onDelete={requestDeleteTechnician}
+            onCoverage={setCoverageTechnician}
+            onAssign={(technician) => setCopyMessage(`${technician.full_name || "Technician"} selected. Open a job in Dispatch Board to complete assignment.`)}
+          />
+        )}
+
+        {activeTab !== "Directory" && (
+          <TechnicianCardGrid
+            technicians={filteredTechnicians}
+            onOpen={setSelectedTechnician}
+          />
+        )}
 
         {canApproveTechnicians && (
           <InvitationsPanel
@@ -496,6 +526,7 @@ export default function TechnicianCenter() {
           </div>
         )}
 
+        {activeTab !== "Directory" && (
         <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
           {canApproveTechnicians && (
             <form onSubmit={addTechnician} className="rounded-3xl bg-white p-5 shadow-sm">
@@ -506,13 +537,19 @@ export default function TechnicianCenter() {
 
               <div className="grid gap-3">
                 <Field label="Full Name" value={form.full_name} onChange={(value) => updateForm("full_name", value)} required />
-                <Field label="Phone" value={form.phone} onChange={(value) => updateForm("phone", value)} required />
                 <Field label="Company" value={form.company_name} onChange={(value) => updateForm("company_name", value)} />
+                <Field label="Phone" value={form.phone} onChange={(value) => updateForm("phone", value)} required />
+                <Field label="Email" value={form.email} onChange={(value) => updateForm("email", value)} type="email" />
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="City" value={form.city} onChange={(value) => updateForm("city", value)} />
                   <Field label="State" value={form.state} onChange={(value) => updateForm("state", value)} />
                 </div>
+                <Field label="Address" value={form.address} onChange={(value) => updateForm("address", value)} />
+                <Field label="ZIP" value={form.zip_code} onChange={(value) => updateForm("zip_code", value)} />
+                <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => updateForm("coverage", value)} />
                 <Field label="Services" value={form.services} onChange={(value) => updateForm("services", value)} />
+                <Field label="Preferred Payment Method" value={form.paymentMethod} onChange={(value) => updateForm("paymentMethod", value)} />
+                <Select label="Availability" value={form.availabilityStatus} options={availabilityOptions} onChange={(value) => updateForm("availabilityStatus", value)} />
                 <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => updateForm("status", value)} />
                 <TextArea label="Notes" value={form.notes} onChange={(value) => updateForm("notes", value)} />
               </div>
@@ -648,6 +685,7 @@ export default function TechnicianCenter() {
             </div>
           </section>
         </div>
+        )}
 
         {activeTab === "Documents" && <DocumentsPanel technicians={filteredTechnicians} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />}
         {activeTab === "Performance" && <PerformancePanel technicians={filteredTechnicians} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />}
@@ -668,6 +706,28 @@ export default function TechnicianCenter() {
           onSaveNotes={(notes) => saveTechnician(selectedTechnician.id, { notes })}
           onStatus={(status) => updateTechnicianStatus(selectedTechnician, status)}
           onDelete={() => requestDeleteTechnician(selectedTechnician)}
+        />
+      )}
+
+      {editingTechnician && (
+        <EditTechnicianModal
+          technician={editingTechnician}
+          saving={saving}
+          onClose={() => setEditingTechnician(null)}
+          onSave={async (patch) => {
+            setSaving(true);
+            await saveTechnician(editingTechnician.id, patch);
+            setSaving(false);
+            setEditingTechnician(null);
+          }}
+        />
+      )}
+
+      {coverageTechnician && (
+        <CoverageMapModal
+          technician={coverageTechnician}
+          technicians={filteredTechnicians}
+          onClose={() => setCoverageTechnician(null)}
         />
       )}
 
@@ -695,6 +755,226 @@ export default function TechnicianCenter() {
           onSubmit={submitInvitation}
         />
       )}
+    </div>
+  );
+}
+
+function TechnicianDirectory({
+  technicians,
+  loading,
+  search,
+  statusFilter,
+  serviceFilter,
+  sortBy,
+  serviceOptions,
+  canManage,
+  canAssign,
+  onSearch,
+  onStatusFilter,
+  onServiceFilter,
+  onSort,
+  onOpen,
+  onEdit,
+  onDelete,
+  onCoverage,
+  onAssign,
+}) {
+  const [lookup, setLookup] = useState({ city: "", state: "", service: "" });
+  const rankedTechnicians = useMemo(
+    () => rankTechniciansByCoverage(technicians, lookup),
+    [lookup, technicians]
+  );
+
+  return (
+    <section className="rounded-3xl bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-950">Technician Directory</h2>
+          <p className="mt-1 text-sm text-slate-500">Find technicians by home market, coverage area, service, availability, and rating.</p>
+        </div>
+        <button type="button" onClick={() => onCoverage(rankedTechnicians[0] || technicians[0])} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+          <LocateFixed className="h-4 w-4" />
+          View Coverage Map
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_1fr]">
+        <div className="grid gap-2 md:grid-cols-4">
+          <SearchBox value={search} onChange={onSearch} />
+          <Select value={statusFilter} options={statuses} onChange={onStatusFilter} />
+          <Select value={serviceFilter} options={serviceOptions} onChange={onServiceFilter} />
+          <Select value={sortBy} options={sortOptions} onChange={onSort} />
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">
+          <Field label="Search City" value={lookup.city} onChange={(value) => setLookup((current) => ({ ...current, city: value }))} />
+          <Field label="State" value={lookup.state} onChange={(value) => setLookup((current) => ({ ...current, state: value }))} />
+          <Field label="Service" value={lookup.service} onChange={(value) => setLookup((current) => ({ ...current, service: value }))} />
+        </div>
+      </div>
+
+      <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="w-full min-w-[1500px] border-collapse text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <Th>Technician Name</Th>
+              <Th>Company</Th>
+              <Th>Phone</Th>
+              <Th>Email</Th>
+              <Th>City</Th>
+              <Th>State</Th>
+              <Th>Coverage Areas</Th>
+              <Th>Services</Th>
+              <Th>Availability</Th>
+              <Th>Rating</Th>
+              <Th>Status</Th>
+              <Th>Last Used</Th>
+              <Th>Actions</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><Td colSpan={13}>Loading technicians...</Td></tr>
+            ) : rankedTechnicians.length === 0 ? (
+              <tr><Td colSpan={13}>No technicians found.</Td></tr>
+            ) : (
+              rankedTechnicians.map((technician) => (
+                <tr key={technician.id} className="border-t border-slate-200 align-top hover:bg-slate-50">
+                  <Td><button type="button" onClick={() => onOpen(technician)} className="font-bold text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button></Td>
+                  <Td>{technician.company_name || "Not set"}</Td>
+                  <Td>{technician.phone || "Not set"}</Td>
+                  <Td>{technician.email || "Not set"}</Td>
+                  <Td>{technician.city || "Not set"}</Td>
+                  <Td>{technician.state || "Not set"}</Td>
+                  <Td><p className="max-w-64 whitespace-pre-wrap">{formatCoverage(technician)}</p></Td>
+                  <Td><p className="max-w-64">{formatServices(technician.services)}</p></Td>
+                  <Td><AvailabilityBadge status={technician.availabilityStatus} /></Td>
+                  <Td>{Number(technician.rating || 0).toFixed(1)}</Td>
+                  <Td><StatusBadge status={technician.status} /></Td>
+                  <Td>{dateTime(technician.lastUsed || technician.updatedAt)}</Td>
+                  <Td>
+                    <div className="flex flex-wrap gap-2">
+                      <a href={technician.phone ? `tel:${technician.phone}` : undefined} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Call</a>
+                      <a href={directoryWhatsAppLink(technician, lookup)} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">WhatsApp</a>
+                      {canAssign && <button type="button" onClick={() => onAssign(technician)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Assign</button>}
+                      {canManage && <button type="button" onClick={() => onEdit(technician)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Edit</button>}
+                      <button type="button" onClick={() => onCoverage(technician)} className="rounded-xl bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200">View Coverage</button>
+                      {canManage && <button type="button" onClick={() => onDelete(technician)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200">Delete</button>}
+                    </div>
+                  </Td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function EditTechnicianModal({ technician, saving, onClose, onSave }) {
+  const [form, setForm] = useState({
+    full_name: technician.full_name || "",
+    company_name: technician.company_name || "",
+    phone: technician.phone || "",
+    email: technician.email || "",
+    city: technician.city || "",
+    state: technician.state || "",
+    address: technician.address || "",
+    zip_code: technician.zip_code || "",
+    coverage: technician.coverage || technician.serviceArea || "",
+    services: formatServices(technician.services) === "No services listed" ? "" : formatServices(technician.services),
+    notes: technician.notes || "",
+    paymentMethod: technician.paymentMethod || "",
+    availabilityStatus: technician.availabilityStatus || "Available",
+    status: technician.status || "Approved",
+  });
+
+  function update(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <form onSubmit={(event) => { event.preventDefault(); onSave(form); }} className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-950">Edit Technician</h2>
+            <p className="mt-1 text-sm text-slate-500">Update directory contact, coverage, service, and availability details.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Close</button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Full Name" value={form.full_name} onChange={(value) => update("full_name", value)} required />
+          <Field label="Company" value={form.company_name} onChange={(value) => update("company_name", value)} />
+          <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} required />
+          <Field label="Email" value={form.email} onChange={(value) => update("email", value)} type="email" />
+          <Field label="City" value={form.city} onChange={(value) => update("city", value)} />
+          <Field label="State" value={form.state} onChange={(value) => update("state", value)} />
+          <Field label="Address" value={form.address} onChange={(value) => update("address", value)} />
+          <Field label="ZIP" value={form.zip_code} onChange={(value) => update("zip_code", value)} />
+          <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => update("coverage", value)} />
+          <TextArea label="Services" value={form.services} onChange={(value) => update("services", value)} />
+          <Field label="Preferred Payment Method" value={form.paymentMethod} onChange={(value) => update("paymentMethod", value)} />
+          <Select label="Availability" value={form.availabilityStatus} options={availabilityOptions} onChange={(value) => update("availabilityStatus", value)} />
+          <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />
+          <TextArea label="Notes" value={form.notes} onChange={(value) => update("notes", value)} />
+        </div>
+        <button type="submit" disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+          <Edit3 className="h-5 w-5" />
+          {saving ? "Saving..." : "Save Technician"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function CoverageMapModal({ technician, technicians, onClose }) {
+  const ranked = rankTechniciansByCoverage(technicians, {
+    city: technician.city,
+    state: technician.state,
+    service: "",
+  }).slice(0, 8);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-950">Coverage Map</h2>
+            <p className="mt-1 text-sm text-slate-500">Map API is not configured. Showing a clean coverage and closest-technician list instead.</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Close</button>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <h3 className="font-bold">Home City</h3>
+            <p className="mt-2 text-sm text-slate-700">{[technician.city, technician.state].filter(Boolean).join(", ") || "Not set"}</p>
+            <h3 className="mt-5 font-bold">Coverage Areas</h3>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {coverageAreas(technician).length ? coverageAreas(technician).map((area) => (
+                <span key={area} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">{area}</span>
+              )) : <p className="text-sm text-slate-500">No coverage areas listed.</p>}
+            </div>
+          </section>
+          <section className="rounded-2xl border border-slate-200 p-4">
+            <h3 className="font-bold">Closest Available Technicians</h3>
+            <div className="mt-3 grid gap-3">
+              {ranked.map((item, index) => (
+                <div key={item.id} className="rounded-xl bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-bold text-slate-950">{index + 1}. {item.full_name || "Unnamed technician"}</p>
+                      <p className="text-xs text-slate-500">{[item.city, item.state].filter(Boolean).join(", ") || "No home city"}</p>
+                      <p className="mt-1 text-xs text-slate-500">{formatCoverage(item)}</p>
+                    </div>
+                    <AvailabilityBadge status={item.availabilityStatus} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1317,6 +1597,108 @@ function complianceScore(technician) {
 
 function isApproved(status) {
   return status === "Approved" || status === "Active";
+}
+
+function directoryColumnsNeeded(knownColumns) {
+  const optionalColumns = {
+    address: ["address", "street_address", "home_address"],
+    coverage: ["coverage", "coverage_area", "service_area"],
+    payment_method: ["payment_method", "paymentMethod", "payment_type"],
+    availability: ["availability", "availability_status"],
+  };
+
+  return Object.entries(optionalColumns)
+    .filter(([, aliases]) => !aliases.some((alias) => knownColumns.includes(alias)))
+    .map(([label]) => label);
+}
+
+function coverageAreas(technician) {
+  return splitCoverageAreas(technician.coverage || technician.serviceArea);
+}
+
+function formatCoverage(technician) {
+  const areas = coverageAreas(technician);
+  return areas.length ? areas.join(", ") : "No coverage area";
+}
+
+function directoryWhatsAppLink(technician, lookup) {
+  const phone = String(technician.phone || "").replace(/\D/g, "");
+  const location = [lookup.city, lookup.state].filter(Boolean).join(", ") || [technician.city, technician.state].filter(Boolean).join(", ");
+  const message = [
+    "NTTR Dispatch",
+    "",
+    "Location:",
+    location || "Not provided",
+    "",
+    "Service:",
+    lookup.service || "Not provided",
+    "",
+    "Are you available?",
+  ].join("\n");
+
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function rankTechniciansByCoverage(technicians, lookup) {
+  const city = String(lookup.city || "").trim().toLowerCase();
+  const state = String(lookup.state || "").trim().toLowerCase();
+  const service = String(lookup.service || "").trim().toLowerCase();
+
+  return [...technicians]
+    .filter((technician) => {
+      const services = splitServices(technician.services).join(" ").toLowerCase();
+      const areas = coverageAreas(technician).join(" ").toLowerCase();
+      const homeCity = String(technician.city || "").toLowerCase();
+      const homeState = String(technician.state || "").toLowerCase();
+      const matchesLocation =
+        !city && !state
+          ? true
+          : (city && homeCity.includes(city)) ||
+            (state && homeState.includes(state)) ||
+            (city && areas.includes(city)) ||
+            (state && areas.includes(state));
+      const matchesService = !service || services.includes(service);
+
+      return matchesLocation && matchesService;
+    })
+    .sort((a, b) => {
+      const aScore = technicianDirectoryScore(a, city, state);
+      const bScore = technicianDirectoryScore(b, city, state);
+      if (aScore !== bScore) return bScore - aScore;
+
+      const availabilityDifference = availabilityRank(b.availabilityStatus) - availabilityRank(a.availabilityStatus);
+      if (availabilityDifference !== 0) return availabilityDifference;
+
+      return Number(b.rating || 0) - Number(a.rating || 0);
+    });
+}
+
+function technicianDirectoryScore(technician, city, state) {
+  const homeCity = String(technician.city || "").trim().toLowerCase();
+  const homeState = String(technician.state || "").trim().toLowerCase();
+  const areas = coverageAreas(technician).join(" ").toLowerCase();
+  let score = 0;
+
+  if (city && homeCity === city) score += 40;
+  if (state && homeState === state) score += 30;
+  if (city && areas.includes(city)) score += 20;
+  if (state && areas.includes(state)) score += 10;
+  return score;
+}
+
+function availabilityRank(status) {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized.includes("available")) return 4;
+  if (normalized.includes("busy")) return 3;
+  if (normalized.includes("off")) return 2;
+  return 1;
+}
+
+function splitCoverageAreas(value) {
+  return String(value || "")
+    .split(/[\n\r;]+/)
+    .map((area) => area.trim())
+    .filter(Boolean);
 }
 
 function docStatus(value) {
