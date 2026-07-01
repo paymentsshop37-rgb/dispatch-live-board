@@ -91,6 +91,7 @@ export default function TechnicianCenter() {
   const permissions = getPermissions(currentUserRole);
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
+  const canEditDirectoryTechnicians = canApproveTechnicians || permissions.canAssignTechnicians;
   const knownColumns = useMemo(() => getKnownColumns(technicians), [technicians]);
   const missingDirectoryColumns = useMemo(() => directoryColumnsNeeded(knownColumns), [knownColumns]);
   const registrationLink = buildRegistrationLink();
@@ -206,9 +207,18 @@ export default function TechnicianCenter() {
   async function saveNewTechnician(values) {
     setSaving(true);
     setError("");
+    const createdBy = localStorage.getItem("currentUserName") || currentUserRole;
+    const technicianValues = prepareDirectoryTechnicianValues(canApproveTechnicians ? values : { ...values, status: "Approved" });
 
     try {
-      await createTechnician(values, knownColumns);
+      const technician = await createTechnician(technicianValues, knownColumns);
+      await logActivity({
+        entityType: "technician",
+        entityId: technician.id,
+        action: `Technician manually added by ${createdBy}`,
+        description: `Technician manually added by ${createdBy}`,
+        createdBy,
+      });
       await refreshTechnicians();
       setForm(emptyTechnician);
       setAddTechnicianModalOpen(false);
@@ -438,7 +448,7 @@ export default function TechnicianCenter() {
             </div>
 
             <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
-              {canApproveTechnicians && <ActionButton onClick={() => setAddTechnicianModalOpen(true)} icon={<UserPlus />} label="+ Add Technician" tone="blue" />}
+              {canEditDirectoryTechnicians && <ActionButton onClick={() => setAddTechnicianModalOpen(true)} icon={<UserPlus />} label="+ Add Technician" tone="blue" />}
               <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />
               <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />
               <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />
@@ -492,7 +502,8 @@ export default function TechnicianCenter() {
             serviceFilter={serviceFilter}
             sortBy={sortBy}
             serviceOptions={serviceOptions}
-            canManage={canApproveTechnicians}
+            canEdit={canEditDirectoryTechnicians}
+            canDelete={canApproveTechnicians}
             canAssign={permissions.canAssignTechnicians}
             onSearch={setSearch}
             onStatusFilter={setStatusFilter}
@@ -722,10 +733,12 @@ export default function TechnicianCenter() {
         <EditTechnicianModal
           technician={editingTechnician}
           saving={saving}
+          canEditStatus={canApproveTechnicians}
           onClose={() => setEditingTechnician(null)}
           onSave={async (patch) => {
             setSaving(true);
-            await saveTechnician(editingTechnician.id, patch);
+            const nextPatch = prepareDirectoryTechnicianValues(patch);
+            await saveTechnician(editingTechnician.id, canApproveTechnicians ? nextPatch : basicTechnicianPatch(nextPatch));
             setSaving(false);
             setEditingTechnician(null);
           }}
@@ -784,7 +797,8 @@ function TechnicianDirectory({
   serviceFilter,
   sortBy,
   serviceOptions,
-  canManage,
+  canEdit,
+  canDelete,
   canAssign,
   onSearch,
   onStatusFilter,
@@ -873,9 +887,9 @@ function TechnicianDirectory({
                       <a href={technician.phone ? `tel:${technician.phone}` : undefined} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Call</a>
                       <a href={directoryWhatsAppLink(technician, lookup)} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">WhatsApp</a>
                       {canAssign && <button type="button" onClick={() => onAssign(technician)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Assign</button>}
-                      {canManage && <button type="button" onClick={() => onEdit(technician)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Edit</button>}
+                      {canEdit && <button type="button" onClick={() => onEdit(technician)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Edit</button>}
                       <button type="button" onClick={() => onCoverage(technician)} className="rounded-xl bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200">View Coverage</button>
-                      {canManage && <button type="button" onClick={() => onDelete(technician)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200">Delete</button>}
+                      {canDelete && <button type="button" onClick={() => onDelete(technician)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200">Delete</button>}
                     </div>
                   </Td>
                 </tr>
@@ -929,7 +943,7 @@ function AddTechnicianModal({ saving, onClose, onSave }) {
   );
 }
 
-function EditTechnicianModal({ technician, saving, onClose, onSave }) {
+function EditTechnicianModal({ technician, saving, canEditStatus, onClose, onSave }) {
   const [form, setForm] = useState({
     full_name: technician.full_name || "",
     company_name: technician.company_name || "",
@@ -974,7 +988,7 @@ function EditTechnicianModal({ technician, saving, onClose, onSave }) {
           <TextArea label="Services" value={form.services} onChange={(value) => update("services", value)} />
           <Field label="Preferred Payment Method" value={form.paymentMethod} onChange={(value) => update("paymentMethod", value)} />
           <Select label="Availability" value={form.availabilityStatus} options={availabilityOptions} onChange={(value) => update("availabilityStatus", value)} />
-          <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />
+          {canEditStatus && <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />}
           <TextArea label="Notes" value={form.notes} onChange={(value) => update("notes", value)} />
         </div>
         <button type="submit" disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
@@ -1655,6 +1669,33 @@ function complianceScore(technician) {
 
 function isApproved(status) {
   return status === "Approved" || status === "Active";
+}
+
+function basicTechnicianPatch(patch) {
+  const allowedFields = [
+    "full_name",
+    "company_name",
+    "phone",
+    "email",
+    "city",
+    "state",
+    "coverage",
+    "serviceArea",
+    "services",
+    "availabilityStatus",
+    "notes",
+  ];
+
+  return Object.fromEntries(
+    Object.entries(patch).filter(([field]) => allowedFields.includes(field))
+  );
+}
+
+function prepareDirectoryTechnicianValues(values) {
+  return {
+    ...values,
+    serviceArea: values.serviceArea || values.coverage || "",
+  };
 }
 
 function directoryColumnsNeeded(knownColumns) {
