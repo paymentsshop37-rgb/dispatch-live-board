@@ -11,6 +11,7 @@ import {
   Mail,
   MapPin,
   MessageCircle,
+  MoreHorizontal,
   Phone,
   RefreshCw,
   Search,
@@ -266,6 +267,14 @@ export default function TechnicianCenter() {
 
     try {
       await updateTechnician(id, nextTechnician, knownColumns);
+      const updatedBy = localStorage.getItem("currentUserName") || currentUserRole;
+      await logActivity({
+        entityType: "technician",
+        entityId: id,
+        action: `Technician updated by ${updatedBy}`,
+        description: `Technician updated by ${updatedBy}`,
+        createdBy: updatedBy,
+      });
     } catch (saveError) {
       setError(saveError.message || "Unable to update technician.");
       refreshTechnicians();
@@ -454,24 +463,28 @@ export default function TechnicianCenter() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 p-4 text-slate-900 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <section className="rounded-3xl bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-2xl bg-blue-100 p-3 text-blue-700">
+    <div className="min-h-screen w-full bg-slate-100 p-4 text-slate-900 md:p-6 xl:p-8">
+      <div className="mx-auto w-full max-w-none space-y-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex min-w-0 items-start gap-4">
+              <div className="rounded-2xl bg-blue-100 p-3 text-blue-700 shadow-sm">
                 <Users className="h-7 w-7" />
               </div>
-              <div>
-                <h1 className="text-3xl font-bold tracking-tight">Technician Center</h1>
-                <p className="mt-1 text-sm text-slate-500">
-                  CRM controls for technician onboarding, compliance, dispatch readiness, and performance.
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-3xl font-black tracking-tight text-slate-950">Technician Center</h1>
+                  <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-700">Dispatcher-Safe Mode</span>
+                </div>
+                <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500">
+                  Central hub for technician management, compliance, dispatch readiness, and performance.
                 </p>
+                <p className="mt-2 text-xs font-bold text-slate-400">Only approved technicians are visible.</p>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
-              {canEditDirectoryTechnicians && <ActionButton onClick={() => setAddTechnicianModalOpen(true)} icon={<UserPlus />} label="+ Add Technician" tone="blue" />}
+            <div className="flex flex-wrap items-center justify-start gap-2 xl:max-w-3xl xl:justify-end">
+              {canEditDirectoryTechnicians && <ActionButton onClick={() => setAddTechnicianModalOpen(true)} icon={<UserPlus />} label="Add Technician" tone="blue" />}
               <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />
               <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />
               <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />
@@ -499,23 +512,22 @@ export default function TechnicianCenter() {
           )}
         </section>
 
-        <div className="flex gap-2 overflow-x-auto">
+        <Dashboard stats={stats} />
+
+        <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
           {tabs.map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
               className={`shrink-0 rounded-xl px-4 py-2 text-sm font-bold transition ${
-                activeTab === tab ? "bg-slate-950 text-white" : "bg-white text-slate-700 hover:bg-slate-50"
+                activeTab === tab ? "bg-slate-950 text-white shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
               }`}
             >
               {tab}
             </button>
           ))}
         </div>
-
-        {activeTab === "Dashboard" && <Dashboard stats={stats} />}
-
         {activeTab === "Directory" && (
           <TechnicianDirectory
             technicians={filteredTechnicians}
@@ -537,6 +549,8 @@ export default function TechnicianCenter() {
             onDelete={requestDeleteTechnician}
             onCoverage={setCoverageTechnician}
             onNearbyParts={setNearbyPartsTechnician}
+            onAdd={() => setAddTechnicianModalOpen(true)}
+            onInvite={() => setInviteModalOpen(true)}
             onAssign={(technician) => setCopyMessage(`${technician.full_name || "Technician"} selected. Open a job in Dispatch Board to complete assignment.`)}
           />
         )}
@@ -839,51 +853,54 @@ function TechnicianDirectory({
   onDelete,
   onCoverage,
   onNearbyParts,
+  onAdd,
+  onInvite,
   onAssign,
 }) {
   const [lookup, setLookup] = useState({ city: "", state: "", service: "" });
+  const [availabilityFilter, setAvailabilityFilter] = useState("All");
   const rankedTechnicians = useMemo(
-    () => rankTechniciansByCoverage(technicians, lookup),
-    [lookup, technicians]
+    () => rankTechniciansByCoverage(technicians, lookup).filter((technician) => availabilityFilter === "All" || technician.availability === availabilityFilter),
+    [availabilityFilter, lookup, technicians]
   );
+  const clearFilters = () => {
+    onSearch("");
+    onStatusFilter("All");
+    onServiceFilter("All");
+    onSort("Newest");
+    setAvailabilityFilter("All");
+    setLookup({ city: "", state: "", service: "" });
+  };
 
   return (
-    <section className="rounded-3xl bg-white p-5 shadow-sm">
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-950">Technician Directory</h2>
+          <h2 className="text-2xl font-black text-slate-950">Technician Directory</h2>
           <p className="mt-1 text-sm text-slate-500">Find technicians by home market, coverage area, service, availability, and rating.</p>
         </div>
-        <button type="button" onClick={() => onCoverage(rankedTechnicians[0] || technicians[0])} className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+        <button type="button" onClick={() => onCoverage(rankedTechnicians[0] || technicians[0])} className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">
           <LocateFixed className="h-4 w-4" />
           View Coverage Map
         </button>
       </div>
 
-      <div className="mt-5 grid gap-3 xl:grid-cols-[1fr_1fr]">
-        <div className="grid gap-2 md:grid-cols-4">
-          <SearchBox value={search} onChange={onSearch} />
-          <Select value={statusFilter} options={statuses} onChange={onStatusFilter} />
-          <Select value={serviceFilter} options={serviceOptions} onChange={onServiceFilter} />
-          <Select value={sortBy} options={sortOptions} onChange={onSort} />
-        </div>
-        <div className="grid gap-2 md:grid-cols-3">
-          <Field label="Search City" value={lookup.city} onChange={(value) => setLookup((current) => ({ ...current, city: value }))} />
+      <div className="mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-[1.4fr_0.7fr_0.8fr_0.8fr_0.7fr_auto]">
+          <SearchBox value={search} onChange={onSearch} placeholder="Search by name, phone, company" />
           <Field label="State" value={lookup.state} onChange={(value) => setLookup((current) => ({ ...current, state: value }))} />
-          <Field label="Service" value={lookup.service} onChange={(value) => setLookup((current) => ({ ...current, service: value }))} />
-        </div>
+          <Select value={serviceFilter} options={serviceOptions} onChange={onServiceFilter} />
+          <Select value={availabilityFilter} options={["All", ...availabilityOptions]} onChange={setAvailabilityFilter} />
+          <Select value={sortBy} options={sortOptions} onChange={onSort} />
+          <button type="button" onClick={clearFilters} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100">Clear Filters</button>
       </div>
 
       <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
-        <table className="w-full min-w-[1500px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <Th>Technician Name</Th>
-              <Th>Company</Th>
-              <Th>Phone</Th>
-              <Th>Email</Th>
-              <Th>City</Th>
-              <Th>State</Th>
+              <Th>Technician</Th>
+              <Th>Contact</Th>
+              <Th>Location</Th>
               <Th>Coverage Areas</Th>
               <Th>Services</Th>
               <Th>Availability</Th>
@@ -895,42 +912,60 @@ function TechnicianDirectory({
           </thead>
           <tbody>
             {loading ? (
-              <tr><Td colSpan={13}>Loading technicians...</Td></tr>
+              <tr><Td colSpan={10}>Loading technicians...</Td></tr>
             ) : rankedTechnicians.length === 0 ? (
-              <tr><Td colSpan={13}>No technicians found.</Td></tr>
+              <tr>
+                <Td colSpan={10}>
+                  <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
+                    <div className="rounded-2xl bg-slate-100 p-4 text-slate-500"><Users className="h-8 w-8" /></div>
+                    <div>
+                      <p className="text-lg font-black text-slate-950">No technicians found.</p>
+                      <p className="mt-1 text-sm text-slate-500">Add your first technician or invite one to register.</p>
+                    </div>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {canEdit && <button type="button" onClick={onAdd} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Add Technician</button>}
+                      <button type="button" onClick={onInvite} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Invite Technician</button>
+                    </div>
+                  </div>
+                </Td>
+              </tr>
             ) : (
               rankedTechnicians.map((technician) => (
                 <tr key={technician.id} className="border-t border-slate-200 align-top hover:bg-slate-50">
-                  <Td><button type="button" onClick={() => onOpen(technician)} className="font-bold text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button></Td>
-                  <Td>{technician.company || "Not set"}</Td>
-                  <Td>{technician.phone || "Not set"}</Td>
-                  <Td>{technician.email || "Not set"}</Td>
-                  <Td>{technician.city || "Not set"}</Td>
-                  <Td>{technician.state || "Not set"}</Td>
-                  <Td><p className="max-w-64 whitespace-pre-wrap">{formatCoverage(technician)}</p></Td>
-                  <Td><p className="max-w-64">{formatServices(technician.services)}</p></Td>
+                  <Td>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-black text-blue-700">{initials(technician.full_name)}</div>
+                      <div className="min-w-0">
+                        <button type="button" onClick={() => onOpen(technician)} className="truncate font-black text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button>
+                        <p className="truncate text-xs text-slate-500">{technician.company || "No company listed"}</p>
+                      </div>
+                    </div>
+                  </Td>
+                  <Td>
+                    <p className="font-semibold text-slate-800">{technician.phone || "Not stored"}</p>
+                    <p className="text-xs text-slate-500">{technician.email || "Not stored"}</p>
+                  </Td>
+                  <Td>
+                    <p className="font-semibold text-slate-800">{technician.city || "Not stored"}</p>
+                    <p className="text-xs text-slate-500">{technician.state || "Not stored"}</p>
+                  </Td>
+                  <Td><ChipPreview items={coverageAreas(technician)} empty="Not stored" tone="blue" /></Td>
+                  <Td><ChipPreview items={splitServices(technician.services)} empty="Not stored" tone="slate" /></Td>
                   <Td><AvailabilityBadge status={technician.availability} /></Td>
-                  <Td>{Number(technician.rating || 0).toFixed(1)}</Td>
+                  <Td><RatingStars rating={technician.rating} /></Td>
                   <Td><StatusBadge status={technician.status} /></Td>
                   <Td>{dateTime(technician.lastUsed || technician.updatedAt)}</Td>
                   <Td>
-                    <div className="flex flex-wrap gap-2">
-                      <a href={technician.phone ? `tel:${technician.phone}` : undefined} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Call</a>
-                      <a href={directoryWhatsAppLink(technician, lookup)} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">WhatsApp</a>
-                      {canAssign && <button type="button" onClick={() => onAssign(technician)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Assign</button>}
-                      <a href={technicianMapLink(technician)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xl bg-sky-100 px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-200" title="Map">
-                        <MapPin className="h-3.5 w-3.5" />
-                        Map
-                      </a>
-                      <button type="button" onClick={() => onNearbyParts(technician)} className="inline-flex items-center gap-1 rounded-xl bg-amber-100 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-200">
-                        <Search className="h-3.5 w-3.5" />
-                        Nearby Parts
-                      </button>
-                      {canEdit && <button type="button" onClick={() => onEdit(technician)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Edit</button>}
+                    <div className="flex flex-wrap gap-1.5">
+                      <IconMiniLink href={technician.phone ? `tel:${technician.phone}` : undefined} title="Call"><Phone className="h-4 w-4" /></IconMiniLink>
+                      <IconMiniLink href={directoryWhatsAppLink(technician, lookup)} title="WhatsApp" external tone="emerald"><MessageCircle className="h-4 w-4" /></IconMiniLink>
+                      <IconMiniLink href={technicianMapLink(technician)} title="Map" external tone="sky"><MapPin className="h-4 w-4" /></IconMiniLink>
+                      <IconMiniButton title="Nearby Parts" onClick={() => onNearbyParts(technician)} tone="amber"><Search className="h-4 w-4" /></IconMiniButton>
+                      {canEdit && <IconMiniButton title="Edit" onClick={() => onEdit(technician)}><Edit3 className="h-4 w-4" /></IconMiniButton>}
                       {coverageAreas(technician).length > 0 && (
-                        <button type="button" onClick={() => onCoverage(technician)} className="rounded-xl bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200">Show Coverage Areas</button>
+                        <IconMiniButton title="More" onClick={() => onCoverage(technician)} tone="indigo"><MoreHorizontal className="h-4 w-4" /></IconMiniButton>
                       )}
-                      {canDelete && <button type="button" onClick={() => onDelete(technician)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200">Delete</button>}
+                      {canDelete && <IconMiniButton title="Delete" onClick={() => onDelete(technician)} tone="red"><Trash2 className="h-4 w-4" /></IconMiniButton>}
                     </div>
                   </Td>
                 </tr>
@@ -1178,12 +1213,12 @@ function NearbyPartsModal({ technician, onClose }) {
 function Dashboard({ stats }) {
   return (
     <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-      <Metric icon={<Users />} label="Total technicians" value={stats.total} />
-      <Metric icon={<UserPlus />} label="Pending approvals" value={stats.pending} />
-      <Metric icon={<BadgeCheck />} label="Approved technicians" value={stats.approved} />
-      <Metric icon={<Ban />} label="Inactive technicians" value={stats.inactive} />
-      <Metric icon={<FileWarning />} label="Missing documents" value={stats.missingDocuments} />
-      <Metric icon={<Star />} label="Average rating" value={stats.averageRating} />
+      <Metric icon={<Users />} label="Total Technicians" value={stats.total} helper="All technician records" />
+      <Metric icon={<BadgeCheck />} label="Approved" value={stats.approved} helper="Ready for dispatch" />
+      <Metric icon={<UserPlus />} label="Pending" value={stats.pending} helper="Awaiting review" />
+      <Metric icon={<Ban />} label="Inactive" value={stats.inactive} helper="Unavailable records" />
+      <Metric icon={<FileWarning />} label="Missing Documents" value={stats.missingDocuments} helper="Profile gaps" />
+      <Metric icon={<Star />} label="Average Rating" value={stats.averageRating} helper="Directory average" />
     </div>
   );
 }
@@ -1976,6 +2011,7 @@ function dateTime(value) {
 function statusClass(status) {
   if (isApproved(status)) return "border-emerald-200 bg-emerald-50 text-emerald-700";
   if (status === "Pending") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "Inactive") return "border-red-200 bg-red-50 text-red-700";
   if (status === "Rejected") return "border-red-200 bg-red-50 text-red-700";
   if (status === "Missing Documents") return "border-orange-200 bg-orange-50 text-orange-700";
   return "border-slate-200 bg-slate-100 text-slate-700";
@@ -2015,6 +2051,68 @@ function StatusBadge({ status }) {
   );
 }
 
+function ChipPreview({ items, empty, tone = "slate" }) {
+  const values = items.filter(Boolean);
+  const visible = values.slice(0, 2);
+  const hiddenCount = Math.max(values.length - visible.length, 0);
+  const tones = {
+    blue: "bg-blue-50 text-blue-700",
+    slate: "bg-slate-100 text-slate-700",
+  };
+
+  if (!values.length) return <span className="text-sm font-medium text-slate-400">{empty}</span>;
+
+  return (
+    <div className="flex max-w-64 flex-wrap gap-1.5">
+      {visible.map((item) => (
+        <span key={item} className={`rounded-full px-2.5 py-1 text-xs font-bold ${tones[tone] || tones.slate}`}>{item}</span>
+      ))}
+      {hiddenCount > 0 && <span className="rounded-full bg-slate-900 px-2.5 py-1 text-xs font-bold text-white">+{hiddenCount}</span>}
+    </div>
+  );
+}
+
+function RatingStars({ rating }) {
+  const value = Number(rating || 0);
+  const stars = Math.max(0, Math.min(5, Math.round(value)));
+
+  return (
+    <div>
+      <p className="font-black text-slate-950">{value.toFixed(1)}</p>
+      <p className="text-xs tracking-wide text-amber-500">{"★".repeat(stars)}{"☆".repeat(5 - stars)}</p>
+    </div>
+  );
+}
+
+function IconMiniButton({ title, onClick, children, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 hover:bg-slate-200",
+    amber: "bg-amber-100 text-amber-700 hover:bg-amber-200",
+    indigo: "bg-indigo-100 text-indigo-700 hover:bg-indigo-200",
+    red: "bg-red-100 text-red-700 hover:bg-red-200",
+  };
+
+  return (
+    <button type="button" title={title} onClick={onClick} className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone] || tones.slate}`}>
+      {children}
+    </button>
+  );
+}
+
+function IconMiniLink({ title, href, children, external = false, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 hover:bg-slate-200",
+    emerald: "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+    sky: "bg-sky-100 text-sky-700 hover:bg-sky-200",
+  };
+
+  return (
+    <a href={href} title={title} target={external ? "_blank" : undefined} rel={external ? "noreferrer" : undefined} className={`inline-flex h-9 w-9 items-center justify-center rounded-xl ${tones[tone] || tones.slate}`}>
+      {children}
+    </a>
+  );
+}
+
 function CompliancePill({ score }) {
   const tone =
     score >= 80 ? "bg-emerald-100 text-emerald-700" : score >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700";
@@ -2022,14 +2120,15 @@ function CompliancePill({ score }) {
   return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${tone}`}>{score}% compliant</span>;
 }
 
-function Metric({ icon, label, value }) {
+function Metric({ icon, label, value, helper }) {
   return (
-    <div className="rounded-3xl bg-white p-5 shadow-sm">
-      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
         {React.cloneElement(icon, { className: "h-5 w-5" })}
       </div>
-      <p className="text-sm text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-bold">{value}</p>
+      <p className="text-3xl font-black tracking-tight text-slate-950">{value}</p>
+      <p className="mt-2 text-sm font-black text-slate-700">{label}</p>
+      <p className="mt-1 text-xs font-semibold text-slate-400">{helper}</p>
     </div>
   );
 }
@@ -2126,13 +2225,13 @@ function AvailabilityBadge({ status }) {
   );
 }
 
-function SearchBox({ value, onChange }) {
+function SearchBox({ value, onChange, placeholder = "Name, phone, company, city, state" }) {
   return (
     <div className="relative">
       <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
       <input
         className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-slate-500"
-        placeholder="Name, phone, company, city, state"
+        placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
