@@ -14,7 +14,7 @@ const emptyRegistration = {
   email: "",
   city: "",
   state: "",
-  serviceArea: "",
+  coverage_areas: "",
   services: "",
   agreement: false,
   digitalSignature: "",
@@ -91,7 +91,6 @@ export default function TechnicianRegistrationPortal() {
       const technician = await createTechnician({
         ...form,
         services: normalizeServices(form.services),
-        agreementAccepted: form.agreement,
         notes: [
           form.notes,
           invitation?.inviteCode ? `Invitation code: ${invitation.inviteCode}` : "",
@@ -178,8 +177,8 @@ export default function TechnicianRegistrationPortal() {
             <Field label="State" value={form.state} onChange={(value) => updateField("state", value)} required />
             <Field
               label="Service Area"
-              value={form.serviceArea}
-              onChange={(value) => updateField("serviceArea", value)}
+              value={form.coverage_areas}
+              onChange={(value) => updateField("coverage_areas", value)}
               placeholder="El Paso, West Texas, Southern NM"
             />
           </div>

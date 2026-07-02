@@ -32,7 +32,7 @@ function coverageMatches(technician, city) {
   return (
     String(technician.city || "").toLowerCase() === requestedCity ||
     String(technician.coverage || "").toLowerCase().includes(requestedCity) ||
-    String(technician.serviceArea || "").toLowerCase().includes(requestedCity)
+    String(technician.coverage_areas || "").toLowerCase().includes(requestedCity)
   );
 }
 
@@ -41,7 +41,7 @@ function estimatedDistance(technician, city) {
   if (!requestedCity) return 999;
   if (String(technician.city || "").toLowerCase() === requestedCity) return 0;
   if (String(technician.coverage || "").toLowerCase().includes(requestedCity)) return 25;
-  if (String(technician.serviceArea || "").toLowerCase().includes(requestedCity)) return 35;
+  if (String(technician.coverage_areas || "").toLowerCase().includes(requestedCity)) return 35;
   return 999;
 }
 
@@ -51,7 +51,7 @@ export function rankTechnicians(technicians, job) {
 
   return technicians
     .filter((technician) => technician.status === "Approved")
-    .filter((technician) => technician.availabilityStatus === "Available")
+    .filter((technician) => technician.availability === "Available")
     .filter((technician) => coverageMatches(technician, city))
     .filter((technician) => serviceMatches(technician, requestedService))
     .map((technician) => ({
@@ -62,9 +62,7 @@ export function rankTechnicians(technicians, job) {
       return (
         a.matchDistance - b.matchDistance ||
         Number(b.rating || 0) - Number(a.rating || 0) ||
-        Number(b.acceptanceRate || 0) - Number(a.acceptanceRate || 0) ||
-        Number(a.averageEta || 999) - Number(b.averageEta || 999) ||
-        Number(b.completedJobs || 0) - Number(a.completedJobs || 0)
+        Number(b.rating || 0) - Number(a.rating || 0)
       );
     });
 }

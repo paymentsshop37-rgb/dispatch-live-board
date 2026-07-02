@@ -25,6 +25,7 @@ import {
 import {
   createTechnician,
   getKnownColumns,
+  loadTechnicianColumnSupport,
   loadTechnicians,
   subscribeToTechnicians,
   updateTechnician,
@@ -46,24 +47,40 @@ const emptyTechnician = {
   full_name: "",
   phone: "",
   email: "",
-  company_name: "",
+  company: "",
   city: "",
   state: "",
   address: "",
   zip_code: "",
-  serviceArea: "",
+  coverage_areas: "",
   coverage: "",
   services: "",
   status: "Approved",
-  availabilityStatus: "Available",
-  paymentMethod: "",
+  availability: "Available",
   notes: "",
 };
 
 const tabs = ["Dashboard", "Directory", "Pending", "Approved", "Inactive", "Documents", "Performance"];
 const statuses = ["All", "Pending", "Approved", "Rejected", "Inactive", "Missing Documents"];
-const sortOptions = ["Newest", "Rating", "Completed Jobs"];
+const sortOptions = ["Newest", "Rating"];
 const availabilityOptions = ["Available", "Busy", "Off Duty", "Offline"];
+const nearbyPartsCategories = [
+  "Commercial Tire Shops",
+  "Truck Parts Suppliers",
+  "Trailer Parts",
+  "Cummins Dealers",
+  "Freightliner Dealers",
+  "Kenworth Dealers",
+  "Peterbilt Dealers",
+  "Volvo Mack Dealers",
+  "Love's Truck Care",
+  "TA Truck Service",
+  "Pilot Flying J Service",
+  "Welding Shops",
+  "Hydraulic Hose Shops",
+  "Battery Suppliers",
+];
+const nearbyPartsCache = new Map();
 
 export default function TechnicianCenter() {
   const [technicians, setTechnicians] = useState([]);
@@ -76,6 +93,7 @@ export default function TechnicianCenter() {
   const [selectedTechnician, setSelectedTechnician] = useState(null);
   const [editingTechnician, setEditingTechnician] = useState(null);
   const [coverageTechnician, setCoverageTechnician] = useState(null);
+  const [nearbyPartsTechnician, setNearbyPartsTechnician] = useState(null);
   const [technicianToDelete, setTechnicianToDelete] = useState(null);
   const [invitationToDelete, setInvitationToDelete] = useState(null);
   const [invitations, setInvitations] = useState([]);
@@ -86,14 +104,15 @@ export default function TechnicianCenter() {
   const [error, setError] = useState("");
   const [inviteError, setInviteError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
+  const [missingColumns, setMissingColumns] = useState([]);
 
   const currentUserRole = localStorage.getItem("currentUserRole") || "dispatcher";
   const permissions = getPermissions(currentUserRole);
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
   const canEditDirectoryTechnicians = canApproveTechnicians || permissions.canAssignTechnicians;
-  const knownColumns = useMemo(() => getKnownColumns(technicians), [technicians]);
-  const missingDirectoryColumns = useMemo(() => directoryColumnsNeeded(knownColumns), [knownColumns]);
+  const knownColumns = useMemo(() => getKnownColumns(technicians).filter((column) => !missingColumns.includes(column)), [missingColumns, technicians]);
+  const missingDirectoryColumns = useMemo(() => missingColumns, [missingColumns]);
   const registrationLink = buildRegistrationLink();
 
   async function refreshTechnicians() {
@@ -102,7 +121,12 @@ export default function TechnicianCenter() {
     setInviteError("");
 
     try {
-      setTechnicians(await loadTechnicians());
+      const [nextTechnicians, columnSupport] = await Promise.all([
+        loadTechnicians(),
+        loadTechnicianColumnSupport(),
+      ]);
+      setTechnicians(nextTechnicians);
+      setMissingColumns(columnSupport.missing);
     } catch (loadError) {
       setError(loadError.message || "Unable to load technicians.");
     } finally {
@@ -154,11 +178,11 @@ export default function TechnicianCenter() {
         const searchText = [
           technician.full_name,
           technician.phone,
-          technician.company_name,
+          technician.company,
           technician.city,
           technician.state,
           technician.coverage,
-          technician.serviceArea,
+          technician.coverage_areas,
         ]
           .join(" ")
           .toLowerCase();
@@ -174,7 +198,6 @@ export default function TechnicianCenter() {
       })
       .sort((a, b) => {
         if (sortBy === "Rating") return Number(b.rating || 0) - Number(a.rating || 0);
-        if (sortBy === "Completed Jobs") return Number(b.completedJobs || 0) - Number(a.completedJobs || 0);
         return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
       });
   }, [search, serviceFilter, sortBy, statusFilter, tabTechnicians]);
@@ -513,6 +536,7 @@ export default function TechnicianCenter() {
             onEdit={setEditingTechnician}
             onDelete={requestDeleteTechnician}
             onCoverage={setCoverageTechnician}
+            onNearbyParts={setNearbyPartsTechnician}
             onAssign={(technician) => setCopyMessage(`${technician.full_name || "Technician"} selected. Open a job in Dispatch Board to complete assignment.`)}
           />
         )}
@@ -557,7 +581,7 @@ export default function TechnicianCenter() {
 
               <div className="grid gap-3">
                 <Field label="Full Name" value={form.full_name} onChange={(value) => updateForm("full_name", value)} required />
-                <Field label="Company" value={form.company_name} onChange={(value) => updateForm("company_name", value)} />
+                <Field label="Company" value={form.company} onChange={(value) => updateForm("company", value)} />
                 <Field label="Phone" value={form.phone} onChange={(value) => updateForm("phone", value)} required />
                 <Field label="Email" value={form.email} onChange={(value) => updateForm("email", value)} type="email" />
                 <div className="grid grid-cols-2 gap-3">
@@ -568,8 +592,7 @@ export default function TechnicianCenter() {
                 <Field label="ZIP" value={form.zip_code} onChange={(value) => updateForm("zip_code", value)} />
                 <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => updateForm("coverage", value)} />
                 <Field label="Services" value={form.services} onChange={(value) => updateForm("services", value)} />
-                <Field label="Preferred Payment Method" value={form.paymentMethod} onChange={(value) => updateForm("paymentMethod", value)} />
-                <Select label="Availability" value={form.availabilityStatus} options={availabilityOptions} onChange={(value) => updateForm("availabilityStatus", value)} />
+                <Select label="Availability" value={form.availability} options={availabilityOptions} onChange={(value) => updateForm("availability", value)} />
                 <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => updateForm("status", value)} />
                 <TextArea label="Notes" value={form.notes} onChange={(value) => updateForm("notes", value)} />
               </div>
@@ -639,7 +662,7 @@ export default function TechnicianCenter() {
                           >
                             {technician.full_name || "Unnamed technician"}
                           </button>
-                          <p className="mt-1 text-xs text-slate-500">{technician.company_name || "No company listed"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{technician.company || "No company listed"}</p>
                         </Td>
                         <Td>
                           <InfoLine icon={<Phone />} value={technician.phone} />
@@ -647,7 +670,7 @@ export default function TechnicianCenter() {
                         </Td>
                         <Td>
                           <InfoLine icon={<MapPin />} value={[technician.city, technician.state].filter(Boolean).join(", ")} />
-                          <p className="mt-1 text-xs text-slate-500">{technician.serviceArea || "No coverage area"}</p>
+                          <p className="mt-1 text-xs text-slate-500">{technician.coverage_areas || "No coverage area"}</p>
                         </Td>
                         <Td>
                           <p className="max-w-56 text-sm">{formatServices(technician.services)}</p>
@@ -660,7 +683,7 @@ export default function TechnicianCenter() {
                         </Td>
                         <Td>
                           <p className="font-bold">{Number(technician.rating || 0).toFixed(1)} rating</p>
-                          <p className="text-xs text-slate-500">{technician.completedJobs || 0} completed jobs</p>
+                          <p className="text-xs text-slate-500">{[technician.city, technician.state].filter(Boolean).join(", ") || "No city"}</p>
                         </Td>
                         <Td>
                           <div className="flex flex-wrap gap-2">
@@ -753,6 +776,13 @@ export default function TechnicianCenter() {
         />
       )}
 
+      {nearbyPartsTechnician && (
+        <NearbyPartsModal
+          technician={nearbyPartsTechnician}
+          onClose={() => setNearbyPartsTechnician(null)}
+        />
+      )}
+
       {addTechnicianModalOpen && (
         <AddTechnicianModal
           saving={saving}
@@ -808,6 +838,7 @@ function TechnicianDirectory({
   onEdit,
   onDelete,
   onCoverage,
+  onNearbyParts,
   onAssign,
 }) {
   const [lookup, setLookup] = useState({ city: "", state: "", service: "" });
@@ -871,14 +902,14 @@ function TechnicianDirectory({
               rankedTechnicians.map((technician) => (
                 <tr key={technician.id} className="border-t border-slate-200 align-top hover:bg-slate-50">
                   <Td><button type="button" onClick={() => onOpen(technician)} className="font-bold text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button></Td>
-                  <Td>{technician.company_name || "Not set"}</Td>
+                  <Td>{technician.company || "Not set"}</Td>
                   <Td>{technician.phone || "Not set"}</Td>
                   <Td>{technician.email || "Not set"}</Td>
                   <Td>{technician.city || "Not set"}</Td>
                   <Td>{technician.state || "Not set"}</Td>
                   <Td><p className="max-w-64 whitespace-pre-wrap">{formatCoverage(technician)}</p></Td>
                   <Td><p className="max-w-64">{formatServices(technician.services)}</p></Td>
-                  <Td><AvailabilityBadge status={technician.availabilityStatus} /></Td>
+                  <Td><AvailabilityBadge status={technician.availability} /></Td>
                   <Td>{Number(technician.rating || 0).toFixed(1)}</Td>
                   <Td><StatusBadge status={technician.status} /></Td>
                   <Td>{dateTime(technician.lastUsed || technician.updatedAt)}</Td>
@@ -887,8 +918,18 @@ function TechnicianDirectory({
                       <a href={technician.phone ? `tel:${technician.phone}` : undefined} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Call</a>
                       <a href={directoryWhatsAppLink(technician, lookup)} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">WhatsApp</a>
                       {canAssign && <button type="button" onClick={() => onAssign(technician)} className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">Assign</button>}
+                      <a href={technicianMapLink(technician)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-xl bg-sky-100 px-3 py-2 text-xs font-bold text-sky-700 hover:bg-sky-200" title="Map">
+                        <MapPin className="h-3.5 w-3.5" />
+                        Map
+                      </a>
+                      <button type="button" onClick={() => onNearbyParts(technician)} className="inline-flex items-center gap-1 rounded-xl bg-amber-100 px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-200">
+                        <Search className="h-3.5 w-3.5" />
+                        Nearby Parts
+                      </button>
                       {canEdit && <button type="button" onClick={() => onEdit(technician)} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">Edit</button>}
-                      <button type="button" onClick={() => onCoverage(technician)} className="rounded-xl bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200">View Coverage</button>
+                      {coverageAreas(technician).length > 0 && (
+                        <button type="button" onClick={() => onCoverage(technician)} className="rounded-xl bg-indigo-100 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200">Show Coverage Areas</button>
+                      )}
                       {canDelete && <button type="button" onClick={() => onDelete(technician)} className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200">Delete</button>}
                     </div>
                   </Td>
@@ -923,13 +964,13 @@ function AddTechnicianModal({ saving, onClose, onSave }) {
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Full Name" value={form.full_name} onChange={(value) => update("full_name", value)} required />
           <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} required />
-          <Field label="Company" value={form.company_name} onChange={(value) => update("company_name", value)} />
+          <Field label="Company" value={form.company} onChange={(value) => update("company", value)} />
           <Field label="Email" value={form.email} onChange={(value) => update("email", value)} type="email" />
           <Field label="City" value={form.city} onChange={(value) => update("city", value)} />
           <Field label="State" value={form.state} onChange={(value) => update("state", value)} />
           <TextArea label="Services" value={form.services} onChange={(value) => update("services", value)} />
           <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => update("coverage", value)} />
-          <Select label="Availability" value={form.availabilityStatus} options={availabilityOptions} onChange={(value) => update("availabilityStatus", value)} />
+          <Select label="Availability" value={form.availability} options={availabilityOptions} onChange={(value) => update("availability", value)} />
           <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />
           <TextArea label="Notes" value={form.notes} onChange={(value) => update("notes", value)} />
         </div>
@@ -946,18 +987,17 @@ function AddTechnicianModal({ saving, onClose, onSave }) {
 function EditTechnicianModal({ technician, saving, canEditStatus, onClose, onSave }) {
   const [form, setForm] = useState({
     full_name: technician.full_name || "",
-    company_name: technician.company_name || "",
+    company: technician.company || "",
     phone: technician.phone || "",
     email: technician.email || "",
     city: technician.city || "",
     state: technician.state || "",
     address: technician.address || "",
     zip_code: technician.zip_code || "",
-    coverage: technician.coverage || technician.serviceArea || "",
+    coverage: technician.coverage || technician.coverage_areas || "",
     services: formatServices(technician.services) === "No services listed" ? "" : formatServices(technician.services),
     notes: technician.notes || "",
-    paymentMethod: technician.paymentMethod || "",
-    availabilityStatus: technician.availabilityStatus || "Available",
+    availability: technician.availability || "Available",
     status: technician.status || "Approved",
   });
 
@@ -977,7 +1017,7 @@ function EditTechnicianModal({ technician, saving, canEditStatus, onClose, onSav
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Full Name" value={form.full_name} onChange={(value) => update("full_name", value)} required />
-          <Field label="Company" value={form.company_name} onChange={(value) => update("company_name", value)} />
+          <Field label="Company" value={form.company} onChange={(value) => update("company", value)} />
           <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} required />
           <Field label="Email" value={form.email} onChange={(value) => update("email", value)} type="email" />
           <Field label="City" value={form.city} onChange={(value) => update("city", value)} />
@@ -986,8 +1026,7 @@ function EditTechnicianModal({ technician, saving, canEditStatus, onClose, onSav
           <Field label="ZIP" value={form.zip_code} onChange={(value) => update("zip_code", value)} />
           <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => update("coverage", value)} />
           <TextArea label="Services" value={form.services} onChange={(value) => update("services", value)} />
-          <Field label="Preferred Payment Method" value={form.paymentMethod} onChange={(value) => update("paymentMethod", value)} />
-          <Select label="Availability" value={form.availabilityStatus} options={availabilityOptions} onChange={(value) => update("availabilityStatus", value)} />
+          <Select label="Availability" value={form.availability} options={availabilityOptions} onChange={(value) => update("availability", value)} />
           {canEditStatus && <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />}
           <TextArea label="Notes" value={form.notes} onChange={(value) => update("notes", value)} />
         </div>
@@ -1000,52 +1039,137 @@ function EditTechnicianModal({ technician, saving, canEditStatus, onClose, onSav
   );
 }
 
-function CoverageMapModal({ technician, technicians, onClose }) {
-  const ranked = rankTechniciansByCoverage(technicians, {
-    city: technician.city,
-    state: technician.state,
-    service: "",
-  }).slice(0, 8);
+function CoverageMapModal({ technician, onClose }) {
+  const areas = coverageAreas(technician);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-      <div className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-slate-950">Coverage Map</h2>
-            <p className="mt-1 text-sm text-slate-500">Map API is not configured. Showing a clean coverage and closest-technician list instead.</p>
+            <h2 className="text-2xl font-bold text-slate-950">Coverage Areas</h2>
+            <p className="mt-1 text-sm text-slate-500">{technician.full_name || "Unnamed technician"}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Close</button>
         </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-[0.9fr_1.1fr]">
-          <section className="rounded-2xl border border-slate-200 p-4">
-            <h3 className="font-bold">Home City</h3>
-            <p className="mt-2 text-sm text-slate-700">{[technician.city, technician.state].filter(Boolean).join(", ") || "Not set"}</p>
-            <h3 className="mt-5 font-bold">Coverage Areas</h3>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {coverageAreas(technician).length ? coverageAreas(technician).map((area) => (
-                <span key={area} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">{area}</span>
-              )) : <p className="text-sm text-slate-500">No coverage areas listed.</p>}
+
+        <div className="mt-5 grid gap-4">
+          <section className="grid gap-3 rounded-2xl border border-slate-200 p-4 md:grid-cols-2">
+            <Detail label="Home City / State" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
+            <Detail label="Availability" value={technician.availability} />
+            <div className="md:col-span-2">
+              <p className="text-xs font-bold uppercase text-slate-400">Services</p>
+              <p className="mt-1 text-sm text-slate-700">{formatServices(technician.services)}</p>
             </div>
           </section>
+
+          <div className="flex flex-wrap gap-2">
+            <a href={technicianMapLink(technician)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+              <MapPin className="h-4 w-4" />
+              Open Home Area Map
+            </a>
+          </div>
+
           <section className="rounded-2xl border border-slate-200 p-4">
-            <h3 className="font-bold">Closest Available Technicians</h3>
-            <div className="mt-3 grid gap-3">
-              {ranked.map((item, index) => (
-                <div key={item.id} className="rounded-xl bg-slate-50 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-bold text-slate-950">{index + 1}. {item.full_name || "Unnamed technician"}</p>
-                      <p className="text-xs text-slate-500">{[item.city, item.state].filter(Boolean).join(", ") || "No home city"}</p>
-                      <p className="mt-1 text-xs text-slate-500">{formatCoverage(item)}</p>
-                    </div>
-                    <AvailabilityBadge status={item.availabilityStatus} />
+            <h3 className="font-bold">Coverage Areas</h3>
+            <div className="mt-3 grid gap-2">
+              {areas.length === 0 ? (
+                <p className="text-sm text-slate-500">No coverage areas listed.</p>
+              ) : (
+                areas.map((area) => (
+                  <div key={area} className="flex flex-col gap-2 rounded-xl bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-semibold text-slate-800">{area}</span>
+                    <a href={googleMapsSearchLink(area)} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-bold text-white hover:bg-slate-800">
+                      <MapPin className="h-3.5 w-3.5" />
+                      Open Coverage Area Map
+                    </a>
                   </div>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </section>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function NearbyPartsModal({ technician, onClose }) {
+  const defaultLocation = technicianPartsLocation(technician);
+  const areas = coverageAreas(technician);
+  const locationOptions = [defaultLocation, ...areas].filter(Boolean);
+  const [searchLocation, setSearchLocation] = useState(defaultLocation);
+  const [selectedArea, setSelectedArea] = useState(defaultLocation);
+  const location = searchLocation.trim() || selectedArea || defaultLocation;
+  const categories = useMemo(() => nearbyPartsResults(location), [location]);
+
+  function chooseArea(value) {
+    setSelectedArea(value);
+    setSearchLocation(value);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-950">Nearby Parts for {technician.full_name || "Technician"}</h2>
+            <p className="mt-1 text-sm text-slate-500">{technician.full_name || "Unnamed technician"} · {location || "No location selected"}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Close</button>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_1fr]">
+          <label className="space-y-1 text-sm font-medium">
+            Search another city
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input
+                className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-slate-500"
+                value={searchLocation}
+                onChange={(event) => setSearchLocation(event.target.value)}
+                placeholder="El Paso, TX"
+              />
+            </div>
+          </label>
+
+          <label className="space-y-1 text-sm font-medium">
+            Technician area
+            <select
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+              value={selectedArea}
+              onChange={(event) => chooseArea(event.target.value)}
+            >
+              {locationOptions.length === 0 ? (
+                <option value="">No area available</option>
+              ) : (
+                locationOptions.map((area) => <option key={area}>{area}</option>)
+              )}
+            </select>
+          </label>
+        </div>
+
+        {!location ? (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-700">No location available for parts search.</div>
+        ) : (
+          <>
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <span className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700">Location: {location}</span>
+              <a href={googleMapsSearchLink(location)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+                <MapPin className="h-4 w-4" />
+                Open Technician Area Map
+              </a>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {categories.map((item) => (
+                <a key={item.category} href={item.mapUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-between gap-3 rounded-2xl border border-slate-200 p-4 text-left font-bold text-slate-800 hover:border-blue-300 hover:bg-blue-50">
+                  <span>{item.category}</span>
+                  <MapPin className="h-4 w-4 shrink-0 text-blue-600" />
+                </a>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1076,17 +1200,13 @@ function TechnicianCardGrid({ technicians, onOpen }) {
         >
           <div className="flex items-start gap-4">
             <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-lg font-bold text-slate-600">
-              {technician.profilePhotoUrl ? (
-                <img src={technician.profilePhotoUrl} alt="" className="h-full w-full object-cover" />
-              ) : (
-                initials(technician.full_name)
-              )}
+              {initials(technician.full_name)}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-bold text-slate-950">{technician.full_name || "Unnamed technician"}</p>
                 <StatusBadge status={technician.status} />
-                <AvailabilityBadge status={technician.availabilityStatus} />
+                <AvailabilityBadge status={technician.availability} />
               </div>
               <p className="mt-1 text-sm text-slate-500">
                 {[technician.city, technician.state].filter(Boolean).join(", ") || "No location"} · {technician.phone || "No phone"}
@@ -1096,11 +1216,8 @@ function TechnicianCardGrid({ technicians, onOpen }) {
 
           <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
             <MiniStat label="Compliance" value={`${complianceScore(technician)}%`} />
-            <MiniStat label="Jobs Completed" value={technician.completedJobs || 0} />
-            <MiniStat label="Acceptance Rate" value={`${Number(technician.acceptanceRate || 0).toFixed(0)}%`} />
-            <MiniStat label="Average ETA" value={technician.averageEta ? `${technician.averageEta} min` : "Not set"} />
             <MiniStat label="Average Rating" value={Number(technician.rating || 0).toFixed(1)} />
-            <MiniStat label="Coverage" value={technician.coverage || technician.serviceArea || "Not set"} />
+            <MiniStat label="Coverage" value={technician.coverage || technician.coverage_areas || "Not set"} />
           </div>
 
           <div className="mt-4">
@@ -1123,7 +1240,7 @@ function DocumentsPanel({ technicians, canViewPrivateTechnicianData }) {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="font-bold">{technician.full_name || "Unnamed technician"}</p>
-                <p className="text-xs text-slate-500">{technician.company_name || "No company listed"}</p>
+                <p className="text-xs text-slate-500">{technician.company || "No company listed"}</p>
               </div>
               <CompliancePill score={complianceScore(technician)} />
             </div>
@@ -1135,7 +1252,7 @@ function DocumentsPanel({ technicians, canViewPrivateTechnicianData }) {
   );
 }
 
-function PerformancePanel({ technicians, canViewPrivateTechnicianData }) {
+function PerformancePanel({ technicians }) {
   return (
     <section className="rounded-3xl bg-white p-5 shadow-sm">
       <h2 className="text-xl font-bold">Performance</h2>
@@ -1145,8 +1262,7 @@ function PerformancePanel({ technicians, canViewPrivateTechnicianData }) {
             <tr>
               <Th>Technician</Th>
               <Th>Rating</Th>
-              <Th>Completed Jobs</Th>
-              {canViewPrivateTechnicianData && <Th>Total Paid</Th>}
+              <Th>Availability</Th>
               <Th>Status</Th>
             </tr>
           </thead>
@@ -1155,8 +1271,7 @@ function PerformancePanel({ technicians, canViewPrivateTechnicianData }) {
               <tr key={technician.id} className="border-t border-slate-200">
                 <Td>{technician.full_name || "Unnamed technician"}</Td>
                 <Td>{Number(technician.rating || 0).toFixed(1)}</Td>
-                <Td>{technician.completedJobs || 0}</Td>
-                {canViewPrivateTechnicianData && <Td>{money(technician.totalPaid)}</Td>}
+                <Td>{technician.availability || "Available"}</Td>
                 <Td>
                   <StatusBadge status={technician.status} />
                 </Td>
@@ -1364,11 +1479,11 @@ function TechnicianProfileModal({
         <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h2 className="text-2xl font-bold">{technician.full_name || "Technician Profile"}</h2>
-            <p className="mt-1 text-sm text-slate-500">{technician.company_name || "No company listed"}</p>
+            <p className="mt-1 text-sm text-slate-500">{technician.company || "No company listed"}</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <StatusBadge status={technician.status} />
               <CompliancePill score={complianceScore(technician)} />
-              <AvailabilityBadge status={technician.availabilityStatus} />
+              <AvailabilityBadge status={technician.availability} />
             </div>
           </div>
 
@@ -1392,11 +1507,11 @@ function TechnicianProfileModal({
             <Detail label="Phone" value={technician.phone} />
             <Detail label="Email" value={technician.email} />
             <Detail label="City / State" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
-            <Detail label="Availability" value={technician.availabilityStatus} />
+            <Detail label="Availability" value={technician.availability} />
           </ProfileSection>
 
           <ProfileSection title="Business Information">
-            <Detail label="Company" value={technician.company_name} />
+            <Detail label="Company" value={technician.company} />
             <Detail label="Status" value={technician.status} />
             <Detail label="Created" value={dateTime(technician.createdAt)} />
           </ProfileSection>
@@ -1408,32 +1523,12 @@ function TechnicianProfileModal({
           <ProfileSection title="Coverage">
             <Detail label="Primary market" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
             <Detail label="ZIP" value={technician.zip_code} />
-            <Detail label="Coverage" value={technician.coverage || technician.serviceArea} />
+            <Detail label="Coverage" value={technician.coverage || technician.coverage_areas} />
           </ProfileSection>
-
-          <ProfileSection title="Documents">
-            <DocumentChecklist technician={technician} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />
-          </ProfileSection>
-
-          <ProfileSection title="Compliance Score">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <p className="text-4xl font-bold text-slate-950">{complianceScore(technician)}%</p>
-              <p className="mt-1 text-sm text-slate-500">Based on agreement, signature, license, W9, and insurance.</p>
-            </div>
-          </ProfileSection>
-
-          {canViewPrivateTechnicianData && (
-            <ProfileSection title="Payment Information">
-              <Detail label="Method" value={technician.paymentMethod} />
-              <Detail label="Bank / Zelle" value={technician.bankZelleInfo || technician.paymentDetails} />
-              <Detail label="Total paid" value={money(technician.totalPaid)} />
-            </ProfileSection>
-          )}
 
           <ProfileSection title="Performance">
             <Detail label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
-            <Detail label="Completed jobs" value={technician.completedJobs || 0} />
-            {canViewPrivateTechnicianData && <Detail label="Total paid" value={money(technician.totalPaid)} />}
+            <Detail label="Availability" value={technician.availability} />
           </ProfileSection>
 
           <ProfileSection title="Invitation History">
@@ -1551,7 +1646,7 @@ function DeleteTechnicianModal({ technician, onCancel, onConfirm }) {
         <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
           <Detail label="Full name" value={technician.full_name} />
           <Detail label="Phone" value={technician.phone} />
-          <Detail label="Company" value={technician.company_name} />
+          <Detail label="Company" value={technician.company} />
           <Detail label="City / State" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
         </div>
 
@@ -1616,24 +1711,13 @@ function DeleteInvitationModal({ invitation, onCancel, onConfirm }) {
 
 function DocumentChecklist({ technician, canViewPrivateTechnicianData }) {
   const documents = [
-    { label: "Driver License", complete: Boolean(technician.driverLicenseUrl) },
-    { label: "DOT Certificate", complete: Boolean(technician.dotCertificateUrl) },
-    { label: "Profile Photo", complete: Boolean(technician.profilePhotoUrl) },
-    { label: "Signed Agreement", complete: Boolean(technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature) },
+    { label: "Phone", complete: Boolean(technician.phone) },
+    { label: "Email", complete: Boolean(technician.email) },
+    { label: "City / State", complete: Boolean(technician.city && technician.state) },
+    { label: "Coverage Areas", complete: coverageAreas(technician).length > 0 },
+    { label: "Services", complete: splitServices(technician.services).length > 0 },
+    { label: "Availability", complete: Boolean(technician.availability) },
   ];
-
-  if (canViewPrivateTechnicianData) {
-    documents.splice(
-      1,
-      0,
-      { label: "Insurance", complete: Boolean(technician.insuranceUrl) },
-      { label: "W9", complete: Boolean(technician.w9Url) }
-    );
-    documents.push({
-      label: "Bank / Zelle Information",
-      complete: Boolean(technician.bankZelleInfo || technician.paymentMethod),
-    });
-  }
 
   return (
     <div className="mt-3 grid gap-2">
@@ -1645,7 +1729,7 @@ function DocumentChecklist({ technician, canViewPrivateTechnicianData }) {
               document.complete ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
             }`}
           >
-            {document.complete ? "Uploaded" : "Missing"}
+            {document.complete ? "Set" : "Missing"}
           </span>
         </div>
       ))}
@@ -1655,13 +1739,13 @@ function DocumentChecklist({ technician, canViewPrivateTechnicianData }) {
 
 function complianceScore(technician) {
   const items = [
-    technician.driverLicenseUrl,
-    technician.insuranceUrl,
-    technician.w9Url,
-    technician.dotCertificateUrl,
-    technician.profilePhotoUrl,
-    technician.bankZelleInfo || technician.paymentMethod,
-    technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature,
+    technician.full_name,
+    technician.phone,
+    technician.city,
+    technician.state,
+    coverageAreas(technician).length,
+    splitServices(technician.services).length,
+    technician.availability,
   ];
   const completed = items.filter(Boolean).length;
   return Math.round((completed / items.length) * 100);
@@ -1674,15 +1758,15 @@ function isApproved(status) {
 function basicTechnicianPatch(patch) {
   const allowedFields = [
     "full_name",
-    "company_name",
+    "company",
     "phone",
     "email",
     "city",
     "state",
     "coverage",
-    "serviceArea",
+    "coverage_areas",
     "services",
-    "availabilityStatus",
+    "availability",
     "notes",
   ];
 
@@ -1694,25 +1778,12 @@ function basicTechnicianPatch(patch) {
 function prepareDirectoryTechnicianValues(values) {
   return {
     ...values,
-    serviceArea: values.serviceArea || values.coverage || "",
+    coverage_areas: values.coverage_areas || values.coverage || "",
   };
-}
-
-function directoryColumnsNeeded(knownColumns) {
-  const optionalColumns = {
-    address: ["address", "street_address", "home_address"],
-    coverage: ["coverage", "coverage_area", "service_area"],
-    payment_method: ["payment_method", "paymentMethod", "payment_type"],
-    availability: ["availability", "availability_status"],
-  };
-
-  return Object.entries(optionalColumns)
-    .filter(([, aliases]) => !aliases.some((alias) => knownColumns.includes(alias)))
-    .map(([label]) => label);
 }
 
 function coverageAreas(technician) {
-  return splitCoverageAreas(technician.coverage || technician.serviceArea);
+  return splitCoverageAreas(technician.coverage || technician.coverage_areas);
 }
 
 function formatCoverage(technician) {
@@ -1736,6 +1807,58 @@ function directoryWhatsAppLink(technician, lookup) {
   ].join("\n");
 
   return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function technicianMapQuery(technician) {
+  if (technician.address) {
+    return [technician.address, technician.city, technician.state, technician.zip_code]
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  const cityStateQuery = [technician.city, technician.state].filter(Boolean).join(", ");
+  if (cityStateQuery) return cityStateQuery;
+
+  const firstCoverageArea = coverageAreas(technician)[0];
+  if (firstCoverageArea) return firstCoverageArea;
+
+  return String(technician.coverage || "").trim();
+}
+
+function technicianMapLink(technician) {
+  return googleMapsSearchLink(technicianMapQuery(technician));
+}
+
+function googleMapsSearchLink(query) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || "")}`;
+}
+
+function googleMapsNearbyLink(category, location) {
+  return `https://www.google.com/maps/search/${encodeURIComponent(`${category} near ${location || ""}`).replace(/%20/g, "+")}`;
+}
+
+function technicianPartsLocation(technician) {
+  const cityState = [technician.city, technician.state].filter(Boolean).join(", ");
+  if (cityState) return cityState;
+  const firstCoverageArea = coverageAreas(technician)[0];
+  if (firstCoverageArea) return firstCoverageArea;
+  return String(technician.coverage || "").trim();
+}
+
+function nearbyPartsResults(location) {
+  const normalizedLocation = String(location || "").trim();
+  const cacheKey = normalizedLocation.toLowerCase();
+  if (nearbyPartsCache.has(cacheKey)) return nearbyPartsCache.get(cacheKey);
+
+  const results = nearbyPartsCategories.map((category) => {
+    return {
+      category,
+      mapUrl: googleMapsNearbyLink(category, normalizedLocation),
+    };
+  });
+
+  nearbyPartsCache.set(cacheKey, results);
+  return results;
 }
 
 function rankTechniciansByCoverage(technicians, lookup) {
@@ -1765,7 +1888,7 @@ function rankTechniciansByCoverage(technicians, lookup) {
       const bScore = technicianDirectoryScore(b, city, state);
       if (aScore !== bScore) return bScore - aScore;
 
-      const availabilityDifference = availabilityRank(b.availabilityStatus) - availabilityRank(a.availabilityStatus);
+      const availabilityDifference = availabilityRank(b.availability) - availabilityRank(a.availability);
       if (availabilityDifference !== 0) return availabilityDifference;
 
       return Number(b.rating || 0) - Number(a.rating || 0);
@@ -1939,10 +2062,8 @@ function Timeline({ technician, invitations }) {
       { label: "Invitation opened", time: invitation.openedAt },
       { label: "Registration completed", time: invitation.completedAt },
     ]),
-    { label: "Approved", time: technician.approvedAt },
-    { label: "Documents uploaded", time: latestDocumentTime(technician) },
-    technician.completedJobs > 0 ? { label: "Jobs completed", time: technician.updatedAt || technician.createdAt } : null,
-    technician.completedJobs > 0 ? { label: "Jobs assigned", time: technician.createdAt } : null,
+    { label: "Created", time: technician.createdAt },
+    { label: "Updated", time: technician.updatedAt },
   ]
     .filter((event) => event && event.time)
     .sort((a, b) => new Date(b.time) - new Date(a.time));
@@ -1961,18 +2082,6 @@ function Timeline({ technician, invitations }) {
       ))}
     </div>
   );
-}
-
-function latestDocumentTime(technician) {
-  const hasDocuments =
-    technician.driverLicenseUrl ||
-    technician.insuranceUrl ||
-    technician.w9Url ||
-    technician.dotCertificateUrl ||
-    technician.profilePhotoUrl ||
-    technician.signedAgreementUrl;
-
-  return hasDocuments ? technician.updatedAt || technician.createdAt : "";
 }
 
 function InfoLine({ icon, value }) {

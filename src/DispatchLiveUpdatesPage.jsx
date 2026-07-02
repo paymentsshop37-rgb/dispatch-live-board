@@ -87,6 +87,23 @@ const invoiceStyles = {
 const paymentMethods = ["EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire", "Pending"];
 const techPaymentMethods = ["Zelle", "ACH", "Check", "Cash", "Card", "Other"];
 const paymentReceivers = ["A", "B"];
+const nearbyPartsCategories = [
+  "Commercial Tire Shops",
+  "Truck Parts Suppliers",
+  "Trailer Parts",
+  "Cummins Dealers",
+  "Freightliner Dealers",
+  "Kenworth Dealers",
+  "Peterbilt Dealers",
+  "Volvo Mack Dealers",
+  "Love's Truck Care",
+  "TA Truck Service",
+  "Pilot Flying J Service",
+  "Welding Shops",
+  "Hydraulic Hose Shops",
+  "Battery Suppliers",
+];
+const nearbyPartsCache = new Map();
 const jobPipeline = ["New", "Assigned", "Tech Accepted", "En Route", "On Site", "Working", "Completed", "Invoiced", "Paid"];
 const jobStatusOptions = [...jobPipeline, "Declined", "Canceled", "Dry Run"];
 const techPaymentStatusOptions = ["Pending", "Reviewing", "Approved", "Paid", "Hold"];
@@ -382,6 +399,7 @@ export default function DispatchLiveUpdatesPage() {
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
+  const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
   const [techPaymentJob, setTechPaymentJob] = useState(null);
   const [dispatchViewMode, setDispatchViewMode] = useState("cockpit");
@@ -587,7 +605,6 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
       { error: previousTechnicianError },
       { error: reassignedCountError },
       { error: technicianAvailabilityError },
-      { error: technicianAvailabilityStatusError },
       { error: technicianCurrentJobIdError },
       { error: activityLogError },
     ] = await Promise.all([
@@ -597,7 +614,6 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
       supabase.from("jobs").select("previous_technician").limit(0),
       supabase.from("jobs").select("reassigned_count").limit(0),
       supabase.from("technicians").select("availability").limit(0),
-      supabase.from("technicians").select("availability_status").limit(0),
       supabase.from("technicians").select("current_job_id").limit(0),
       supabase.from("activity_log").select("id").limit(0),
     ]);
@@ -607,7 +623,7 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     setJobsSupportsAssignedBy(!assignedByError);
     setJobsSupportsPreviousTechnician(!previousTechnicianError);
     setJobsSupportsReassignedCount(!reassignedCountError);
-    setTechnicianAvailabilityColumn(!technicianAvailabilityError ? "availability" : !technicianAvailabilityStatusError ? "availability_status" : "");
+    setTechnicianAvailabilityColumn(!technicianAvailabilityError ? "availability" : "");
     setTechniciansSupportCurrentJobId(!technicianCurrentJobIdError);
     setSupportsActivityLog(!activityLogError);
     const [statusColumn, methodColumn, paidDateColumn, paidByColumn, referenceColumn, notesColumn] = await Promise.all([
@@ -907,7 +923,7 @@ profit: filteredJobs.reduce(
         const scoreDifference = technicianLocationScore(b, city, state) - technicianLocationScore(a, city, state);
         if (scoreDifference !== 0) return scoreDifference;
 
-        const availabilityDifference = technicianAvailabilityRank(b.availabilityStatus) - technicianAvailabilityRank(a.availabilityStatus);
+        const availabilityDifference = technicianAvailabilityRank(b.availability) - technicianAvailabilityRank(a.availability);
         if (availabilityDifference !== 0) return availabilityDifference;
 
         const ratingDifference = Number(b.rating || 0) - Number(a.rating || 0);
@@ -1325,7 +1341,7 @@ await logActivity({
 
     setDispatchTechnicians((current) =>
       current.map((item) =>
-        item.id === technician.id ? { ...item, availabilityStatus: availability } : item
+        item.id === technician.id ? { ...item, availability: availability } : item
       )
     );
     await loadDispatchTechnicians();
@@ -1855,6 +1871,7 @@ await logActivity({
               onUpdateJob={updateJob}
               onOpenTable={() => setDispatchViewMode("table")}
               onContextMenu={openJobContextMenu}
+              onNearbyParts={setNearbyPartsJob}
             />
           )}
 
@@ -2264,6 +2281,9 @@ await logActivity({
                           <IconAction title="Open Maps" onClick={() => handleJobContextAction("maps", job)} className="bg-blue-100 text-blue-700 hover:bg-blue-200">
                             <MapPin className="h-4 w-4" />
                           </IconAction>
+                          <IconAction title="Nearby Parts" onClick={() => setNearbyPartsJob(job)} className="bg-amber-100 text-amber-700 hover:bg-amber-200">
+                            <Search className="h-4 w-4" />
+                          </IconAction>
                           <IconAction title="View / Edit" onClick={() => handleJobContextAction("edit", job)} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
                             <Edit3 className="h-4 w-4" />
                           </IconAction>
@@ -2353,6 +2373,13 @@ await logActivity({
               />
             )}
 
+            {nearbyPartsJob && (
+              <JobNearbyPartsModal
+                job={nearbyPartsJob}
+                onClose={() => setNearbyPartsJob(null)}
+              />
+            )}
+
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
               <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-bold text-emerald-700 shadow-sm">
                 Auto Save Enabled
@@ -2405,6 +2432,7 @@ function DispatchCockpit({
   onUpdateJob,
   onOpenTable,
   onContextMenu,
+  onNearbyParts,
 }) {
   const selected = selectedJob || jobs[0];
   const activity = buildCockpitActivity(selected, notifications, activityLogs, changeLogs, jobs);
@@ -2482,6 +2510,17 @@ function DispatchCockpit({
                 >
                   <MapPin className="h-3.5 w-3.5" />
                 </a>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onNearbyParts(job);
+                  }}
+                  className="rounded-lg bg-amber-100 p-2 text-xs font-bold text-amber-700"
+                  title="Nearby Parts"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </button>
                 <span className="rounded-lg bg-slate-100 p-2 text-slate-700"><MoreHorizontal className="h-3.5 w-3.5" /></span>
               </div>
             </button>
@@ -2547,6 +2586,7 @@ function DispatchCockpit({
               <a href={customerWhatsAppLink(selected)} target="_blank" rel="noreferrer" className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">WhatsApp Customer</a>
               <button type="button" onClick={() => alert("Customer phone is not stored on this job yet.")} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">Call Customer</button>
               <a href={mapLink(selected.location)} target="_blank" rel="noreferrer" className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Open Maps</a>
+              <button type="button" onClick={() => onNearbyParts(selected)} className="rounded-xl bg-amber-500 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600">Nearby Parts</button>
               <button type="button" onClick={onOpenTable} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">Edit Job</button>
               <button type="button" onClick={() => document.getElementById("cockpit-technicians")?.scrollIntoView({ behavior: "smooth", block: "center" })} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">Assign Technician</button>
               <button type="button" onClick={() => onUpdateJob(selected.id, "status", "Completed")} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Mark Completed</button>
@@ -2586,13 +2626,13 @@ function DispatchCockpit({
                         <p className="text-xs text-slate-500">{[technician.city, technician.state].filter(Boolean).join(", ") || "No location"} · Distance N/A</p>
                       </div>
                     </div>
-                    <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700">{technician.availabilityStatus || "Available"}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-700">{technician.availability || "Available"}</span>
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                     <MiniMetric label="Services" value={formatServices(technician.services)} />
                     <MiniMetric label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
                     <MiniMetric label="Compliance" value={`${technicianCompliance(technician)}%`} />
-                    <MiniMetric label="Availability" value={technician.availabilityStatus || "Available"} />
+                    <MiniMetric label="Availability" value={technician.availability || "Available"} />
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     <a href={technician.phone ? `tel:${technician.phone}` : undefined} className="flex justify-center rounded-xl bg-slate-100 px-3 py-2 text-slate-700 hover:bg-slate-200" title="Call">
@@ -3031,11 +3071,7 @@ function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, sup
             <div key={technician.id} className="rounded-xl border border-slate-200 p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-slate-100 text-sm font-bold text-slate-600">
-                  {technician.profilePhotoUrl ? (
-                    <img src={technician.profilePhotoUrl} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    initials(technician.full_name)
-                  )}
+                  {initials(technician.full_name)}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-slate-950">{technician.full_name || "Unnamed technician"}</p>
@@ -3048,9 +3084,8 @@ function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, sup
                 <MiniMetric label="Services" value={formatServices(technician.services)} />
                 <MiniMetric label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
                 <MiniMetric label="Compliance" value={`${technicianCompliance(technician)}%`} />
-                <MiniMetric label="Availability" value={technician.availabilityStatus || "Available"} />
+                <MiniMetric label="Availability" value={technician.availability || "Available"} />
                 <MiniMetric label="Last Job" value={lastTechnicianJob(jobs, technician)} />
-                <MiniMetric label="Jobs Completed" value={technician.completedJobs || 0} />
               </div>
 
               {technician.notes && (
@@ -3064,7 +3099,7 @@ function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, sup
                     type="button"
                     onClick={() => onAvailabilityChange(technician, availability)}
                     className={`rounded-xl px-2 py-2 text-xs font-bold ${
-                      technician.availabilityStatus === availability
+                      technician.availability === availability
                         ? "bg-blue-600 text-white"
                         : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                     }`}
@@ -3110,6 +3145,62 @@ function MiniMetric({ label, value }) {
     <div className="rounded-xl bg-slate-50 p-2">
       <p className="font-bold uppercase text-slate-400">{label}</p>
       <p className="mt-1 font-semibold text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function JobNearbyPartsModal({ job, onClose }) {
+  const defaultLocation = jobPartsLocation(job);
+  const [searchLocation, setSearchLocation] = useState(defaultLocation);
+  const location = searchLocation.trim() || defaultLocation;
+  const categories = useMemo(() => nearbyPartsResults(location, job), [job, location]);
+  const jobLabel = job?.reference || job?.id || "Job";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-950">Nearby Parts for Job #{jobLabel}</h2>
+            <p className="mt-1 text-sm text-slate-500">{location || "No location selected"}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Close</button>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="space-y-1 text-sm font-medium">
+            Custom search location
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input
+                className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-blue-500"
+                value={searchLocation}
+                onChange={(event) => setSearchLocation(event.target.value)}
+                placeholder="El Paso, TX"
+              />
+            </div>
+          </label>
+          {location && (
+            <a href={mapLink(location)} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+              <MapPin className="h-4 w-4" />
+              Open Google Maps
+            </a>
+          )}
+        </div>
+
+        {!location ? (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-700">No location available for parts search.</div>
+        ) : (
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {categories.map((item) => (
+              <a key={item.category} href={item.mapUrl} target="_blank" rel="noreferrer" className="inline-flex items-center justify-between gap-3 rounded-2xl border border-slate-200 p-4 text-left font-bold text-slate-800 hover:border-blue-300 hover:bg-blue-50">
+                <span>{item.category}</span>
+                <MapPin className="h-4 w-4 shrink-0 text-blue-600" />
+              </a>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -3187,6 +3278,54 @@ function customerWhatsAppLink(job) {
 
 function mapLink(location) {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location || "")}`;
+}
+
+function googleMapsNearbyLink(category, location) {
+  return `https://www.google.com/maps/search/${encodeURIComponent(`${category} near ${location || ""}`).replace(/%20/g, "+")}`;
+}
+
+function jobPartsLocation(job) {
+  const exactLocation = String(job?.location || "").trim();
+  if (exactLocation) return exactLocation;
+
+  const parsed = parseLocation(job?.location);
+  const parsedLocation = [parsed.city, parsed.state].filter(Boolean).join(", ");
+  if (parsedLocation) return parsedLocation;
+
+  return [job?.city, job?.state].filter(Boolean).join(", ");
+}
+
+function nearbyPartsResults(location, job) {
+  const normalizedLocation = String(location || "").trim();
+  const cacheKey = `${normalizedLocation.toLowerCase()}|${jobPartsSignal(job)}`;
+  if (nearbyPartsCache.has(cacheKey)) return nearbyPartsCache.get(cacheKey);
+
+  const results = prioritizedPartsCategories(job).map((category) => ({
+    category,
+    mapUrl: googleMapsNearbyLink(category, normalizedLocation),
+  }));
+
+  nearbyPartsCache.set(cacheKey, results);
+  return results;
+}
+
+function prioritizedPartsCategories(job) {
+  const text = jobPartsSignal(job);
+  const priority = [];
+
+  if (/\b(tire|tires|llanta|flat)\b/i.test(text)) priority.push("Commercial Tire Shops");
+  if (/\b(brake|brakes|air leak|chamber)\b/i.test(text)) priority.push("Truck Parts Suppliers", "Trailer Parts");
+  if (/\b(battery|no start)\b/i.test(text)) priority.push("Battery Suppliers");
+  if (/\b(hose|hydraulic)\b/i.test(text)) priority.push("Hydraulic Hose Shops");
+
+  return [...new Set([...priority, ...nearbyPartsCategories])];
+}
+
+function jobPartsSignal(job) {
+  return [job?.updates, job?.services, job?.service, job?.status, job?.company, job?.location]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
 }
 
 function extractService(job) {
@@ -3271,13 +3410,12 @@ function initials(name) {
 
 function technicianCompliance(technician) {
   const checks = [
-    technician.driverLicenseUrl,
-    technician.insuranceUrl,
-    technician.w9Url,
-    technician.dotCertificateUrl,
-    technician.profilePhotoUrl,
-    technician.bankZelleInfo || technician.paymentMethod,
-    technician.signedAgreementUrl || technician.agreementAccepted || technician.digitalSignature,
+    technician.full_name,
+    technician.phone,
+    technician.city,
+    technician.state,
+    technician.availability,
+    splitServices(technician.services).length,
   ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
@@ -3294,7 +3432,7 @@ function splitServices(services) {
 }
 
 function technicianCoverageText(technician) {
-  return [technician.coverage, technician.serviceArea]
+  return [technician.coverage, technician.coverage_areas]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
