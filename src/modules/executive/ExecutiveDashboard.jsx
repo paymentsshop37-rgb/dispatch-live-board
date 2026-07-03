@@ -533,23 +533,16 @@ function ActivityItem({ item, jobs }) {
 
 function MetricBar({ label, value, total, tone }) {
   const percent = total ? Math.round((value / total) * 100) : 0;
-  const tones = {
-    green: "bg-emerald-400 text-emerald-300",
-    blue: "bg-blue-400 text-blue-300",
-    red: "bg-red-400 text-red-300",
-    orange: "bg-orange-400 text-orange-300",
-    purple: "bg-violet-400 text-violet-300",
-  };
-  const [barColor, textColor] = (tones[tone] || tones.blue).split(" ");
+  const visual = jobStatusVisual(label);
 
   return (
     <div>
       <div className="mb-2 flex items-center justify-between gap-3 text-sm">
-        <span className="font-bold text-slate-300">{label}</span>
-        <span className={`font-black ${textColor}`}>{value} ({percent}%)</span>
+        <span className="font-bold text-slate-300">{visual.dot} {label}</span>
+        <span className="font-black" style={{ color: visual.border }}>{value} ({percent}%)</span>
       </div>
       <div className="h-3 overflow-hidden rounded-full bg-white/10">
-        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
+        <div className="h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: visual.border }} />
       </div>
     </div>
   );
@@ -631,7 +624,7 @@ function buildAnalytics(rows) {
       { label: "In Progress", value: inProgress, tone: "blue" },
       { label: "Cancelled", value: cancelled, tone: "red" },
       { label: "Pending", value: pending, tone: "orange" },
-      { label: "Dry Runs", value: dryRuns, tone: "purple" },
+      { label: "Dry Run", value: dryRuns, tone: "purple" },
     ],
     invoiceSegments: [
       { label: "Pending", value: rows.filter((job) => normalized(job.invoiceStatus).includes("pending")).length },
@@ -885,21 +878,50 @@ function friendlyActivityTitle(action) {
   return text;
 }
 
+const jobStatusVisuals = {
+  Completed: { background: "#DCFCE7", border: "#22C55E", text: "#166534", dot: "🟢" },
+  Cancelled: { background: "#FEE2E2", border: "#EF4444", text: "#991B1B", dot: "🔴" },
+  "In Progress": { background: "#DBEAFE", border: "#2563EB", text: "#1D4ED8", dot: "🔵" },
+  "On Site": { background: "#FEF3C7", border: "#F59E0B", text: "#92400E", dot: "🟡" },
+  "En Route": { background: "#E0F2FE", border: "#0284C7", text: "#075985", dot: "🔵" },
+  "Waiting Parts": { background: "#F3E8FF", border: "#9333EA", text: "#6B21A8", dot: "🟣" },
+  Pending: { background: "#FFF7ED", border: "#F97316", text: "#9A3412", dot: "🟠" },
+  "Dry Run": { background: "#EDE9FE", border: "#7C3AED", text: "#5B21B6", dot: "🟣" },
+  "Need Review": { background: "#FEF2F2", border: "#DC2626", text: "#7F1D1D", dot: "🔴" },
+  New: { background: "#F8FAFC", border: "#64748B", text: "#334155", dot: "⚪" },
+};
+
+function canonicalJobStatus(status) {
+  const value = String(status || "New").trim().toLowerCase();
+  const aliases = {
+    canceled: "Cancelled",
+    cancelled: "Cancelled",
+    declined: "Cancelled",
+    working: "In Progress",
+    assigned: "In Progress",
+    "tech accepted": "In Progress",
+    paid: "Completed",
+    invoiced: "Completed",
+    "dry runs": "Dry Run",
+    "dry run": "Dry Run",
+    "need review": "Need Review",
+    pending: "Pending",
+  };
+  return aliases[value] || status || "New";
+}
+
+function jobStatusVisual(status) {
+  return jobStatusVisuals[canonicalJobStatus(status)] || jobStatusVisuals.New;
+}
+
 function buildDonutGradient(segments, total) {
   if (!total) return "conic-gradient(#1e293b 0deg 360deg)";
-  const colors = {
-    green: "#22c55e",
-    blue: "#38bdf8",
-    red: "#ef4444",
-    orange: "#f97316",
-    purple: "#8b5cf6",
-  };
   let cursor = 0;
   const stops = segments.map((segment) => {
     const degrees = (segment.value / total) * 360;
     const start = cursor;
     cursor += degrees;
-    return `${colors[segment.tone] || colors.blue} ${start}deg ${cursor}deg`;
+    return `${jobStatusVisual(segment.label).border} ${start}deg ${cursor}deg`;
   });
   if (cursor < 360) stops.push(`#1e293b ${cursor}deg 360deg`);
   return `conic-gradient(${stops.join(", ")})`;

@@ -96,16 +96,28 @@ const regionalSidebarTemplate = [
   { state: "Tennessee", cities: ["Memphis", "Nashville"] },
 ];
 const stateAliases = {
-  TX: "Texas",
-  NM: "New Mexico",
-  AZ: "Arizona",
-  OK: "Oklahoma",
-  CO: "Colorado",
-  LA: "Louisiana",
-  KS: "Kansas",
-  AR: "Arkansas",
-  MS: "Mississippi",
-  TN: "Tennessee",
+  TX: "TEXAS",
+  TEXAS: "TEXAS",
+  NM: "NEW MEXICO",
+  "NEW MEXICO": "NEW MEXICO",
+  AZ: "ARIZONA",
+  ARIZONA: "ARIZONA",
+  OK: "OKLAHOMA",
+  OKLAHOMA: "OKLAHOMA",
+  CO: "COLORADO",
+  COLORADO: "COLORADO",
+  LA: "LOUISIANA",
+  LOUISIANA: "LOUISIANA",
+  KS: "KANSAS",
+  KANSAS: "KANSAS",
+  AR: "ARKANSAS",
+  ARKANSAS: "ARKANSAS",
+  MS: "MISSISSIPPI",
+  MISSISSIPPI: "MISSISSIPPI",
+  TN: "TENNESSEE",
+  TENNESSEE: "TENNESSEE",
+  CA: "CALIFORNIA",
+  CALIFORNIA: "CALIFORNIA",
 };
 
 export default function TechnicianCenter() {
@@ -1992,38 +2004,44 @@ function prepareDirectoryTechnicianValues(values) {
 function buildRegionTree(technicians) {
   const counts = new Map();
 
+  function ensureState(state) {
+    const normalizedState = normalizeStateName(state) || "UNKNOWN";
+    if (!counts.has(normalizedState)) counts.set(normalizedState, new Map());
+    return counts.get(normalizedState);
+  }
+
+  regionalSidebarTemplate.forEach((group) => {
+    const cities = ensureState(group.state);
+    group.cities.forEach((city) => {
+      if (!cities.has(city)) cities.set(city, 0);
+    });
+  });
+
   technicians.forEach((technician) => {
-    const state = normalizeStateName(technician.state) || "Unknown";
-    const city = technician.city || "Unknown";
-    if (!counts.has(state)) counts.set(state, new Map());
-    const cities = counts.get(state);
+    const cities = ensureState(technician.state);
+    const city = String(technician.city || "Unknown").trim() || "Unknown";
     cities.set(city, (cities.get(city) || 0) + 1);
   });
 
-  const templateStates = new Set(regionalSidebarTemplate.map((item) => item.state));
-  const templateGroups = regionalSidebarTemplate.map((group) => {
-    const liveCities = counts.get(group.state) || new Map();
-    const listedCities = group.cities.map((city) => ({ city, count: liveCities.get(city) || 0 }));
-    const listedCityNames = new Set(group.cities.map(normalizeText));
-    const extraCities = Array.from(liveCities, ([city, count]) => ({ city, count }))
-      .filter((item) => !listedCityNames.has(normalizeText(item.city)))
-      .sort((a, b) => a.city.localeCompare(b.city));
-    return {
-      state: group.state,
-      count: Array.from(liveCities.values()).reduce((sum, value) => sum + value, 0),
-      cities: [...listedCities, ...extraCities],
-    };
-  });
-  const extraGroups = Array.from(counts, ([state, cities]) => ({ state, cities }))
-    .filter((group) => !templateStates.has(group.state))
-    .map(({ state, cities }) => ({
-      state,
-      count: Array.from(cities.values()).reduce((sum, value) => sum + value, 0),
-      cities: Array.from(cities, ([city, count]) => ({ city, count })).sort((a, b) => a.city.localeCompare(b.city)),
-    }))
-    .sort((a, b) => a.state.localeCompare(b.state));
+  return Array.from(counts, ([state, cities]) => {
+    const mergedCities = new Map();
+    cities.forEach((count, city) => {
+      const cityName = String(city || "Unknown").trim() || "Unknown";
+      const key = normalizeText(cityName);
+      const existing = mergedCities.get(key);
+      mergedCities.set(key, {
+        city: existing?.city || cityName,
+        count: (existing?.count || 0) + count,
+      });
+    });
 
-  return [...templateGroups, ...extraGroups];
+    return {
+      state,
+      count: Array.from(mergedCities.values()).reduce((sum, item) => sum + item.count, 0),
+      cities: Array.from(mergedCities.values()).sort((a, b) => a.city.localeCompare(b.city)),
+    };
+  })
+    .sort((a, b) => a.state.localeCompare(b.state));
 }
 
 function buildRegionalStats(technicians, favoriteIds = []) {
@@ -2041,8 +2059,8 @@ function buildRegionalStats(technicians, favoriteIds = []) {
 }
 
 function normalizeStateName(value) {
-  const state = String(value || "").trim();
-  return stateAliases[state.toUpperCase()] || state;
+  const state = String(value || "").trim().replace(/\s+/g, " ").toUpperCase();
+  return stateAliases[state] || state;
 }
 
 function normalizeText(value) {

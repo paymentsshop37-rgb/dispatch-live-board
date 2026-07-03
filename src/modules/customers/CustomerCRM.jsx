@@ -378,7 +378,10 @@ function TimelineTab({ customer }) {
       {customer.jobs.map((job) => (
         <div key={job.id} className="rounded-xl border border-slate-200 p-4">
           <p className="font-bold text-slate-950">{job.date || "No date"} - {job.invoiceNumber || "No invoice"}</p>
-          <p className="mt-1 text-sm text-slate-600">{job.status || "Job updated"} at {job.location || "unknown location"}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+            <JobStatusBadge status={job.status} />
+            <span>at {job.location || "unknown location"}</span>
+          </div>
         </div>
       ))}
       {customer.jobs.length === 0 && <Empty text="No activity available." />}
@@ -415,7 +418,7 @@ function JobsTable({ jobs, invoiceMode = false }) {
                   <td className="px-4 py-3">{job.date || "No date"}</td>
                   <td className="px-4 py-3 font-bold">{job.invoiceNumber || "No invoice"}</td>
                   <td className="px-4 py-3">{job.location || "No location"}</td>
-                  <td className="px-4 py-3">{job.status || "No status"}</td>
+                  <td className="px-4 py-3"><JobStatusBadge status={job.status} /></td>
                   <td className="px-4 py-3">{extractService(job)}</td>
                   <td className="px-4 py-3 font-bold">{money(job.totalBill)}</td>
                 </>
@@ -773,6 +776,58 @@ function CrmCard({ label, value }) {
 
 function StatusBadge({ status }) {
   return <span className={`rounded-full px-3 py-1 text-xs font-bold ${status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>{status || "Inactive"}</span>;
+}
+
+const jobStatusVisuals = {
+  Completed: { background: "#DCFCE7", border: "#22C55E", text: "#166534", dot: "🟢" },
+  Cancelled: { background: "#FEE2E2", border: "#EF4444", text: "#991B1B", dot: "🔴" },
+  "In Progress": { background: "#DBEAFE", border: "#2563EB", text: "#1D4ED8", dot: "🔵" },
+  "On Site": { background: "#FEF3C7", border: "#F59E0B", text: "#92400E", dot: "🟡" },
+  "En Route": { background: "#E0F2FE", border: "#0284C7", text: "#075985", dot: "🔵" },
+  "Waiting Parts": { background: "#F3E8FF", border: "#9333EA", text: "#6B21A8", dot: "🟣" },
+  Pending: { background: "#FFF7ED", border: "#F97316", text: "#9A3412", dot: "🟠" },
+  "Dry Run": { background: "#EDE9FE", border: "#7C3AED", text: "#5B21B6", dot: "🟣" },
+  "Need Review": { background: "#FEF2F2", border: "#DC2626", text: "#7F1D1D", dot: "🔴" },
+  New: { background: "#F8FAFC", border: "#64748B", text: "#334155", dot: "⚪" },
+};
+
+function canonicalJobStatus(status) {
+  const value = String(status || "New").trim().toLowerCase();
+  const aliases = {
+    canceled: "Cancelled",
+    cancelled: "Cancelled",
+    declined: "Cancelled",
+    working: "In Progress",
+    assigned: "In Progress",
+    "tech accepted": "In Progress",
+    paid: "Completed",
+    invoiced: "Completed",
+    pending: "Pending",
+    "need review": "Need Review",
+    "dry run": "Dry Run",
+  };
+  return aliases[value] || status || "New";
+}
+
+function jobStatusVisual(status) {
+  return jobStatusVisuals[canonicalJobStatus(status)] || jobStatusVisuals.New;
+}
+
+function JobStatusBadge({ status }) {
+  const visual = jobStatusVisual(status);
+  return (
+    <span
+      className="inline-flex rounded-full border px-3 py-1 text-xs font-bold"
+      style={{
+        backgroundColor: visual.background,
+        borderColor: visual.border,
+        color: visual.text,
+        transition: "background-color 0.2s ease, border-color 0.2s ease",
+      }}
+    >
+      {visual.dot} {status || "New"}
+    </span>
+  );
 }
 
 function QuickAction({ icon, label, href, onClick }) {

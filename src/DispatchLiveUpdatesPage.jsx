@@ -21,6 +21,7 @@ import {
   MapPin,
   MessageCircle,
   Phone,
+  UserPlus,
   Star,
   Users,
   Database,
@@ -29,11 +30,6 @@ import {
   FileText,
   Bell,
   BellRing,
-  CreditCard,
-  BarChart3,
-  Settings,
-  ShieldCheck,
-  Package,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
@@ -42,21 +38,25 @@ import { logActivity } from "./modules/activity";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 
-const statusStyles = {
-  New: "bg-blue-50 text-blue-700 border-blue-200",
-  Assigned: "bg-blue-100 text-blue-800 border-blue-300",
-  "Tech Accepted": "bg-indigo-50 text-indigo-700 border-indigo-200",
-  "En Route": "bg-cyan-50 text-cyan-700 border-cyan-200",
-  "On Site": "bg-violet-50 text-violet-700 border-violet-200",
-  Working: "bg-amber-50 text-amber-700 border-amber-200",
-  "In Progress": "bg-amber-50 text-amber-700 border-amber-200",
-  Completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  Invoiced: "bg-slate-100 text-slate-700 border-slate-200",
-  Paid: "bg-emerald-100 text-emerald-800 border-emerald-300",
-  Declined: "bg-red-50 text-red-700 border-red-200",
-  Canceled: "bg-red-50 text-red-700 border-red-200",
-  Cancelled: "bg-red-50 text-red-700 border-red-200",
-  "Dry Run": "bg-purple-50 text-purple-700 border-purple-200",
+const normalizeText = (value) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+};
+
+const jobStatusVisuals = {
+  Completed: { background: "#DCFCE7", border: "#22C55E", text: "#166534", dot: "🟢", icon: "✅" },
+  Cancelled: { background: "#FEE2E2", border: "#EF4444", text: "#991B1B", dot: "🔴", icon: "❌" },
+  "In Progress": { background: "#DBEAFE", border: "#2563EB", text: "#1D4ED8", dot: "🔵", icon: "🔵" },
+  "On Site": { background: "#FEF3C7", border: "#F59E0B", text: "#92400E", dot: "🟡", icon: "📍" },
+  "En Route": { background: "#E0F2FE", border: "#0284C7", text: "#075985", dot: "🔵", icon: "🚚" },
+  "Waiting Parts": { background: "#F3E8FF", border: "#9333EA", text: "#6B21A8", dot: "🟣", icon: "📦" },
+  Pending: { background: "#FFF7ED", border: "#F97316", text: "#9A3412", dot: "🟠", icon: "⏳" },
+  "Dry Run": { background: "#EDE9FE", border: "#7C3AED", text: "#5B21B6", dot: "🟣", icon: "⚠️" },
+  "Need Review": { background: "#FEF2F2", border: "#DC2626", text: "#7F1D1D", dot: "🔴", icon: "🔎" },
+  New: { background: "#F8FAFC", border: "#64748B", text: "#334155", dot: "⚪", icon: "🆕" },
 };
 
 const rowStyles = {
@@ -107,8 +107,8 @@ const nearbyPartsCategories = [
   "Battery Suppliers",
 ];
 const nearbyPartsCache = new Map();
-const jobPipeline = ["New", "Assigned", "Tech Accepted", "En Route", "On Site", "Working", "Completed", "Invoiced", "Paid"];
-const jobStatusOptions = [...jobPipeline, "Declined", "Canceled", "Dry Run"];
+const jobPipeline = ["New", "Pending", "Assigned", "Tech Accepted", "En Route", "On Site", "In Progress", "Waiting Parts", "Working", "Completed", "Invoiced", "Paid"];
+const jobStatusOptions = [...jobPipeline, "Need Review", "Declined", "Canceled", "Cancelled", "Dry Run"];
 const techPaymentStatusOptions = ["Pending", "Reviewing", "Approved", "Paid", "Hold"];
 const techPaymentStatusStyles = {
   Pending: "bg-yellow-100 text-yellow-800 border-yellow-200",
@@ -125,6 +125,11 @@ const techPaymentFieldAliases = {
   reference: ["tech_payment_reference", "technician_payment_reference", "tech_paid_reference"],
   notes: ["tech_payment_notes", "technician_payment_notes"],
 };
+const tableControlClass =
+  "rounded-lg border border-[#cbd5e1] bg-white text-[#0f172a] placeholder:text-[#64748b] outline-none focus:border-[#2563eb] disabled:bg-[#f1f5f9] disabled:text-[#334155] disabled:opacity-100";
+const darkSelectClass =
+  "rounded-lg border border-[#334155] bg-[#0f172a] text-white outline-none focus:border-[#2563eb] disabled:bg-[#111827] disabled:text-[#e5e7eb] disabled:opacity-100";
+const darkOptionStyle = { backgroundColor: "#0f172a", color: "#ffffff" };
 
 const fieldMap = {
   photo_url: "photo_url",
@@ -319,7 +324,6 @@ function fromDbJob(row) {
 
 function toDbJob(job) {
   return {
-    photo_url: job.photo_url || "",
     job_date: job.date || null,
     job_time: job.time || "",
     invoice_number: job.reference || "",
@@ -404,8 +408,11 @@ export default function DispatchLiveUpdatesPage() {
   const [jobToDelete, setJobToDelete] = useState(null);
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
+  const [showAddJobModal, setShowAddJobModal] = useState(false);
+  const [updatesJob, setUpdatesJob] = useState(null);
+  const [documentsJob, setDocumentsJob] = useState(null);
   const [techPaymentJob, setTechPaymentJob] = useState(null);
-  const [dispatchViewMode, setDispatchViewMode] = useState("cockpit");
+  const [dispatchViewMode, setDispatchViewMode] = useState("table");
   const [dispatchTechnicians, setDispatchTechnicians] = useState([]);
   const [assignmentFilters, setAssignmentFilters] = useState({
     city: "",
@@ -417,13 +424,14 @@ export default function DispatchLiveUpdatesPage() {
   const [jobsSupportsAssignedBy, setJobsSupportsAssignedBy] = useState(false);
   const [jobsSupportsPreviousTechnician, setJobsSupportsPreviousTechnician] = useState(false);
   const [jobsSupportsReassignedCount, setJobsSupportsReassignedCount] = useState(false);
+  const [jobsSupportsPhotoUrl, setJobsSupportsPhotoUrl] = useState(false);
   const [techPaymentColumns, setTechPaymentColumns] = useState({
-    status: "tech_payment_status",
-    method: "tech_payment_method",
-    paidDate: "tech_paid_date",
-    paidBy: "tech_paid_by",
-    reference: "tech_payment_reference",
-    notes: "tech_payment_notes",
+    status: "",
+    method: "",
+    paidDate: "",
+    paidBy: "",
+    reference: "",
+    notes: "",
   });
   const [technicianAvailabilityColumn, setTechnicianAvailabilityColumn] = useState("");
   const [techniciansSupportCurrentJobId, setTechniciansSupportCurrentJobId] = useState(false);
@@ -543,11 +551,11 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
       if (key === "n") {
         event.preventDefault();
         setForm(emptyForm());
-        setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+        setShowAddJobModal(true);
       }
       if (key === "s") {
         event.preventDefault();
-        formRef.current?.requestSubmit();
+        if (showAddJobModal) formRef.current?.requestSubmit();
       }
       if (key === "f") {
         event.preventDefault();
@@ -581,9 +589,8 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
     const job = jobs.find((candidate) => String(candidate.id) === String(pendingJobId));
     if (job) {
       setAssignmentJob(job);
-      setDispatchViewMode("cockpit");
       localStorage.removeItem("nttr-open-job-id");
-      setTimeout(() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     }
   }, [accessGranted, jobs]);
 
@@ -603,59 +610,39 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
 
   async function checkJobAssignmentSupport() {
     const [
-      { error: technicianIdError },
-      { error: assignedAtError },
-      { error: assignedByError },
-      { error: previousTechnicianError },
-      { error: reassignedCountError },
       { error: technicianAvailabilityError },
       { error: technicianCurrentJobIdError },
       { error: activityLogError },
     ] = await Promise.all([
-      supabase.from("jobs").select("technician_id").limit(0),
-      supabase.from("jobs").select("assigned_at").limit(0),
-      supabase.from("jobs").select("assigned_by").limit(0),
-      supabase.from("jobs").select("previous_technician").limit(0),
-      supabase.from("jobs").select("reassigned_count").limit(0),
       supabase.from("technicians").select("availability").limit(0),
       supabase.from("technicians").select("current_job_id").limit(0),
       supabase.from("activity_log").select("id").limit(0),
     ]);
 
-    setJobsSupportsTechnicianId(!technicianIdError);
-    setJobsSupportsAssignedAt(!assignedAtError);
-    setJobsSupportsAssignedBy(!assignedByError);
-    setJobsSupportsPreviousTechnician(!previousTechnicianError);
-    setJobsSupportsReassignedCount(!reassignedCountError);
     setTechnicianAvailabilityColumn(!technicianAvailabilityError ? "availability" : "");
     setTechniciansSupportCurrentJobId(!technicianCurrentJobIdError);
     setSupportsActivityLog(!activityLogError);
-    const [statusColumn, methodColumn, paidDateColumn, paidByColumn, referenceColumn, notesColumn] = await Promise.all([
-      detectJobsColumn(techPaymentFieldAliases.status),
-      detectJobsColumn(techPaymentFieldAliases.method),
-      detectJobsColumn(techPaymentFieldAliases.paidDate),
-      detectJobsColumn(techPaymentFieldAliases.paidBy),
-      detectJobsColumn(techPaymentFieldAliases.reference),
-      detectJobsColumn(techPaymentFieldAliases.notes),
-    ]);
-
-    setTechPaymentColumns({
-      status: statusColumn || "tech_payment_status",
-      method: methodColumn || "tech_payment_method",
-      paidDate: paidDateColumn || "tech_paid_date",
-      paidBy: paidByColumn || "tech_paid_by",
-      reference: referenceColumn || "tech_payment_reference",
-      notes: notesColumn || "tech_payment_notes",
-    });
   }
 
-  async function detectJobsColumn(aliases) {
-    for (const alias of aliases) {
-      const { error } = await supabase.from("jobs").select(alias).limit(0);
-      if (!error) return alias;
-    }
+  function configureJobsColumnSupport(rows) {
+    const sample = Array.isArray(rows) ? rows.find(Boolean) || {} : {};
+    const hasColumn = (column) => Object.prototype.hasOwnProperty.call(sample, column);
+    const firstExistingAlias = (aliases) => aliases.find(hasColumn) || "";
 
-    return "";
+    setJobsSupportsTechnicianId(hasColumn("technician_id"));
+    setJobsSupportsAssignedAt(hasColumn("assigned_at"));
+    setJobsSupportsAssignedBy(hasColumn("assigned_by"));
+    setJobsSupportsPreviousTechnician(hasColumn("previous_technician"));
+    setJobsSupportsReassignedCount(hasColumn("reassigned_count"));
+    setJobsSupportsPhotoUrl(hasColumn("photo_url"));
+    setTechPaymentColumns({
+      status: firstExistingAlias(techPaymentFieldAliases.status),
+      method: firstExistingAlias(techPaymentFieldAliases.method),
+      paidDate: firstExistingAlias(techPaymentFieldAliases.paidDate),
+      paidBy: firstExistingAlias(techPaymentFieldAliases.paidBy),
+      reference: firstExistingAlias(techPaymentFieldAliases.reference),
+      notes: firstExistingAlias(techPaymentFieldAliases.notes),
+    });
   }
 
   async function loadJobs() {
@@ -669,6 +656,7 @@ window.dispatchEvent(new Event("nttr-auth-changed"));
       return;
     }
 
+    configureJobsColumnSupport(data || []);
     setJobs((data || []).map(fromDbJob));
 
    const currentMonth = new Date().toISOString().slice(0, 7);
@@ -900,7 +888,6 @@ profit: filteredJobs.reduce(
     };
  }, [jobs, filteredJobs]);
 
-  const sidebarItems = useMemo(() => dispatchSidebarItems(isAdmin), [isAdmin]);
   const roleKpis = useMemo(() => dispatchKpis(stats, isAdmin), [stats, isAdmin]);
   const activeTechniciansCount = useMemo(
     () => dispatchTechnicians.filter((technician) => String(technician.availability || "").toLowerCase() === "available").length,
@@ -972,6 +959,7 @@ profit: filteredJobs.reduce(
     if (data) {
       setJobs((currentJobs) => [fromDbJob(data), ...currentJobs]);
       setForm(emptyForm());
+      setShowAddJobModal(false);
       setActivityLogs((logs) => [
         {
           id: Date.now(),
@@ -1001,17 +989,25 @@ profit: filteredJobs.reduce(
       });
     }
   }
-async function uploadPhoto(jobId, file) {
+async function uploadPhoto(jobId, file, documentType = "Job photo") {
   if (!file) return;
 
-  const fileName = `${jobId}-${Date.now()}-${file.name}`;
+  const allowedTypes = ["application/pdf"];
+  const isAllowed = file.type?.startsWith("image/") || allowedTypes.includes(file.type);
+  if (!isAllowed) {
+    alert("Please upload an image or PDF file.");
+    return;
+  }
+
+  const safeName = file.name.replace(/[^\w.\-]+/g, "-");
+  const fileName = `${jobId}/${Date.now()}-${safeName}`;
 
   const { error: uploadError } = await supabase.storage
     .from("job-photos")
     .upload(fileName, file);
 
   if (uploadError) {
-    alert(uploadError.message);
+    alert(`Safe mode: unable to upload file. ${uploadError.message}`);
     return;
   }
 
@@ -1021,15 +1017,72 @@ async function uploadPhoto(jobId, file) {
     .from("job-photos")
     .getPublicUrl(fileName);
 
-  await updateJob(jobId, "photo_url", publicUrl);
+  if (!publicUrl) {
+    alert("Safe mode: upload finished, but no public file URL was returned.");
+    return;
+  }
+
+  if (jobsSupportsPhotoUrl) {
+    await updateJob(jobId, "photo_url", publicUrl);
+  }
+  setDocumentsJob((current) =>
+    current?.id === jobId ? { ...current, photo_url: publicUrl, updatedAt: new Date().toISOString() } : current
+  );
+
+  const { error: fileRecordError } = await supabase.from("job_files").insert([
+    {
+      job_id: jobId,
+      file_url: publicUrl,
+      file_name: file.name,
+      file_type: file.type || "application/octet-stream",
+      document_type: documentType,
+      uploaded_by: currentUserName || "Dispatcher",
+    },
+  ]);
+  if (fileRecordError) {
+    console.warn("Safe mode: job_files record skipped:", fileRecordError.message);
+  }
    
   const activityMessage = {
   id: Date.now(),
-  message: `${currentUserName || "Dispatcher"} uploaded photo to job ${jobId}`,
+  message: `${currentUserName || "Dispatcher"} uploaded ${documentType.toLowerCase()} to job ${jobId}`,
   time: new Date().toLocaleString(),
 };
  
   setActivityLogs((logs) => [ activityMessage, ...logs,]);
+  setToastMessage("File uploaded successfully");
+  window.setTimeout(() => setToastMessage(""), 3000);
+  await loadJobs();
+  }
+
+  async function handleJobFileDeleted(job, document, warning = "", remainingDocuments = []) {
+    const nextPhotoUrl = remainingDocuments.find((item) => item?.url)?.url || "";
+    if (jobsSupportsPhotoUrl && (document?.url === job?.photo_url || !nextPhotoUrl)) {
+      await updateJob(job.id, "photo_url", nextPhotoUrl);
+    }
+    setDocumentsJob((current) =>
+      current?.id === job.id ? { ...current, photo_url: nextPhotoUrl, updatedAt: new Date().toISOString() } : current
+    );
+
+    const jobLabel = job?.reference || job?.id || "unknown";
+    setActivityLogs((logs) => [
+      {
+        id: Date.now(),
+        message: `File deleted from Job #${jobLabel} by ${currentUserName || "Dispatcher"}`,
+        time: new Date().toLocaleString(),
+      },
+      ...logs,
+    ]);
+    await logActivity({
+      entityType: "job",
+      entityId: job.id,
+      action: "File Deleted",
+      description: `File deleted from Job #${jobLabel} by ${currentUserName || "Dispatcher"}`,
+      createdBy: currentUserName || "Dispatcher",
+    });
+    await loadJobs();
+    setToastMessage(warning || "File deleted successfully.");
+    window.setTimeout(() => setToastMessage(""), 3500);
   }
     
   async function updateJob(id, field, value) {
@@ -1380,8 +1433,7 @@ await logActivity({
     if (!job) return;
 
     if (action === "edit") {
-      setAssignmentJob(job);
-      setDispatchViewMode("table");
+      setUpdatesJob(job);
       return;
     }
     if (action === "assign") {
@@ -1475,14 +1527,8 @@ await logActivity({
           {toastMessage}
         </div>
       )}
-      <div className="flex min-h-screen w-full max-w-none min-w-0 flex-col xl:flex-row">
-        <DispatchRoleSidebar
-          items={sidebarItems}
-          currentUserName={currentUserName}
-          currentUserRole={normalizedUserRole}
-          isAdmin={isAdmin}
-        />
-        <main className="w-full min-w-0 flex-1 space-y-6 p-4 md:p-6 xl:p-8">
+      <div className="min-h-screen w-full max-w-none min-w-0">
+        <main className="w-full min-w-0 space-y-6 p-4 md:p-6 xl:p-8">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1499,7 +1545,7 @@ await logActivity({
                   <span>Home</span><span>&gt;</span><span>Dispatch Center</span><span>&gt;</span><span className="text-blue-700">Live Jobs</span>
                 </div>
                 <h1 className="text-3xl font-black tracking-tight text-white">Dispatch Board</h1>
-                <p className="mt-1 text-sm font-semibold text-slate-300">Real-time overview of all jobs and assignments.</p>
+                <p className="mt-1 text-sm font-semibold text-slate-300">Manage all live jobs from one place.</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${isAdmin ? "border-purple-400/40 bg-purple-500/15 text-purple-100" : "border-blue-400/40 bg-blue-500/15 text-blue-100"}`}>
                     {isAdmin ? "ADMINISTRATOR VIEW" : "DISPATCHER VIEW"}
@@ -1513,22 +1559,22 @@ await logActivity({
 
             <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
               <select
-                className="h-10 rounded-xl border border-white/10 bg-white/10 px-3 text-sm font-bold text-white outline-none focus:border-blue-400"
+                className={`${darkSelectClass} h-10 rounded-xl px-3 text-sm font-bold`}
                 value={periodFilter}
                 onChange={(e) => setPeriodFilter(e.target.value)}
               >
-                <option className="text-slate-950" value="ThisWeek">This Week</option>
-                <option className="text-slate-950" value="LastWeek">Last Week</option>
-                <option className="text-slate-950" value="ThisMonth">This Month</option>
-                <option className="text-slate-950" value="LastMonth">Last Month</option>
-                <option className="text-slate-950" value="ThisYear">This Year</option>
-                <option className="text-slate-950" value="All">All</option>
+                <option style={darkOptionStyle} value="ThisWeek">This Week</option>
+                <option style={darkOptionStyle} value="LastWeek">Last Week</option>
+                <option style={darkOptionStyle} value="ThisMonth">This Month</option>
+                <option style={darkOptionStyle} value="LastMonth">Last Month</option>
+                <option style={darkOptionStyle} value="ThisYear">This Year</option>
+                <option style={darkOptionStyle} value="All">All</option>
               </select>
               <button type="button" onClick={() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" })} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/15">
                 <Filter className="mr-2 inline h-4 w-4" />
                 Filters
               </button>
-              <button type="button" onClick={() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">
+              <button type="button" onClick={() => setShowAddJobModal(true)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">
                 <Plus className="mr-2 inline h-4 w-4" />
                 Add Job
               </button>
@@ -1545,22 +1591,6 @@ await logActivity({
               </button>
               <div className="rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold capitalize text-white">
                 {currentUserName || "Not signed in"} · {normalizeRole(currentUserRole) || "access required"}
-              </div>
-              <div className="hidden gap-2 lg:flex">
-                {["cockpit", "table"].map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setDispatchViewMode(mode)}
-                    className={`rounded-xl px-4 py-2 text-sm font-bold ${
-                      dispatchViewMode === mode
-                        ? "bg-blue-600 text-white"
-                        : "bg-white/10 text-slate-200 hover:bg-white/15"
-                    }`}
-                  >
-                    {mode === "cockpit" ? "Cockpit View" : "Table View"}
-                  </button>
-                ))}
               </div>
             </div>
           </div>
@@ -1582,7 +1612,7 @@ await logActivity({
           </div>
         </motion.div>
 
-        <div className="mt-4 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <div className="hidden">
           <BellRing className="h-5 w-5 animate-pulse" />
           <div>
             <p className="font-bold">Live Dispatch Notifications Active</p>
@@ -1592,7 +1622,7 @@ await logActivity({
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="hidden">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-bold text-slate-950">Job Status Pipeline</h2>
@@ -1602,14 +1632,12 @@ await logActivity({
           </div>
           <div className="flex flex-wrap gap-2">
             {jobPipeline.map((status) => (
-              <span key={status} className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${statusStyles[status] || "bg-slate-50 text-slate-700 border-slate-200"}`}>
-                {status}
-              </span>
+              <JobStatusBadge key={status} status={status} />
             ))}
           </div>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="hidden">
           <div className="mb-3 flex items-center gap-2">
             <Bell className="h-5 w-5 text-blue-600" />
             <h2 className="text-lg font-bold text-slate-950">Notification Center</h2>
@@ -1635,7 +1663,7 @@ await logActivity({
           ))}
         </div>
 
-        {isAdmin && (
+        {false && isAdmin && (
           <div className="rounded-3xl bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-3">
               <DollarSign className="h-5 w-5 text-emerald-700" />
@@ -1737,7 +1765,7 @@ await logActivity({
       
             )}
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="hidden">
           <div className="rounded-3xl bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center gap-3">
               <Database className="h-5 w-5 text-emerald-700" />
@@ -1765,14 +1793,18 @@ await logActivity({
 
         </div>
 
-        <div className="grid w-full min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <form ref={formRef} onSubmit={addJob} className="w-full max-w-none rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-xl shadow-black/10">
+        <div className="grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          {showAddJobModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <form ref={formRef} onSubmit={addJob} className="max-h-[92vh] w-full max-w-[1000px] overflow-auto rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-black text-white">Add New Job</h2>
                 <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Dispatch intake</p>
               </div>
-              <Plus className="h-5 w-5 text-blue-300" />
+              <button type="button" onClick={() => setShowAddJobModal(false)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-white/15">
+                Close
+              </button>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -1816,17 +1848,17 @@ await logActivity({
                 </div>
                 <div className="grid gap-2 md:grid-cols-[180px_150px_150px_1fr] md:items-center">
                   <select
-                    className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                    className={`${darkSelectClass} h-9 px-3 text-sm font-semibold`}
                     value={periodFilter}
                     onChange={(e) => setPeriodFilter(e.target.value)}
                   >
-                    <option className="text-slate-950" value="ThisWeek">This Week</option>
-                    <option className="text-slate-950" value="LastWeek">Last Week</option>
-                    <option className="text-slate-950" value="ThisMonth">This Month</option>
-                    <option className="text-slate-950" value="LastMonth">Last Month</option>
-                    <option className="text-slate-950" value="ThisYear">This Year</option>
-                    <option className="text-slate-950" value="LastYear">Last Year</option>
-                    <option className="text-slate-950" value="All">All</option>
+                    <option style={darkOptionStyle} value="ThisWeek">This Week</option>
+                    <option style={darkOptionStyle} value="LastWeek">Last Week</option>
+                    <option style={darkOptionStyle} value="ThisMonth">This Month</option>
+                    <option style={darkOptionStyle} value="LastMonth">Last Month</option>
+                    <option style={darkOptionStyle} value="ThisYear">This Year</option>
+                    <option style={darkOptionStyle} value="LastYear">Last Year</option>
+                    <option style={darkOptionStyle} value="All">All</option>
                   </select>
 
                   <input
@@ -1875,6 +1907,8 @@ await logActivity({
               {recentDispatchers.map((dispatcher) => <option key={dispatcher} value={dispatcher} />)}
             </datalist>
           </form>
+          </div>
+          )}
 
           <DispatchRightPanel
             isAdmin={isAdmin}
@@ -1883,33 +1917,15 @@ await logActivity({
             technicians={dispatchTechnicians}
             activeTechniciansCount={activeTechniciansCount}
             activityLogs={activityLogs}
-            onAddJob={() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            onAddJob={() => setShowAddJobModal(true)}
             onAssign={() => {
-              setDispatchViewMode("cockpit");
-              document.getElementById("cockpit-technicians")?.scrollIntoView({ behavior: "smooth", block: "center" });
+              setAssignmentJob(filteredJobs[0] || null);
             }}
             onMap={() => window.open("https://www.google.com/maps/search/?api=1&query=active%20truck%20roadside%20jobs", "_blank", "noopener,noreferrer")}
             onReport={() => exportJobsToCSV(filteredJobs)}
           />
 
-          <div className="order-2 col-span-full flex flex-wrap justify-end gap-2">
-            {["cockpit", "table"].map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setDispatchViewMode(mode)}
-                className={`rounded-xl px-4 py-2 text-sm font-bold ${
-                  dispatchViewMode === mode
-                    ? "bg-blue-600 text-white"
-                    : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                }`}
-              >
-                {mode === "cockpit" ? "Cockpit View" : "Table View"}
-              </button>
-            ))}
-          </div>
-
-          {dispatchViewMode === "cockpit" && (
+          {false && (
             <DispatchCockpit
               jobs={filteredJobs}
               selectedJob={assignmentJob || filteredJobs[0]}
@@ -1938,7 +1954,7 @@ await logActivity({
             />
           )}
 
-          {dispatchViewMode === "table" && (
+          {true && (
           <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-2xl border border-white/10 bg-[#0b1628] p-5 shadow-xl shadow-black/10">
             <div className="mb-5 flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
               <div>
@@ -1975,13 +1991,13 @@ await logActivity({
               </div>
             </div>
 
-            <div className="mb-4 w-full max-w-none overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3">
-              <div className="grid w-full min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_150px_150px_150px_160px_150px_150px_auto_auto] 2xl:items-center">
+            <div className="mb-3 w-full max-w-none overflow-hidden rounded-xl border border-white/10 bg-white/5 p-2">
+              <div className="grid w-full min-w-0 gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_130px_140px_140px_150px_140px_150px_auto_auto] 2xl:items-center">
                 <div className="relative min-w-0">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                   <input
                     ref={searchInputRef}
-                    className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
+                    className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
                     placeholder="Search by Ref #, Company, Location, Technician"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -1989,67 +2005,72 @@ await logActivity({
                 </div>
 
                 <select
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   {["All", ...jobStatusOptions].map((s) => (
-                    <option className="text-slate-950" key={s}>{s}</option>
+                    <option style={darkOptionStyle} key={s}>{s}</option>
                   ))}
                 </select>
 
                 <select
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
+                  value={dispatchFilter}
+                  onChange={(e) => setDispatchFilter(e.target.value)}
+                >
+                  <option style={darkOptionStyle}>All</option>
+                  {dispatchers.map((dispatcher) => (
+                    <option style={darkOptionStyle} key={dispatcher}>{dispatcher}</option>
+                  ))}
+                </select>
+
+                <select
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
                   value={techFilter}
                   onChange={(e) => setTechFilter(e.target.value)}
                 >
-                  <option className="text-slate-950">All</option>
+                  <option style={darkOptionStyle}>All</option>
                   {techs.map((tech) => (
-                    <option className="text-slate-950" key={tech}>{tech}</option>
+                    <option style={darkOptionStyle} key={tech}>{tech}</option>
                   ))}
                 </select>
 
                 <select
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
                   value={cityFilter}
                   onChange={(e) => setCityFilter(e.target.value)}
                 >
-                  <option className="text-slate-950">All</option>
+                  <option style={darkOptionStyle}>All</option>
                   {cities.map((city) => (
-                    <option className="text-slate-950" key={city}>{city}</option>
+                    <option style={darkOptionStyle} key={city}>{city}</option>
                   ))}
                 </select>
 
                 <select
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
                   value={invoiceFilter}
                   onChange={(e) => setInvoiceFilter(e.target.value)}
                 >
-                  <option className="text-slate-950">All</option>
+                  <option style={darkOptionStyle}>All</option>
                   {["Pending", "Sent", "Paid", "Need Review"].map((status) => (
-                    <option className="text-slate-950" key={status}>{status}</option>
+                    <option style={darkOptionStyle} key={status}>{status}</option>
                   ))}
                 </select>
 
                 <input
                   type="date"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
+                  className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                 />
 
-                <input
-                  type="date"
-                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                />
-
                 <button
                   type="button"
-                  className="h-10 whitespace-nowrap rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                  onClick={() => exportJobsToCSV(filteredJobs)}
+                  className="h-9 whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
                 >
-                  Filter
+                  Export
                 </button>
 
                 <button
@@ -2065,7 +2086,7 @@ await logActivity({
                     setInvoiceFilter("All");
                     setPeriodFilter("All");
                   }}
-                  className="h-10 whitespace-nowrap rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15"
+                  className="h-9 whitespace-nowrap rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15"
                 >
                   Reset
                 </button>
@@ -2095,7 +2116,6 @@ await logActivity({
                     {canEditJobFinancial && <Th>Tech Labor</Th>}
                     <Th>Tech Payment</Th>
                     {canEditJobFinancial && <Th>Profit</Th>}
-                    <Th>Photo</Th>
                     <Th>Actions</Th>
                   </tr>
                 </thead>
@@ -2119,22 +2139,22 @@ await logActivity({
 
                       <Td>
                         <select
-                          className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-2 text-xs font-bold text-white outline-none focus:border-blue-400"
+                          className={`${darkSelectClass} h-9 px-2 text-xs font-bold`}
                           value={job.rowFlag || "Normal"}
                           onChange={(e) => updateJob(job.id, "rowFlag", e.target.value)}
                         >
-                          <option>Normal</option>
-                          <option>Pending</option>
-                          <option>Problem</option>
-                          <option>Completed</option>
-                          <option>Info</option>
+                          <option style={darkOptionStyle}>Normal</option>
+                          <option style={darkOptionStyle}>Pending</option>
+                          <option style={darkOptionStyle}>Problem</option>
+                          <option style={darkOptionStyle}>Completed</option>
+                          <option style={darkOptionStyle}>Info</option>
                         </select>
                       </Td>
 
                       <Td>
                         <input
                           type="date"
-                          className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-2 text-xs font-semibold text-white outline-none focus:border-blue-400"
+                          className={`${tableControlClass} h-9 px-2 text-xs font-semibold`}
                           value={job.date}
                           onChange={(e) => updateJob(job.id, "date", e.target.value)}
                         />
@@ -2142,12 +2162,15 @@ await logActivity({
 
                       <Td>
                         <select
-                          className={`h-8 rounded-full border px-3 text-xs font-bold outline-none focus:border-blue-500 ${statusStyles[job.status] || ""}`}
+                          className={`${darkSelectClass} h-8 rounded-full px-3 text-xs font-bold`}
+                          style={jobStatusControlStyle(job.status)}
                           value={job.status}
                           onChange={(e) => updateJob(job.id, "status", e.target.value)}
                         >
                           {jobStatusOptions.map((s) => (
-                            <option key={s}>{s}</option>
+                            <option key={s} value={s} style={darkOptionStyle}>
+                              {jobStatusLabel(s)}
+                            </option>
                           ))}
                         </select>
                         <p className="mt-1 text-xs font-semibold text-slate-400">ETA: {job.manualEta || extractEta(job.updates) || "Not set"}</p>
@@ -2159,7 +2182,7 @@ await logActivity({
 
                       <Td>
                         <input
-                          className="w-[320px] rounded-lg border border-white/10 bg-[#111f33] px-2 py-1 text-white outline-none focus:border-blue-400"
+                          className={`${tableControlClass} w-[320px] px-2 py-1`}
                           value={job.company}
                           onChange={(e) => updateJob(job.id, "company", e.target.value)}
                         />
@@ -2184,53 +2207,56 @@ await logActivity({
 
                       <Td>
                         <select
-                          className={`rounded-full px-3 py-1 text-xs font-bold ${invoiceStyles[job.invoice] || ""}`}
+                          className={`${darkSelectClass} rounded-full px-3 py-1 text-xs font-bold`}
                           value={job.invoice}
                           onChange={(e) => updateJob(job.id, "invoice", e.target.value)}
                         >
                           {["Pending", "Sent", "Paid", "Need Review"].map((s) => (
-                            <option key={s}>{s}</option>
+                            <option key={s} style={darkOptionStyle}>{s}</option>
                           ))}
                         </select>
                       </Td>
 
                       <Td>
                         <select
-                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold outline-none focus:border-blue-500"
+                          className={`${darkSelectClass} h-9 px-2 text-xs font-bold`}
                           value={job.paymentMethod || "Pending"}
                           onChange={(e) => updateJob(job.id, "paymentMethod", e.target.value)}
                         >
                           {paymentMethods.map((method) => (
-                            <option key={method}>{method}</option>
+                            <option key={method} style={darkOptionStyle}>{method}</option>
                           ))}
                         </select>
                       </Td>
 
                       <Td>
                         <select
-                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold outline-none focus:border-blue-500"
+                          className={`${darkSelectClass} h-9 px-2 text-xs font-bold`}
                           value={job.paymentReceiver || "A"}
                           onChange={(e) => updateJob(job.id, "paymentReceiver", e.target.value)}
                         >
                           {paymentReceivers.map((receiver) => (
-                            <option key={receiver}>{receiver}</option>
+                            <option key={receiver} style={darkOptionStyle}>{receiver}</option>
                           ))}
                         </select>
                       </Td>
 
                       <Td>
-                        <textarea
-                          className="h-16 max-h-16 w-72 resize-none overflow-y-auto rounded-xl border border-slate-200 bg-white p-2 text-xs leading-5 outline-none focus:border-blue-500"
-                          defaultValue={job.updates}
-                          onBlur={(e) => updateJob(job.id, "updates", e.target.value)}
-                        />
+                        <button
+                          type="button"
+                          title={job.updates || "No updates"}
+                          onClick={() => setUpdatesJob(job)}
+                          className={`${tableControlClass} block w-72 truncate px-2 py-1.5 text-left text-xs font-semibold hover:border-[#2563eb]`}
+                        >
+                          {firstLine(job.updates) || "No updates"}
+                        </button>
                       </Td>
 
                       {canEditJobFinancial && (
                         <Td>
                           <input
                             type="number"
-                            className="h-9 w-24 rounded-lg border border-slate-200 bg-white px-2 text-right font-bold outline-none focus:border-blue-500"
+                            className={`${tableControlClass} h-9 w-24 px-2 text-right font-bold`}
                             defaultValue={job.totalBill}
                             onBlur={(e) => updateJob(job.id, "totalBill", Number(e.target.value || 0))}
                           />
@@ -2241,7 +2267,7 @@ await logActivity({
                         <Td>
                           <input
                             type="number"
-                            className="h-9 w-24 rounded-lg border border-slate-200 bg-white px-2 text-right outline-none focus:border-blue-500"
+                            className={`${tableControlClass} h-9 w-24 px-2 text-right`}
                             defaultValue={job.parts}
                             onBlur={(e) => updateJob(job.id, "parts", Number(e.target.value || 0))}
                           />
@@ -2252,7 +2278,7 @@ await logActivity({
                         <Td>
                           <input
                             type="number"
-                            className="h-9 w-24 rounded-lg border border-slate-200 bg-white px-2 text-right outline-none focus:border-blue-500"
+                            className={`${tableControlClass} h-9 w-24 px-2 text-right`}
                             defaultValue={job.techLabor}
                             onBlur={(e) => updateJob(job.id, "techLabor", Number(e.target.value || 0))}
                           />
@@ -2262,13 +2288,13 @@ await logActivity({
                       <Td>
                         <div className="flex min-h-10 items-center justify-center">
                           <select
-                            className="h-9 w-36 rounded-xl border border-slate-200 bg-white px-2 text-center text-xs font-bold outline-none focus:border-blue-500"
+                            className={`${darkSelectClass} h-9 w-36 rounded-xl px-2 text-center text-xs font-bold`}
                             value={job.techPaymentStatus || "Pending"}
                             onChange={(e) => updateTechPaymentStatus(job, e.target.value)}
                             disabled={!canEditJobFinancial}
                           >
                             {techPaymentStatusOptions.map((status) => (
-                              <option key={status}>{status}</option>
+                              <option key={status} style={darkOptionStyle}>{status}</option>
                             ))}
                           </select>
                         </div>
@@ -2293,74 +2319,8 @@ await logActivity({
                       )}
 
                       <Td>
-                        <label className="flex cursor-pointer items-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700">
-                          <Upload className="h-4 w-4" />
-                          Upload
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept="image/*"
-                            onChange={(e) => uploadPhoto(job.id, e.target.files[0])}
-                          />
-                        </label>
-
-                        {job.photo_url && (
-                          <div className="mt-2 flex flex-col gap-2">
-                            <a
-                              href={job.photo_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-1 text-xs font-bold text-blue-700"
-                            >
-                              <ImageIcon className="h-4 w-4" />
-                              View
-                            </a>
-
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const fileName = job.photo_url.split("/").pop();
-
-                                await supabase.storage
-                                  .from("job-photos")
-                                  .remove([fileName]);
-
-                                await updateJob(job.id, "photo_url", "");
-                              }}
-                              className="flex items-center gap-1 text-xs font-bold text-red-600"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Delete Photo
-                            </button>
-                          </div>
-                        )}
-                      </Td>
-
-                      <Td>
                         <div className="flex items-center gap-1.5">
-                          <IconAction title="Call Customer" onClick={() => handleJobContextAction("call", job)} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
-                            <Phone className="h-4 w-4" />
-                          </IconAction>
-                          <IconAction title="WhatsApp Customer" onClick={() => handleJobContextAction("whatsapp", job)} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200">
-                            <MessageCircle className="h-4 w-4" />
-                          </IconAction>
-                          <IconAction title="Open Maps" onClick={() => handleJobContextAction("maps", job)} className="bg-blue-100 text-blue-700 hover:bg-blue-200">
-                            <MapPin className="h-4 w-4" />
-                          </IconAction>
-                          <IconAction title="Nearby Parts" onClick={() => setNearbyPartsJob(job)} className="bg-amber-100 text-amber-700 hover:bg-amber-200">
-                            <Search className="h-4 w-4" />
-                          </IconAction>
-                          <IconAction title="View / Edit" onClick={() => handleJobContextAction("edit", job)} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
-                            <Edit3 className="h-4 w-4" />
-                          </IconAction>
-                          <button
-                            type="button"
-                            onClick={() => setAssignmentJob(job)}
-                            className="h-8 rounded-lg bg-indigo-100 px-2 text-xs font-bold text-indigo-700 hover:bg-indigo-200"
-                          >
-                            Workspace
-                          </button>
-                          <IconAction title="View Job" onClick={() => {
+                          <IconAction title="View" onClick={() => {
                               alert(
                                 [
                                   `Invoice: ${job.reference || "N/A"}`,
@@ -2370,8 +2330,35 @@ await logActivity({
                                   `Status: ${job.status || "N/A"}`,
                                 ].join("\n")
                               );
-                            }} className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200">
+                            }} className="bg-white/10 text-slate-200 hover:bg-white/15">
                             <Eye className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="Edit" onClick={() => handleJobContextAction("edit", job)} className="bg-white/10 text-slate-200 hover:bg-white/15">
+                            <Edit3 className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="Call" onClick={() => handleJobContextAction("call", job)} className="bg-slate-100 text-slate-700 hover:bg-slate-200">
+                            <Phone className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="WhatsApp Customer" onClick={() => handleJobContextAction("whatsapp", job)} className="bg-emerald-100 text-emerald-700 hover:bg-emerald-200">
+                            <MessageCircle className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="Open Maps" onClick={() => handleJobContextAction("maps", job)} className="bg-blue-100 text-blue-700 hover:bg-blue-200">
+                            <MapPin className="h-4 w-4" />
+                          </IconAction>
+                          <IconAction title="Assign Technician" onClick={() => setAssignmentJob(job)} className="bg-indigo-100 text-indigo-700 hover:bg-indigo-200">
+                            <UserPlus className="h-4 w-4" />
+                          </IconAction>
+                          <label title="Upload Invoice / Photo" className="relative inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-amber-100 text-amber-700 transition hover:bg-amber-200">
+                            <ImageIcon className="h-4 w-4" />
+                            {job.photo_url && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-500" />}
+                            <input type="file" className="hidden" accept="image/*,application/pdf" onChange={(e) => uploadPhoto(job.id, e.target.files[0], "Invoice / photo")} />
+                          </label>
+                          <IconAction title="Documents" onClick={() => setDocumentsJob(job)} className="relative bg-purple-100 text-purple-700 hover:bg-purple-200">
+                            <FileText className="h-4 w-4" />
+                            {job.photo_url && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-emerald-500" />}
+                          </IconAction>
+                          <IconAction title="More" onClick={(event) => openJobContextMenu(event, job)} className="bg-white/10 text-slate-200 hover:bg-white/15">
+                            <MoreHorizontal className="h-4 w-4" />
                           </IconAction>
                           {canDeleteJobs && (
                             <IconAction title="Delete" onClick={() => requestDelete(job)} className="bg-red-100 text-red-700 hover:bg-red-200">
@@ -2399,10 +2386,10 @@ await logActivity({
               </span>
               <label className="flex items-center gap-2">
                 Rows per page
-                <select className="rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-bold text-white outline-none">
-                  <option className="text-slate-950">25</option>
-                  <option className="text-slate-950">50</option>
-                  <option className="text-slate-950">100</option>
+                <select className={`${darkSelectClass} rounded-xl px-3 py-2 text-sm font-bold`}>
+                  <option style={darkOptionStyle}>25</option>
+                  <option style={darkOptionStyle}>50</option>
+                  <option style={darkOptionStyle}>100</option>
                 </select>
               </label>
             </div>
@@ -2462,6 +2449,39 @@ await logActivity({
               />
             )}
 
+            {assignmentJob && permissions.canAssignTechnicians && (
+              <CompactAssignTechnicianModal
+                job={assignmentJob}
+                technicians={assignmentTechnicians}
+                filters={assignmentFilters}
+                onFiltersChange={setAssignmentFilters}
+                onAssign={assignRecommendedTechnician}
+                onClose={() => setAssignmentJob(null)}
+              />
+            )}
+
+            {updatesJob && (
+              <UpdatesModal
+                job={updatesJob}
+                onClose={() => setUpdatesJob(null)}
+                onSave={async (value) => {
+                  await updateJob(updatesJob.id, "updates", value);
+                  setUpdatesJob(null);
+                }}
+              />
+            )}
+
+            {documentsJob && (
+              <JobDocumentsModal
+                job={documentsJob}
+                isAdmin={canDeleteJobs}
+                currentUserName={currentUserName || "Dispatcher"}
+                onUpload={(file, type) => uploadPhoto(documentsJob.id, file, type)}
+                onDeleted={(document, warning) => handleJobFileDeleted(documentsJob, document, warning)}
+                onClose={() => setDocumentsJob(null)}
+              />
+            )}
+
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
               <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-bold text-emerald-700 shadow-sm">
                 Auto Save Enabled
@@ -2480,19 +2500,6 @@ await logActivity({
           </div>
           )}
 
-          {dispatchViewMode === "table" && permissions.canAssignTechnicians && (
-            <AssignmentPanel
-              job={assignmentJob}
-              jobs={jobs}
-              technicians={assignmentTechnicians}
-              filters={assignmentFilters}
-              onFiltersChange={setAssignmentFilters}
-              supportsAssignment={jobsSupportsTechnicianId}
-              onAssign={assignRecommendedTechnician}
-              onAvailabilityChange={updateTechnicianAvailability}
-              onClear={() => setAssignmentJob(null)}
-            />
-          )}
         </div>
         </main>
       </div>
@@ -2559,9 +2566,7 @@ function DispatchCockpit({
                   <p className="mt-1 truncate text-xs text-slate-500">{job.location || "No location"}</p>
                   <p className="mt-2 text-xs text-slate-500">{[job.date, job.time].filter(Boolean).join(" · ") || "No date/time"}</p>
                 </div>
-                <span className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-bold ${statusStyles[job.status] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
-                  {job.status || "New"}
-                </span>
+                <JobStatusBadge status={job.status} className="shrink-0 px-2 py-1 text-[11px]" />
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className="rounded-lg bg-slate-100 p-2 text-xs font-bold text-slate-700" title="View"><Eye className="h-3.5 w-3.5" /></span>
@@ -2628,9 +2633,7 @@ function DispatchCockpit({
                 <p className="mt-1 text-sm text-slate-500">{selected.location || "No location"}</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[selected.status] || "border-slate-200 bg-slate-50 text-slate-700"}`}>
-                  {selected.status || "New"}
-                </span>
+                <JobStatusBadge status={selected.status} />
                 <button type="button" className="rounded-xl bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" title="More">
                   <MoreHorizontal className="h-4 w-4" />
                 </button>
@@ -2813,12 +2816,12 @@ function TechPaymentModal({ job, columnsAvailable, columns = {}, onClose, onSave
           <label className="grid gap-2 text-sm font-bold text-slate-600">
             Tech Payment Status
             <select
-              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              className={`${darkSelectClass} rounded-xl px-3 py-2 font-semibold`}
               value={details.techPaymentStatus}
               onChange={(event) => setDetails((current) => ({ ...current, techPaymentStatus: event.target.value }))}
             >
               {techPaymentStatusOptions.map((status) => (
-                <option key={status}>{status}</option>
+                <option key={status} style={darkOptionStyle}>{status}</option>
               ))}
             </select>
           </label>
@@ -2826,13 +2829,13 @@ function TechPaymentModal({ job, columnsAvailable, columns = {}, onClose, onSave
           <label className="grid gap-2 text-sm font-bold text-slate-600">
             Payment Method
             <select
-              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
+              className={`${darkSelectClass} rounded-xl px-3 py-2 font-semibold`}
               value={details.techPaymentMethod}
               onChange={(event) => setDetails((current) => ({ ...current, techPaymentMethod: event.target.value }))}
             >
-              <option value="">Not set</option>
+              <option value="" style={darkOptionStyle}>Not set</option>
               {techPaymentMethods.map((method) => (
-                <option key={method}>{method}</option>
+                <option key={method} style={darkOptionStyle}>{method}</option>
               ))}
             </select>
           </label>
@@ -2900,46 +2903,7 @@ function PaymentDetail({ label, value, highlight = false }) {
   );
 }
 
-function dispatchSidebarItems(isAdmin) {
-  const commonDispatcher = [
-    { label: "Dispatch Board", icon: ClipboardList },
-    { label: "Live GPS Map", icon: MapPin },
-    { label: "Technicians", icon: Users },
-    { label: "Jobs", icon: FileText },
-    { label: "Parts & Inventory", icon: Package },
-    { label: "Messages", icon: MessageCircle },
-  ];
-
-  if (!isAdmin) return commonDispatcher;
-
-  return [
-    { label: "Dashboard", icon: BarChart3 },
-    { label: "Dispatch Board", icon: ClipboardList },
-    { label: "Live GPS Map", icon: MapPin },
-    { label: "Technicians", icon: Users },
-    { label: "Jobs", icon: FileText },
-    { label: "Billing / Invoices", icon: CreditCard },
-    { label: "Parts & Inventory", icon: Package },
-    { label: "Reports", icon: FileSpreadsheet },
-    { label: "Administration", icon: ShieldCheck },
-    { label: "User Activity", icon: BellRing },
-    { label: "Messages", icon: MessageCircle },
-    { label: "Settings", icon: Settings },
-  ];
-}
-
 function dispatchKpis(stats, isAdmin) {
-  if (isAdmin) {
-    return [
-      { icon: ClipboardList, label: "Total Jobs", value: stats.total, accent: "blue" },
-      { icon: Clock, label: "In Progress", value: stats.inProgress + stats.working + stats.enRoute, accent: "amber" },
-      { icon: CheckCircle2, label: "Completed", value: stats.completed, accent: "emerald" },
-      { icon: AlertTriangle, label: "Cancelled", value: stats.canceled, accent: "red" },
-      { icon: DollarSign, label: "Total Revenue", value: money(stats.revenue), accent: "purple" },
-      { icon: FileText, label: "Open Invoices", value: stats.pendingInvoices, accent: "cyan" },
-    ];
-  }
-
   return [
     { icon: ClipboardList, label: "Total Jobs", value: stats.total, accent: "blue" },
     { icon: Clock, label: "In Progress", value: stats.inProgress + stats.working + stats.enRoute, accent: "amber" },
@@ -2948,55 +2912,6 @@ function dispatchKpis(stats, isAdmin) {
     { icon: BellRing, label: "Pending", value: stats.pendingJobs, accent: "cyan" },
     { icon: Crown, label: "Dry Runs", value: stats.dryRuns, accent: "purple" },
   ];
-}
-
-function DispatchRoleSidebar({ items, currentUserName, currentUserRole, isAdmin }) {
-  return (
-    <aside className="sticky top-0 z-20 flex max-h-screen w-full shrink-0 flex-col border-b border-white/10 bg-[#081323] p-4 xl:w-72 xl:border-b-0 xl:border-r">
-      <div className="mb-5 flex items-center gap-3">
-        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white">
-          NT
-        </div>
-        <div>
-          <p className="text-sm font-black text-white">NTTR Dispatch</p>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{isAdmin ? "Administrator" : "Dispatcher"} workspace</p>
-        </div>
-        </div>
-
-      <nav className="grid gap-1 xl:flex-1 xl:overflow-y-auto">
-        {items.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            type="button"
-            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${
-              label === "Dispatch Board"
-                ? "border border-blue-400/30 bg-blue-500/15 text-blue-100"
-                : "text-slate-300 hover:bg-white/10 hover:text-white"
-            }`}
-          >
-            <Icon className="h-4 w-4" />
-            <span>{label}</span>
-          </button>
-        ))}
-      </nav>
-
-      <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-sm font-black text-emerald-200">
-            {initials(currentUserName || currentUserRole || "User")}
-          </div>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-black text-white">{currentUserName || "Signed in user"}</p>
-            <p className="text-xs font-semibold capitalize text-slate-400">{currentUserRole || "dispatcher"}</p>
-          </div>
-        </div>
-        <div className="mt-3 flex items-center gap-2 text-xs font-bold text-emerald-300">
-          <span className="h-2 w-2 rounded-full bg-emerald-400" />
-          Online
-        </div>
-        </div>
-    </aside>
-  );
 }
 
 function DispatchKpiCard({ icon: Icon, label, value, accent = "blue" }) {
@@ -3245,26 +3160,288 @@ function Input({ label, value, onChange, type = "text", placeholder = "", list =
 }
 
 function Select({ label, value, onChange, options }) {
+  const isJobStatus = label === "Status";
   return (
     <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300">
       <span>{label}</span>
       <select
-        className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none focus:border-blue-400"
+        className={`${darkSelectClass} h-9 w-full px-3 text-sm font-semibold`}
+        style={isJobStatus ? jobStatusControlStyle(value) : undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
         {options.map((option) => (
-          <option className="text-slate-950" key={option}>{option}</option>
+          <option style={darkOptionStyle} key={option} value={option}>
+            {isJobStatus ? jobStatusLabel(option) : option}
+          </option>
         ))}
       </select>
     </label>
   );
 }
 
+function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChange, onAssign, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-4xl rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40">
+        <div className="flex flex-col gap-3 border-b border-white/10 pb-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">Assign Technician</p>
+            <h2 className="mt-1 text-lg font-black text-white">{job?.reference || job?.company || `Job ${job?.id || ""}`}</h2>
+            <p className="mt-0.5 text-xs font-semibold text-slate-400">{job?.location || "No location"} · {extractService(job)}</p>
+          </div>
+          <button type="button" onClick={onClose} className="h-9 rounded-lg bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15">
+            Close
+          </button>
+        </div>
+
+        <div className="mt-3 grid gap-2 md:grid-cols-[1fr_120px_1fr_150px_100px_100px]">
+          <input className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400" placeholder="City" value={filters.city} onChange={(event) => onFiltersChange((current) => ({ ...current, city: event.target.value }))} />
+          <input className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400" placeholder="State" value={filters.state} onChange={(event) => onFiltersChange((current) => ({ ...current, state: event.target.value }))} />
+          <input className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400" placeholder="Service" value={filters.service} onChange={(event) => onFiltersChange((current) => ({ ...current, service: event.target.value }))} />
+          <select className={`${darkSelectClass} h-9 px-3 text-sm font-semibold`}>
+            <option style={darkOptionStyle}>Availability</option>
+            <option style={darkOptionStyle}>Available</option>
+            <option style={darkOptionStyle}>Busy</option>
+            <option style={darkOptionStyle}>Off Duty</option>
+          </select>
+          <button type="button" className="h-9 rounded-lg border border-white/10 bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15">Nearby</button>
+          <button type="button" className="h-9 rounded-lg border border-white/10 bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15">Favorite</button>
+        </div>
+
+        <div className="mt-3 max-h-[58vh] overflow-auto rounded-xl border border-white/10">
+          {technicians.length === 0 ? (
+            <div className="p-6 text-center text-sm font-semibold text-slate-400">No matching approved technicians.</div>
+          ) : (
+            technicians.map((technician) => (
+              <div key={technician.id} className="grid gap-3 border-b border-white/10 bg-white/[0.03] px-3 py-2 text-sm last:border-b-0 md:grid-cols-[minmax(0,1fr)_130px_90px_90px_90px] md:items-center">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/15 text-xs font-black text-blue-100">
+                    {initials(technician.full_name)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-black text-white">{technician.full_name || "Unnamed technician"}</p>
+                    <p className="truncate text-xs font-semibold text-slate-400">{technician.phone || "No phone"} · {[technician.city, technician.state].filter(Boolean).join(", ") || "No city"}</p>
+                  </div>
+                </div>
+                <span className="text-xs font-semibold text-slate-400">Distance N/A</span>
+                <span className="rounded-full bg-white/10 px-2 py-1 text-center text-xs font-bold text-slate-200">{technician.availability || "Available"}</span>
+                <span className="text-center text-xs font-black text-amber-300">★ {Number(technician.rating || 0).toFixed(1)}</span>
+                <button type="button" onClick={() => onAssign(job, technician)} className="h-8 rounded-lg bg-blue-600 px-3 text-xs font-bold text-white hover:bg-blue-500">
+                  Assign
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UpdatesModal({ job, onClose, onSave }) {
+  const [value, setValue] = useState(job.updates || "");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40">
+        <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">Job Updates</p>
+            <h2 className="mt-1 text-lg font-black text-white">{job.reference || job.company || `Job ${job.id}`}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="h-9 rounded-lg bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15">Close</button>
+        </div>
+        <textarea
+          className="mt-4 min-h-40 w-full rounded-xl border border-white/10 bg-[#111f33] p-3 text-sm font-semibold text-white outline-none focus:border-blue-400"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15">Cancel</button>
+          <button type="button" onClick={() => onSave(value)} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Updates</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function JobDocumentsModal({ job, isAdmin, currentUserName, onUpload, onDeleted, onClose }) {
+  const [documentType, setDocumentType] = useState("Invoice photo");
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [safeModeMessage, setSafeModeMessage] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  async function loadDocuments() {
+    setLoading(true);
+    setSafeModeMessage("");
+    const fallbackDocument = fallbackJobDocument(job);
+    const { data, error } = await supabase
+      .from("job_files")
+      .select("*")
+      .eq("job_id", job.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      const fallbackDocuments = fallbackDocument ? [fallbackDocument] : [];
+      setSafeModeMessage(`Safe mode: job_files table is unavailable. Showing job photo reference only. ${error.message}`);
+      setDocuments(fallbackDocuments);
+      setLoading(false);
+      return fallbackDocuments;
+    }
+
+    const fileRows = Array.isArray(data) ? data.map(normalizeJobFileRecord) : [];
+    const hasFallback = fallbackDocument && !fileRows.some((document) => document.url === fallbackDocument.url);
+    const nextDocuments = hasFallback ? [...fileRows, fallbackDocument] : fileRows;
+    setDocuments(nextDocuments);
+    setLoading(false);
+    return nextDocuments;
+  }
+
+  useEffect(() => {
+    loadDocuments();
+  }, [job]);
+
+  function canDeleteDocument(document) {
+    if (isAdmin) return true;
+    if (!document || !currentUserName) return false;
+    const uploadedBy = document.uploadedBy || document.uploaded_by || "";
+    if (!uploadedBy) return false;
+    return normalizeText(uploadedBy) === normalizeText(currentUserName);
+  }
+
+  async function confirmDeleteDocument() {
+    if (!deleteTarget) return;
+    if (!canDeleteDocument(deleteTarget)) {
+      alert("You can only delete files you uploaded.");
+      setDeleteTarget(null);
+      return;
+    }
+
+    let warning = "";
+    if (deleteTarget.recordId) {
+      const { error: deleteRecordError } = await supabase
+        .from("job_files")
+        .delete()
+        .eq("id", deleteTarget.recordId);
+      if (deleteRecordError) {
+        alert(deleteRecordError.message);
+        setDeleteTarget(null);
+        return;
+      }
+    } else if (!deleteTarget.isFallback) {
+      alert("Safe mode: no file record was found to delete.");
+      setDeleteTarget(null);
+      return;
+    }
+
+    const storagePath = deleteTarget.storagePath || storagePathFromPublicUrl(deleteTarget.url);
+    if (storagePath) {
+      const { error: removeError } = await supabase.storage.from("job-photos").remove([storagePath]);
+      if (removeError) {
+        warning = `File deleted successfully. Warning: ${removeError.message}`;
+        setSafeModeMessage(`Storage delete warning: ${removeError.message}`);
+      }
+    } else {
+      warning = "File deleted successfully. Warning: storage path was not available.";
+    }
+
+    const remainingDocuments = documents.filter((document) => document.id !== deleteTarget.id);
+    setDocuments(remainingDocuments);
+    await onDeleted(deleteTarget, warning, remainingDocuments);
+    setDeleteTarget(null);
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div className="max-h-[92vh] w-full max-w-3xl overflow-auto rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40">
+        <div className="flex flex-col gap-3 border-b border-white/10 pb-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">Documents</p>
+            <h2 className="mt-1 text-lg font-black text-white">{job.reference || job.company || `Job ${job.id}`}</h2>
+            <p className="mt-0.5 text-xs font-semibold text-slate-400">Invoice photos, job photos, receipts, PDFs, and related files.</p>
+          </div>
+          <button type="button" onClick={onClose} className="h-9 rounded-lg bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15">Close</button>
+        </div>
+
+        <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-white/5 p-3 md:grid-cols-[180px_1fr] md:items-center">
+          <select value={documentType} onChange={(event) => setDocumentType(event.target.value)} className={`${darkSelectClass} h-9 px-3 text-sm font-bold`}>
+            {["Invoice photo", "Receipt", "Job photo", "Damage photo", "Before/after photo", "Other document"].map((type) => (
+              <option key={type} style={darkOptionStyle}>{type}</option>
+            ))}
+          </select>
+          <label className="inline-flex h-9 cursor-pointer items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">
+            Upload Invoice / Photo
+            <input type="file" className="hidden" accept="image/*,application/pdf" onChange={async (event) => {
+              await onUpload(event.target.files[0], documentType);
+              event.target.value = "";
+            }} />
+          </label>
+        </div>
+
+        {safeModeMessage && (
+          <div className="mt-4 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm font-semibold text-amber-100">
+            {safeModeMessage}
+          </div>
+        )}
+
+        <div className="mt-4 overflow-hidden rounded-xl border border-white/10">
+          {loading ? (
+            <div className="p-6 text-center text-sm font-semibold text-slate-400">Loading documents...</div>
+          ) : documents.length === 0 ? (
+            <div className="p-6 text-center text-sm font-semibold text-slate-400">
+              No uploaded invoice photos, receipts, PDFs, or job photos found for this job.
+            </div>
+          ) : (
+            documents.map((document) => (
+              <div key={document.id} className="grid gap-3 border-b border-white/10 bg-white/[0.03] p-3 text-sm last:border-b-0 md:grid-cols-[1fr_120px_150px_120px] md:items-center">
+                <div className="min-w-0">
+                  <p className="truncate font-black text-white">{document.name}</p>
+                  <p className="text-xs font-semibold text-slate-400">{document.type} · Uploaded by {document.uploadedBy}</p>
+                </div>
+                <span className="text-xs font-semibold text-slate-400">{document.uploadedAt ? new Date(document.uploadedAt).toLocaleString() : "Date not stored"}</span>
+                <a href={document.url} target="_blank" rel="noreferrer" className="h-9 rounded-lg bg-white/10 px-3 py-2 text-center text-xs font-bold text-slate-100 hover:bg-white/15">
+                  Preview / Open
+                </a>
+                {canDeleteDocument(document) ? (
+                  <button type="button" onClick={() => setDeleteTarget(document)} className="h-9 rounded-lg bg-red-600 px-3 text-xs font-bold text-white hover:bg-red-500">
+                    Delete
+                  </button>
+                ) : (
+                  <span className="text-center text-xs font-bold text-slate-500">View only</span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {deleteTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-xl font-black text-slate-950">Delete File</h3>
+            <p className="mt-2 text-sm text-slate-600">Are you sure you want to delete this uploaded file?</p>
+            <p className="mt-3 truncate rounded-xl bg-slate-50 p-3 text-sm font-bold text-slate-700">{deleteTarget.name}</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setDeleteTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+                Cancel
+              </button>
+              <button type="button" onClick={confirmDeleteDocument} className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Editable({ value, onChange }) {
   return (
     <input
-      className="w-32 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+      className={`${tableControlClass} w-32 px-2 py-1`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />
@@ -3275,187 +3452,10 @@ function MoneyInput({ value, onChange, className = "" }) {
   return (
     <input
       type="number"
-      className={`w-24 rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500 ${className}`}
+      className={`${tableControlClass} w-24 px-2 py-1 ${className}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />
-  );
-}
-
-function AssignmentPanel({ job, jobs, technicians, filters, onFiltersChange, supportsAssignment, onAssign, onAvailabilityChange, onClear }) {
-  return (
-    <aside className="rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-xl shadow-black/10">
-      <div className="mb-3 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-black text-white">Dispatch Workspace</h2>
-          <p className="mt-0.5 text-xs text-slate-400">
-            {job?.id ? `Selected job ${job.reference || job.id}` : "Select a job from Live Jobs to manage assignment"}
-          </p>
-        </div>
-        {job?.id && (
-          <button
-            type="button"
-            onClick={onClear}
-            className="h-8 rounded-lg bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15"
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {!supportsAssignment && (
-        <div className="mb-3 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-xs font-semibold text-amber-100">
-          Safe mode: jobs.technician_id does not exist yet. Assignment preview only.
-        </div>
-      )}
-
-      {supportsAssignment && (!job?.assignedAt && !job?.assignedBy) && (
-        <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-slate-400">
-          Assignment timestamps and assigned-by values are saved when those columns exist.
-        </div>
-      )}
-
-      {job?.id ? (
-        <div className="mb-3 rounded-xl border border-white/10 bg-white/5 p-3 text-sm">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="font-bold text-white">Job Details</p>
-            <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusStyles[job.status] || "border-slate-200 bg-white text-slate-700"}`}>
-              {job.status || "New"}
-            </span>
-          </div>
-          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            <DetailLine label="Customer / Company" value={job.company} />
-            <DetailLine label="Location" value={job.location} />
-            <DetailLine label="Service Needed" value={filters.service || extractService(job)} />
-            <DetailLine label="Invoice #" value={job.reference} />
-            <DetailLine label="Reference #" value={job.reference} />
-            <DetailLine label="Notes / Updates" value={job.updates} />
-          </div>
-        </div>
-      ) : (
-        <div className="mb-3 rounded-xl border border-dashed border-white/15 p-3 text-sm text-slate-400">
-          Click Workspace on a live job to review details and assign an approved technician.
-        </div>
-      )}
-
-      {job?.technicianId && (
-        <div className="mb-3 rounded-xl border border-blue-300/30 bg-blue-500/10 p-3 text-xs text-blue-100">
-          <p className="font-bold">Assignment History</p>
-          <p>Assigned By: {job.assignedBy || "Not recorded"}</p>
-          <p>Assigned Time: {job.assignedAt ? new Date(job.assignedAt).toLocaleString() : "Not recorded"}</p>
-          <p>Previous Technician: {job.previousTechnician || "None"}</p>
-          <p>Reassigned Count: {job.reassignedCount || 0}</p>
-        </div>
-      )}
-
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h3 className="text-xs font-black uppercase tracking-wide text-slate-400">Recommended Technicians</h3>
-        <span className="text-xs font-bold text-slate-500">{technicians.length} matches</span>
-      </div>
-
-      <div className="mb-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)_auto]">
-        <input
-          className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
-          placeholder="City"
-          value={filters.city}
-          onChange={(event) => onFiltersChange((current) => ({ ...current, city: event.target.value }))}
-        />
-        <input
-          className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
-          placeholder="State"
-          value={filters.state}
-          onChange={(event) => onFiltersChange((current) => ({ ...current, state: event.target.value }))}
-        />
-        <input
-          className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
-          placeholder="Service"
-          value={filters.service}
-          onChange={(event) => onFiltersChange((current) => ({ ...current, service: event.target.value }))}
-        />
-        <button
-          type="button"
-          onClick={() => onFiltersChange({ city: "", state: "", service: "" })}
-          className="h-9 rounded-lg border border-white/10 bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15"
-        >
-          Reset Filters
-        </button>
-      </div>
-
-      <div className="grid gap-2">
-        {technicians.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-slate-400">
-            No approved technicians match the current filters.
-          </div>
-        ) : (
-          technicians.map((technician) => (
-            <div key={technician.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3 shadow-sm">
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_260px_220px] xl:items-center">
-                <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-500/15 text-sm font-black text-blue-100">
-                  {initials(technician.full_name)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-black text-white">{technician.full_name || "Unnamed technician"}</p>
-                  <p className="text-xs font-semibold text-slate-400">{technician.phone || "No phone"}</p>
-                  <p className="text-xs text-slate-500">{[technician.city, technician.state].filter(Boolean).join(", ") || "No city"}</p>
-                </div>
-              </div>
-
-              <div className="grid gap-1.5 text-xs sm:grid-cols-2">
-                <MiniMetric label="Services" value={formatServices(technician.services)} />
-                <MiniMetric label="Rating" value={Number(technician.rating || 0).toFixed(1)} />
-                <MiniMetric label="Compliance" value={`${technicianCompliance(technician)}%`} />
-                <MiniMetric label="Availability" value={technician.availability || "Available"} />
-                <MiniMetric label="Last Job" value={lastTechnicianJob(jobs, technician)} />
-              </div>
-
-                <div className="space-y-2">
-                  <div className="grid grid-cols-4 gap-1">
-                    {["Available", "Busy", "Off Duty", "Offline"].map((availability) => (
-                      <button
-                        key={availability}
-                        type="button"
-                        onClick={() => onAvailabilityChange(technician, availability)}
-                        className={`h-8 rounded-lg px-1 text-[11px] font-bold ${
-                          technician.availability === availability
-                            ? "bg-blue-600 text-white"
-                            : "bg-white/10 text-slate-200 hover:bg-white/15"
-                        }`}
-                      >
-                        {availability}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <a
-                      href={technician.phone ? `tel:${technician.phone}` : undefined}
-                      className="h-8 rounded-lg bg-white/10 px-2 py-2 text-center text-xs font-bold text-slate-100 hover:bg-white/15"
-                    >
-                      Call
-                    </a>
-                    <a
-                      href={whatsappLink(job, technician, filters.service)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="h-8 rounded-lg bg-emerald-600 px-2 py-2 text-center text-xs font-bold text-white hover:bg-emerald-500"
-                    >
-                      WhatsApp
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => onAssign(job, technician)}
-                      className="h-8 rounded-lg bg-blue-600 px-2 text-xs font-bold text-white hover:bg-blue-500"
-                    >
-                      Assign
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-    </aside>
   );
 }
 
@@ -3796,6 +3796,59 @@ function formatServices(services) {
   return serviceList.length ? serviceList.join(", ") : "No services";
 }
 
+function firstLine(value) {
+  return String(value || "").split(/\r?\n/).find((line) => line.trim())?.trim() || "";
+}
+
+function fileNameFromUrl(url) {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split("/").pop() || "Uploaded file");
+  } catch {
+    return String(url || "").split("/").pop() || "Uploaded file";
+  }
+}
+
+function documentTypeFromUrl(url) {
+  return String(url || "").toLowerCase().includes(".pdf") ? "PDF" : "Image";
+}
+
+function fallbackJobDocument(job) {
+  if (!job?.photo_url) return null;
+  return {
+    id: `photo-url-${job.id}`,
+    recordId: "",
+    name: fileNameFromUrl(job.photo_url),
+    url: job.photo_url,
+    type: documentTypeFromUrl(job.photo_url),
+    uploadedAt: job.updatedAt || job.createdAt || "",
+    uploadedBy: "Not stored",
+    storagePath: storagePathFromPublicUrl(job.photo_url),
+    isFallback: true,
+  };
+}
+
+function normalizeJobFileRecord(row) {
+  const url = row.file_url || row.url || row.photo_url || row.public_url || "";
+  return {
+    id: `job-file-${row.id || url}`,
+    recordId: row.id || "",
+    name: row.file_name || row.name || fileNameFromUrl(url),
+    url,
+    type: row.document_type || row.file_type || documentTypeFromUrl(url),
+    uploadedAt: row.created_at || row.uploaded_at || "",
+    uploadedBy: row.uploaded_by || row.created_by || "Not stored",
+    storagePath: row.storage_path || storagePathFromPublicUrl(url),
+    isFallback: false,
+  };
+}
+
+function storagePathFromPublicUrl(url) {
+  const marker = "/job-photos/";
+  const value = String(url || "");
+  if (!value.includes(marker)) return "";
+  return decodeURIComponent(value.split(marker).pop() || "");
+}
+
 function averageEta(jobs) {
   const etaValues = jobs
     .map((job) => {
@@ -3810,11 +3863,11 @@ function averageEta(jobs) {
 }
 
 function Th({ children }) {
-  return <th className="whitespace-nowrap border-b border-slate-700 px-4 py-3.5 font-black">{children}</th>;
+  return <th className="whitespace-nowrap border-b border-white/10 px-4 py-2.5 text-[11px] font-black">{children}</th>;
 }
 
 function Td({ children, className = "" }) {
-  return <td className={`border-b border-slate-200 px-4 py-3 align-middle ${className}`}>{children}</td>;
+  return <td className={`border-b border-white/10 px-4 py-2 align-middle ${className}`}>{children}</td>;
 }
 
 function IconAction({ title, onClick, className = "", children }) {
@@ -3823,10 +3876,64 @@ function IconAction({ title, onClick, className = "", children }) {
       type="button"
       title={title}
       onClick={onClick}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg transition ${className}`}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg transition ${className}`}
     >
       {children}
     </button>
+  );
+}
+
+function canonicalJobStatus(status) {
+  const value = String(status || "New").trim().toLowerCase();
+  const aliases = {
+    canceled: "Cancelled",
+    cancelled: "Cancelled",
+    declined: "Cancelled",
+    working: "In Progress",
+    assigned: "In Progress",
+    "tech accepted": "In Progress",
+    invoiced: "Completed",
+    paid: "Completed",
+    "dry run": "Dry Run",
+    "need review": "Need Review",
+    "waiting parts": "Waiting Parts",
+    "on site": "On Site",
+    "en route": "En Route",
+    pending: "Pending",
+    completed: "Completed",
+    new: "New",
+  };
+  return aliases[value] || status || "New";
+}
+
+function jobStatusVisual(status) {
+  return jobStatusVisuals[canonicalJobStatus(status)] || jobStatusVisuals.New;
+}
+
+function jobStatusControlStyle(status) {
+  const visual = jobStatusVisual(status);
+  return {
+    backgroundColor: visual.background,
+    borderColor: visual.border,
+    color: visual.text,
+    transition: "background-color 0.2s ease, border-color 0.2s ease",
+  };
+}
+
+function jobStatusLabel(status) {
+  const label = status || "New";
+  return `${jobStatusVisual(label).dot} ${label}`;
+}
+
+function JobStatusBadge({ status, className = "" }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-bold ${className}`}
+      style={jobStatusControlStyle(status)}
+      title={`${jobStatusVisual(status).icon} ${status || "New"}`}
+    >
+      {jobStatusLabel(status)}
+    </span>
   );
 }
 

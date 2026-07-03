@@ -252,6 +252,41 @@ function isPaid(status) {
   return String(status || "").toLowerCase() === "paid";
 }
 
+const jobStatusVisuals = {
+  Completed: { background: "#DCFCE7", border: "#22C55E", text: "#166534", dot: "🟢" },
+  Cancelled: { background: "#FEE2E2", border: "#EF4444", text: "#991B1B", dot: "🔴" },
+  "In Progress": { background: "#DBEAFE", border: "#2563EB", text: "#1D4ED8", dot: "🔵" },
+  "On Site": { background: "#FEF3C7", border: "#F59E0B", text: "#92400E", dot: "🟡" },
+  "En Route": { background: "#E0F2FE", border: "#0284C7", text: "#075985", dot: "🔵" },
+  "Waiting Parts": { background: "#F3E8FF", border: "#9333EA", text: "#6B21A8", dot: "🟣" },
+  Pending: { background: "#FFF7ED", border: "#F97316", text: "#9A3412", dot: "🟠" },
+  "Dry Run": { background: "#EDE9FE", border: "#7C3AED", text: "#5B21B6", dot: "🟣" },
+  "Need Review": { background: "#FEF2F2", border: "#DC2626", text: "#7F1D1D", dot: "🔴" },
+  New: { background: "#F8FAFC", border: "#64748B", text: "#334155", dot: "⚪" },
+};
+
+function canonicalJobStatus(status) {
+  const value = String(status || "Pending").trim().toLowerCase();
+  const aliases = {
+    canceled: "Cancelled",
+    cancelled: "Cancelled",
+    declined: "Cancelled",
+    working: "In Progress",
+    assigned: "In Progress",
+    "tech accepted": "In Progress",
+    paid: "Completed",
+    invoiced: "Completed",
+    pending: "Pending",
+    "need review": "Need Review",
+    "dry run": "Dry Run",
+  };
+  return aliases[value] || status || "Pending";
+}
+
+function jobStatusVisual(status) {
+  return jobStatusVisuals[canonicalJobStatus(status)] || jobStatusVisuals.Pending;
+}
+
 function money(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
 }
@@ -288,10 +323,18 @@ function FilterSelect({ label, value, options, onChange }) {
 }
 
 function StatusBadge({ status }) {
-  const paid = isPaid(status);
+  const visual = jobStatusVisual(status);
   return (
-    <span className={`rounded-full px-3 py-1 text-xs font-bold ${paid ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
-      {status || "Pending"}
+    <span
+      className="inline-flex rounded-full border px-3 py-1 text-xs font-bold"
+      style={{
+        backgroundColor: visual.background,
+        borderColor: visual.border,
+        color: visual.text,
+        transition: "background-color 0.2s ease, border-color 0.2s ease",
+      }}
+    >
+      {visual.dot} {status || "Pending"}
     </span>
   );
 }
