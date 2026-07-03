@@ -18,10 +18,8 @@ import {
   Edit3,
   Eye,
   MoreHorizontal,
-  HelpCircle,
   MapPin,
   MessageCircle,
-  Moon,
   Phone,
   Star,
   Users,
@@ -31,6 +29,11 @@ import {
   FileText,
   Bell,
   BellRing,
+  CreditCard,
+  BarChart3,
+  Settings,
+  ShieldCheck,
+  Package,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
@@ -437,6 +440,7 @@ export default function DispatchLiveUpdatesPage() {
   const permissions = getPermissions(currentUserRole);
   const normalizedUserRole = normalizeRole(currentUserRole);
   const isAdmin = normalizedUserRole === "admin";
+  const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
 
   function handleLogin() {
@@ -896,6 +900,17 @@ profit: filteredJobs.reduce(
     };
  }, [jobs, filteredJobs]);
 
+  const sidebarItems = useMemo(() => dispatchSidebarItems(isAdmin), [isAdmin]);
+  const roleKpis = useMemo(() => dispatchKpis(stats, isAdmin), [stats, isAdmin]);
+  const activeTechniciansCount = useMemo(
+    () => dispatchTechnicians.filter((technician) => String(technician.availability || "").toLowerCase() === "available").length,
+    [dispatchTechnicians]
+  );
+  const todayJobs = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return filteredJobs.filter((job) => job.date === today);
+  }, [filteredJobs]);
+
   const assignmentTechnicians = useMemo(() => {
     const jobLocation = parseLocation(assignmentJob?.location);
     const city = (assignmentFilters.city || jobLocation.city).trim().toLowerCase();
@@ -1162,10 +1177,8 @@ async function uploadPhoto(jobId, file) {
       await logActivity({
         entityType: "job",
         entityId: jobId,
-        action: `Tech Payment ${details.techPaymentStatus}`,
-        description: isPaidStatus(details.techPaymentStatus)
-          ? "Tech Payment marked as Paid"
-          : `Tech Payment marked as ${details.techPaymentStatus}`,
+        action: "Tech Payment Status Changed",
+        description: `Tech Payment Status changed to ${details.techPaymentStatus}`,
         createdBy: currentUserName || "Admin",
       });
     }
@@ -1173,6 +1186,12 @@ async function uploadPhoto(jobId, file) {
   }
 
   async function deleteJob(id) {
+    if (!canDeleteJobs) {
+      alert("Only administrators can delete jobs.");
+      setJobToDelete(null);
+      return;
+    }
+
     const deletedJob = jobs.find((job) => job.id === id);
 
     const { error } = await supabase.from("jobs").delete().eq("id", id);
@@ -1212,6 +1231,10 @@ await logActivity({
   }
 
   function requestDelete(job) {
+    if (!canDeleteJobs) {
+      alert("Only administrators can delete jobs.");
+      return;
+    }
     setJobToDelete(job);
   }
 
@@ -1446,17 +1469,24 @@ await logActivity({
   }
 
   return (
-    <div className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden bg-slate-100 text-slate-900">
+    <div className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden bg-[#07111f] text-slate-100">
       {toastMessage && (
         <div className="fixed right-6 top-6 z-50 rounded-xl border border-emerald-200 bg-white px-5 py-3 text-sm font-bold text-emerald-700 shadow-xl">
           {toastMessage}
         </div>
       )}
-      <div className="w-full max-w-none min-w-0 space-y-6 p-4 md:p-6 xl:p-8">
+      <div className="flex min-h-screen w-full max-w-none min-w-0 flex-col xl:flex-row">
+        <DispatchRoleSidebar
+          items={sidebarItems}
+          currentUserName={currentUserName}
+          currentUserRole={normalizedUserRole}
+          isAdmin={isAdmin}
+        />
+        <main className="w-full min-w-0 flex-1 space-y-6 p-4 md:p-6 xl:p-8">
         <motion.div
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-slate-800 bg-[#0b1628] p-4 text-white shadow-sm"
+          className="rounded-2xl border border-white/10 bg-[#0b1628] p-4 text-white shadow-2xl shadow-black/20"
         >
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex flex-wrap items-center gap-4">
@@ -1468,42 +1498,52 @@ await logActivity({
                 <div className="hidden">
                   <span>Home</span><span>&gt;</span><span>Dispatch Center</span><span>&gt;</span><span className="text-blue-700">Live Jobs</span>
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight text-white">Dispatch Cockpit</h1>
-                <p className="text-xs font-semibold uppercase tracking-wide text-blue-300">
-                  Secure live dispatch system · Truck & Trailer Road Service
-                </p>
+                <h1 className="text-3xl font-black tracking-tight text-white">Dispatch Board</h1>
+                <p className="mt-1 text-sm font-semibold text-slate-300">Real-time overview of all jobs and assignments.</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${isAdmin ? "border-purple-400/40 bg-purple-500/15 text-purple-100" : "border-blue-400/40 bg-blue-500/15 text-blue-100"}`}>
+                    {isAdmin ? "ADMINISTRATOR VIEW" : "DISPATCHER VIEW"}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-400">
+                    {isAdmin ? "Acceso completo" : "Sin acceso a administracion avanzada"}
+                  </span>
+                </div>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 xl:flex-nowrap">
-              <button type="button" className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/15">
-                Shortcuts
+              <select
+                className="h-10 rounded-xl border border-white/10 bg-white/10 px-3 text-sm font-bold text-white outline-none focus:border-blue-400"
+                value={periodFilter}
+                onChange={(e) => setPeriodFilter(e.target.value)}
+              >
+                <option className="text-slate-950" value="ThisWeek">This Week</option>
+                <option className="text-slate-950" value="LastWeek">Last Week</option>
+                <option className="text-slate-950" value="ThisMonth">This Month</option>
+                <option className="text-slate-950" value="LastMonth">Last Month</option>
+                <option className="text-slate-950" value="ThisYear">This Year</option>
+                <option className="text-slate-950" value="All">All</option>
+              </select>
+              <button type="button" onClick={() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" })} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/15">
+                <Filter className="mr-2 inline h-4 w-4" />
+                Filters
               </button>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <input
-                  ref={searchInputRef}
-                  className="w-80 rounded-xl border border-white/10 bg-white/10 py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-400 focus:border-blue-400"
-                  placeholder="Search jobs, invoices, companies..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-              <button type="button" className="rounded-xl bg-white/10 p-3 text-slate-200 hover:bg-white/15" title="Notifications">
-                <Bell className="h-4 w-4" />
-              </button>
-              <button type="button" className="rounded-xl bg-white/10 p-3 text-slate-200 hover:bg-white/15" title="Help">
-                <HelpCircle className="h-4 w-4" />
+              <button type="button" onClick={() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">
+                <Plus className="mr-2 inline h-4 w-4" />
+                Add Job
               </button>
               <button
                 type="button"
-                onClick={() => document.documentElement.classList.toggle("dark")}
+                onClick={() => {
+                  loadJobs();
+                  loadDispatchTechnicians();
+                }}
                 className="rounded-xl bg-white/10 p-3 text-slate-200 hover:bg-white/15"
-                title="Dark mode"
+                title="Refresh"
               >
-                <Moon className="h-4 w-4" />
+                <RefreshCw className="h-4 w-4" />
               </button>
-              <div className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold capitalize text-white">
+              <div className="rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold capitalize text-white">
                 {currentUserName || "Not signed in"} · {normalizeRole(currentUserRole) || "access required"}
               </div>
               <div className="hidden gap-2 lg:flex">
@@ -1589,13 +1629,10 @@ await logActivity({
           )}
         </div>
 
-        <div className={`sticky top-0 z-30 grid gap-4 rounded-xl border border-slate-200 bg-slate-100/95 p-2 backdrop-blur md:grid-cols-3 ${isAdmin ? "xl:grid-cols-6" : "xl:grid-cols-5"}`}>
-          <StatCard icon={<ClipboardList />} label="Active Jobs" value={stats.activeJobs} />
-          <StatCard icon={<AlertTriangle />} label="Pending Jobs" value={stats.pendingJobs} />
-          <StatCard icon={<Users />} label="Assigned Jobs" value={stats.assigned} />
-          <StatCard icon={<CheckCircle2 />} label="Completed Today" value={stats.completedToday} />
-          {isAdmin && <StatCard icon={<DollarSign />} label="Revenue Today" value={money(stats.revenueToday)} />}
-          <StatCard icon={<Clock />} label="Average ETA" value={stats.averageEta ? `${stats.averageEta} min` : "0"} />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+          {roleKpis.map((kpi) => (
+            <DispatchKpiCard key={kpi.label} {...kpi} />
+          ))}
         </div>
 
         {isAdmin && (
@@ -1838,6 +1875,22 @@ await logActivity({
             </datalist>
           </form>
 
+          <DispatchRightPanel
+            isAdmin={isAdmin}
+            stats={stats}
+            todayJobs={todayJobs}
+            technicians={dispatchTechnicians}
+            activeTechniciansCount={activeTechniciansCount}
+            activityLogs={activityLogs}
+            onAddJob={() => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            onAssign={() => {
+              setDispatchViewMode("cockpit");
+              document.getElementById("cockpit-technicians")?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }}
+            onMap={() => window.open("https://www.google.com/maps/search/?api=1&query=active%20truck%20roadside%20jobs", "_blank", "noopener,noreferrer")}
+            onReport={() => exportJobsToCSV(filteredJobs)}
+          />
+
           <div className="order-2 col-span-full flex flex-wrap justify-end gap-2">
             {["cockpit", "table"].map((mode) => (
               <button
@@ -1885,11 +1938,11 @@ await logActivity({
           )}
 
           {dispatchViewMode === "table" && (
-          <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-2xl border border-white/10 bg-[#0b1628] p-5 shadow-xl shadow-black/10">
             <div className="mb-5 flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
               <div>
-                <h2 className="text-3xl font-black tracking-tight text-slate-950">Live Jobs</h2>
-                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Ordered oldest to newest</p>
+                <h2 className="text-3xl font-black tracking-tight text-white">Live Jobs</h2>
+                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Ordered oldest to newest</p>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -1921,60 +1974,72 @@ await logActivity({
               </div>
             </div>
 
-            <div className="mb-4 w-full max-w-none overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <div className="grid w-full min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_160px_160px_190px_150px_150px_auto_auto] 2xl:items-center">
+            <div className="mb-4 w-full max-w-none overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3">
+              <div className="grid w-full min-w-0 gap-3 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_150px_150px_150px_160px_150px_150px_auto_auto] 2xl:items-center">
                 <div className="relative min-w-0">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <input
-                    className="h-10 w-full rounded-xl border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500"
-                    placeholder="Search jobs"
+                    ref={searchInputRef}
+                    className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
+                    placeholder="Search by Ref #, Company, Location, Technician"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
 
                 <select
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-500"
-                  value={techFilter}
-                  onChange={(e) => setTechFilter(e.target.value)}
-                >
-                  <option>All</option>
-                  {techs.map((tech) => (
-                    <option key={tech}>{tech}</option>
-                  ))}
-                </select>
-
-                <select
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-500"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
                   {["All", ...jobStatusOptions].map((s) => (
-                    <option key={s}>{s}</option>
+                    <option className="text-slate-950" key={s}>{s}</option>
                   ))}
                 </select>
 
                 <select
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold outline-none focus:border-blue-500"
-                  value={companyFilter}
-                  onChange={(e) => setCompanyFilter(e.target.value)}
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                  value={techFilter}
+                  onChange={(e) => setTechFilter(e.target.value)}
                 >
-                  <option>All</option>
-                  {companies.map((company) => (
-                    <option key={company}>{company}</option>
+                  <option className="text-slate-950">All</option>
+                  {techs.map((tech) => (
+                    <option className="text-slate-950" key={tech}>{tech}</option>
+                  ))}
+                </select>
+
+                <select
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                  value={cityFilter}
+                  onChange={(e) => setCityFilter(e.target.value)}
+                >
+                  <option className="text-slate-950">All</option>
+                  {cities.map((city) => (
+                    <option className="text-slate-950" key={city}>{city}</option>
+                  ))}
+                </select>
+
+                <select
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none focus:border-blue-400"
+                  value={invoiceFilter}
+                  onChange={(e) => setInvoiceFilter(e.target.value)}
+                >
+                  <option className="text-slate-950">All</option>
+                  {["Pending", "Sent", "Paid", "Need Review"].map((status) => (
+                    <option className="text-slate-950" key={status}>{status}</option>
                   ))}
                 </select>
 
                 <input
                   type="date"
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                 />
 
                 <input
                   type="date"
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"
+                  className="h-10 w-full rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
                   value={toDate}
                   onChange={(e) => setToDate(e.target.value)}
                 />
@@ -1999,14 +2064,14 @@ await logActivity({
                     setInvoiceFilter("All");
                     setPeriodFilter("All");
                   }}
-                  className="h-10 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100"
+                  className="h-10 whitespace-nowrap rounded-xl border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15"
                 >
                   Reset
                 </button>
               </div>
             </div>
 
-            <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+            <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-white/10 bg-[#0f1c2e]">
               <table className="min-w-[1900px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-[#0b1628] text-xs uppercase tracking-wide text-slate-200">
                   <tr>
@@ -2039,21 +2104,21 @@ await logActivity({
                     <tr
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
-                      className={`align-middle transition hover:bg-blue-50/70 ${
-                        job.rowFlag === "Problem" || job.status === "Dry Run"
-                          ? "border-l-4 border-red-500 bg-red-50"
-                          : rowStyles[job.rowFlag && job.rowFlag !== "Normal" ? job.rowFlag : job.status] || rowStyles.Normal
+                    className={`align-middle text-slate-200 transition hover:bg-blue-500/10 ${
+                      job.rowFlag === "Problem" || job.status === "Dry Run"
+                          ? "border-l-4 border-red-500 bg-red-500/10"
+                          : "border-l-4 border-transparent odd:bg-white/[0.03] even:bg-white/[0.06]"
                       }`}
                     >
                       <Td>
-                        <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold">
+                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-slate-200">
                           #{index + 1}
                         </span>
                       </Td>
 
                       <Td>
                         <select
-                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold outline-none focus:border-blue-500"
+                          className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-2 text-xs font-bold text-white outline-none focus:border-blue-400"
                           value={job.rowFlag || "Normal"}
                           onChange={(e) => updateJob(job.id, "rowFlag", e.target.value)}
                         >
@@ -2068,7 +2133,7 @@ await logActivity({
                       <Td>
                         <input
                           type="date"
-                          className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold outline-none focus:border-blue-500"
+                          className="h-9 rounded-lg border border-white/10 bg-[#111f33] px-2 text-xs font-semibold text-white outline-none focus:border-blue-400"
                           value={job.date}
                           onChange={(e) => updateJob(job.id, "date", e.target.value)}
                         />
@@ -2084,7 +2149,7 @@ await logActivity({
                             <option key={s}>{s}</option>
                           ))}
                         </select>
-                        <p className="mt-1 text-xs font-semibold text-slate-500">ETA: {job.manualEta || extractEta(job.updates) || "Not set"}</p>
+                        <p className="mt-1 text-xs font-semibold text-slate-400">ETA: {job.manualEta || extractEta(job.updates) || "Not set"}</p>
                       </Td>
 
                       <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
@@ -2093,7 +2158,7 @@ await logActivity({
 
                       <Td>
                         <input
-                          className="w-[320px] rounded-lg border border-slate-200 px-2 py-1 outline-none focus:border-slate-500"
+                          className="w-[320px] rounded-lg border border-white/10 bg-[#111f33] px-2 py-1 text-white outline-none focus:border-blue-400"
                           value={job.company}
                           onChange={(e) => updateJob(job.id, "company", e.target.value)}
                         />
@@ -2307,9 +2372,11 @@ await logActivity({
                             }} className="bg-cyan-100 text-cyan-700 hover:bg-cyan-200">
                             <Eye className="h-4 w-4" />
                           </IconAction>
-                          <IconAction title="Delete" onClick={() => requestDelete(job)} className="bg-red-100 text-red-700 hover:bg-red-200">
-                            <Trash2 className="h-4 w-4" />
-                          </IconAction>
+                          {canDeleteJobs && (
+                            <IconAction title="Delete" onClick={() => requestDelete(job)} className="bg-red-100 text-red-700 hover:bg-red-200">
+                              <Trash2 className="h-4 w-4" />
+                            </IconAction>
+                          )}
                         </div>
                       </Td>
                     </tr>
@@ -2323,6 +2390,20 @@ await logActivity({
                   )}
                 </tbody>
               </table>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm font-semibold text-slate-400 md:flex-row md:items-center md:justify-between">
+              <span>
+                Showing {filteredJobs.length ? 1 : 0} to {filteredJobs.length} of {filteredJobs.length} jobs
+              </span>
+              <label className="flex items-center gap-2">
+                Rows per page
+                <select className="rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-bold text-white outline-none">
+                  <option className="text-slate-950">25</option>
+                  <option className="text-slate-950">50</option>
+                  <option className="text-slate-950">100</option>
+                </select>
+              </label>
             </div>
 
             {jobToDelete && (
@@ -2412,6 +2493,7 @@ await logActivity({
             />
           )}
         </div>
+        </main>
       </div>
     </div>
   );
@@ -2439,19 +2521,19 @@ function DispatchCockpit({
 
   return (
     <div className="order-3 col-span-full grid w-full gap-4 xl:grid-cols-[1.1fr_1.2fr_1.1fr] lg:grid-cols-2">
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section className="rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-xl shadow-black/10">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Live Jobs</h2>
+            <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Live Jobs</h2>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{jobs.length} visible jobs</p>
           </div>
-          <button type="button" className="rounded-xl bg-slate-100 p-2 text-slate-600 hover:bg-slate-200" title="Filter">
+          <button type="button" className="rounded-xl bg-white/10 p-2 text-slate-300 hover:bg-white/15" title="Filter">
             <Filter className="h-4 w-4" />
           </button>
         </div>
         <div className="relative mb-3">
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-          <input className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm outline-none focus:border-blue-500" placeholder="Search live jobs" />
+          <input className="w-full rounded-xl border border-white/10 bg-[#111f33] py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400" placeholder="Search live jobs" />
         </div>
         <div className="max-h-[680px] space-y-3 overflow-y-auto pr-1">
           {jobs.length === 0 ? (
@@ -2466,13 +2548,13 @@ function DispatchCockpit({
               onClick={() => onSelectJob(job)}
               onContextMenu={(event) => onContextMenu(event, job)}
               className={`w-full rounded-2xl border p-4 text-left transition ${
-                selected?.id === job.id ? "border-blue-500 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:bg-slate-50"
+                selected?.id === job.id ? "border-blue-400 bg-blue-500/15 shadow-sm" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.07]"
               }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-black text-slate-950">{job.reference || "No invoice"}</p>
-                  <p className="mt-1 truncate text-sm font-semibold text-slate-700">{job.company || "No company"}</p>
+                  <p className="truncate text-sm font-black text-white">{job.reference || "No invoice"}</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-300">{job.company || "No company"}</p>
                   <p className="mt-1 truncate text-xs text-slate-500">{job.location || "No location"}</p>
                   <p className="mt-2 text-xs text-slate-500">{[job.date, job.time].filter(Boolean).join(" · ") || "No date/time"}</p>
                 </div>
@@ -2533,14 +2615,14 @@ function DispatchCockpit({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-white/10 bg-[#0b1628] p-5 shadow-xl shadow-black/10">
         {selected ? (
           <>
             <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Job Details</p>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Job Details</p>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-bold text-slate-950">{selected.company || "No company"}</h2>
+                  <h2 className="text-2xl font-bold text-white">{selected.company || "No company"}</h2>
                 </div>
                 <p className="mt-1 text-sm text-slate-500">{selected.location || "No location"}</p>
               </div>
@@ -2574,12 +2656,12 @@ function DispatchCockpit({
               </div>
             )}
 
-            <div className="mt-4 rounded-xl bg-slate-50 p-4">
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/5 p-4">
               <div className="flex items-center justify-between">
                 <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Updates / Notes</p>
                 <button type="button" onClick={onOpenTable} className="text-xs font-bold text-blue-700 hover:text-blue-800">Edit</button>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{selected.updates || "No updates yet."}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-300">{selected.updates || "No updates yet."}</p>
             </div>
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -2598,29 +2680,29 @@ function DispatchCockpit({
       </section>
 
       <aside className="space-y-6 lg:col-span-2 xl:col-span-1">
-        <section id="cockpit-technicians" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section id="cockpit-technicians" className="rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-xl shadow-black/10">
           <div className="mb-4">
-            <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Recommended Technicians</h2>
+            <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Recommended Technicians</h2>
             <p className="text-xs text-slate-500">Approved technicians matched by city, state, and service when available.</p>
           </div>
           <div className="mb-4 grid gap-2 md:grid-cols-3 xl:grid-cols-1">
-            <input className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="City" value={filters.city} onChange={(event) => onFiltersChange((current) => ({ ...current, city: event.target.value }))} />
-            <input className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="State" value={filters.state} onChange={(event) => onFiltersChange((current) => ({ ...current, state: event.target.value }))} />
-            <input className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="Service" value={filters.service} onChange={(event) => onFiltersChange((current) => ({ ...current, service: event.target.value }))} />
+            <input className="rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400" placeholder="City" value={filters.city} onChange={(event) => onFiltersChange((current) => ({ ...current, city: event.target.value }))} />
+            <input className="rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400" placeholder="State" value={filters.state} onChange={(event) => onFiltersChange((current) => ({ ...current, state: event.target.value }))} />
+            <input className="rounded-xl border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400" placeholder="Service" value={filters.service} onChange={(event) => onFiltersChange((current) => ({ ...current, service: event.target.value }))} />
           </div>
           <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
             {technicians.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No matching approved technicians.</div>
             ) : (
               technicians.map((technician) => (
-                <div key={technician.id} className="rounded-2xl border border-slate-200 p-4">
+                <div key={technician.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-start gap-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-50 text-sm font-black text-blue-700">
                         {initials(technician.full_name)}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate font-bold text-slate-950">{technician.full_name || "Unnamed technician"}</p>
+                        <p className="truncate font-bold text-white">{technician.full_name || "Unnamed technician"}</p>
                         <p className="text-xs font-semibold text-amber-500">★ {Number(technician.rating || 0).toFixed(1)}</p>
                         <p className="text-xs text-slate-500">{technician.phone || "No phone"}</p>
                         <p className="text-xs text-slate-500">{[technician.city, technician.state].filter(Boolean).join(", ") || "No location"} · Distance N/A</p>
@@ -2649,8 +2731,8 @@ function DispatchCockpit({
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">Activity Feed</h2>
+        <section className="rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-xl shadow-black/10">
+          <h2 className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Activity Feed</h2>
           <div className="mt-4 max-h-[300px] space-y-3 overflow-y-auto pr-1">
             {activity.length === 0 ? (
               <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm font-semibold text-slate-500">
@@ -2813,6 +2895,235 @@ function PaymentDetail({ label, value, highlight = false }) {
     <div className={`rounded-2xl border p-4 ${highlight ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-slate-50"}`}>
       <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`mt-2 text-lg font-black ${highlight ? "text-blue-800" : "text-slate-950"}`}>{value || "Not set"}</p>
+    </div>
+  );
+}
+
+function dispatchSidebarItems(isAdmin) {
+  const commonDispatcher = [
+    { label: "Dispatch Board", icon: ClipboardList },
+    { label: "Live GPS Map", icon: MapPin },
+    { label: "Technicians", icon: Users },
+    { label: "Jobs", icon: FileText },
+    { label: "Parts & Inventory", icon: Package },
+    { label: "Messages", icon: MessageCircle },
+  ];
+
+  if (!isAdmin) return commonDispatcher;
+
+  return [
+    { label: "Dashboard", icon: BarChart3 },
+    { label: "Dispatch Board", icon: ClipboardList },
+    { label: "Live GPS Map", icon: MapPin },
+    { label: "Technicians", icon: Users },
+    { label: "Jobs", icon: FileText },
+    { label: "Billing / Invoices", icon: CreditCard },
+    { label: "Parts & Inventory", icon: Package },
+    { label: "Reports", icon: FileSpreadsheet },
+    { label: "Administration", icon: ShieldCheck },
+    { label: "User Activity", icon: BellRing },
+    { label: "Messages", icon: MessageCircle },
+    { label: "Settings", icon: Settings },
+  ];
+}
+
+function dispatchKpis(stats, isAdmin) {
+  if (isAdmin) {
+    return [
+      { icon: ClipboardList, label: "Total Jobs", value: stats.total, accent: "blue" },
+      { icon: Clock, label: "In Progress", value: stats.inProgress + stats.working + stats.enRoute, accent: "amber" },
+      { icon: CheckCircle2, label: "Completed", value: stats.completed, accent: "emerald" },
+      { icon: AlertTriangle, label: "Cancelled", value: stats.canceled, accent: "red" },
+      { icon: DollarSign, label: "Total Revenue", value: money(stats.revenue), accent: "purple" },
+      { icon: FileText, label: "Open Invoices", value: stats.pendingInvoices, accent: "cyan" },
+    ];
+  }
+
+  return [
+    { icon: ClipboardList, label: "Total Jobs", value: stats.total, accent: "blue" },
+    { icon: Clock, label: "In Progress", value: stats.inProgress + stats.working + stats.enRoute, accent: "amber" },
+    { icon: CheckCircle2, label: "Completed", value: stats.completed, accent: "emerald" },
+    { icon: AlertTriangle, label: "Cancelled", value: stats.canceled, accent: "red" },
+    { icon: BellRing, label: "Pending", value: stats.pendingJobs, accent: "cyan" },
+    { icon: Crown, label: "Dry Runs", value: stats.dryRuns, accent: "purple" },
+  ];
+}
+
+function DispatchRoleSidebar({ items, currentUserName, currentUserRole, isAdmin }) {
+  return (
+    <aside className="sticky top-0 z-20 flex max-h-screen w-full shrink-0 flex-col border-b border-white/10 bg-[#081323] p-4 xl:w-72 xl:border-b-0 xl:border-r">
+      <div className="mb-5 flex items-center gap-3">
+        <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-lg font-black text-white">
+          NT
+        </div>
+        <div>
+          <p className="text-sm font-black text-white">NTTR Dispatch</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{isAdmin ? "Administrator" : "Dispatcher"} workspace</p>
+        </div>
+        </div>
+
+      <nav className="grid gap-1 xl:flex-1 xl:overflow-y-auto">
+        {items.map(({ label, icon: Icon }) => (
+          <button
+            key={label}
+            type="button"
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold transition ${
+              label === "Dispatch Board"
+                ? "border border-blue-400/30 bg-blue-500/15 text-blue-100"
+                : "text-slate-300 hover:bg-white/10 hover:text-white"
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
+      <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/15 text-sm font-black text-emerald-200">
+            {initials(currentUserName || currentUserRole || "User")}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-black text-white">{currentUserName || "Signed in user"}</p>
+            <p className="text-xs font-semibold capitalize text-slate-400">{currentUserRole || "dispatcher"}</p>
+          </div>
+        </div>
+        <div className="mt-3 flex items-center gap-2 text-xs font-bold text-emerald-300">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          Online
+        </div>
+        </div>
+    </aside>
+  );
+}
+
+function DispatchKpiCard({ icon: Icon, label, value, accent = "blue" }) {
+  const accents = {
+    blue: "border-blue-400/20 bg-blue-500/10 text-blue-200",
+    amber: "border-amber-400/20 bg-amber-500/10 text-amber-200",
+    emerald: "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
+    red: "border-red-400/20 bg-red-500/10 text-red-200",
+    purple: "border-purple-400/20 bg-purple-500/10 text-purple-200",
+    cyan: "border-cyan-400/20 bg-cyan-500/10 text-cyan-200",
+  };
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-xl shadow-black/10">
+      <div className="flex items-center justify-between gap-3">
+        <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${accents[accent] || accents.blue}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <span className="rounded-full bg-white/5 px-2 py-1 text-[11px] font-black uppercase tracking-wide text-slate-400">Live</span>
+      </div>
+      <p className="mt-4 text-xs font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 text-2xl font-black text-white">{value}</p>
+    </div>
+  );
+}
+
+function DispatchRightPanel({ isAdmin, stats, todayJobs, technicians, activeTechniciansCount, activityLogs, onAddJob, onAssign, onMap, onReport }) {
+  const completedToday = todayJobs.filter((job) => job.status === "Completed").length;
+  const cancelledToday = todayJobs.filter((job) => ["Canceled", "Cancelled"].includes(job.status)).length;
+  const dryRunsToday = todayJobs.filter((job) => job.status === "Dry Run").length;
+  const inProgressToday = todayJobs.filter((job) => ["In Progress", "Working", "En Route", "On Site"].includes(job.status)).length;
+  const recentActivity = activityLogs.slice(0, 5);
+
+  return (
+    <aside className="order-1 rounded-2xl border border-white/10 bg-[#0b1628] p-5 shadow-xl shadow-black/10 xl:order-none">
+      <h2 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">Quick Actions</h2>
+      <div className="mt-4 grid gap-2">
+        <button type="button" onClick={onAddJob} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white hover:bg-blue-500">
+          <Plus className="h-4 w-4" />
+          Add New Job
+        </button>
+        {isAdmin ? (
+          <>
+            <button type="button" onClick={() => alert("Open Technician Center from the sidebar to add a technician.")} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
+              <Users className="h-4 w-4" />
+              Add Technician
+            </button>
+            <button type="button" onClick={onReport} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
+              <FileSpreadsheet className="h-4 w-4" />
+              Generate Report
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={onAssign} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
+              <Users className="h-4 w-4" />
+              Assign Technician
+            </button>
+            <button type="button" onClick={onMap} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
+              <MapPin className="h-4 w-4" />
+              View Live Map
+            </button>
+          </>
+        )}
+      </div>
+
+      <div className="mt-6">
+        <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">{isAdmin ? "System Summary" : "Today's Summary"}</h3>
+        <div className="mt-3 grid gap-2">
+          {isAdmin ? (
+            <>
+              <PanelMetric label="Total Technicians" value={technicians.length} />
+              <PanelMetric label="Active Technicians" value={activeTechniciansCount} />
+              <PanelMetric label="Parts Inventory" value="Ready" />
+              <PanelMetric label="Unread Messages" value="0" />
+              <PanelMetric label="System Uptime" value="Live" />
+            </>
+          ) : (
+            <>
+              <PanelMetric label="Jobs Today" value={todayJobs.length} />
+              <PanelMetric label="In Progress" value={inProgressToday} />
+              <PanelMetric label="Completed" value={completedToday} />
+              <PanelMetric label="Cancelled" value={cancelledToday} />
+              <PanelMetric label="Dry Runs" value={dryRunsToday} />
+            </>
+          )}
+        </div>
+      </div>
+
+      {!isAdmin && (
+        <div className="mt-6">
+          <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">My Assignments</h3>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <PanelMetric label="In Progress" value={stats.inProgress + stats.working + stats.enRoute} />
+            <PanelMetric label="Completed" value={stats.completed} />
+          </div>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="mt-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">Recent Activity</h3>
+            <span className="text-xs font-bold text-blue-300">View all</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {recentActivity.length === 0 ? (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm font-semibold text-slate-400">No important activity yet.</div>
+            ) : (
+              recentActivity.map((activity) => (
+                <div key={activity.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <p className="text-sm font-bold text-slate-100">{activity.message || activity.title}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{activity.time || "Now"}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function PanelMetric({ label, value }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+      <span className="text-xs font-bold text-slate-400">{label}</span>
+      <span className="text-sm font-black text-white">{value}</span>
     </div>
   );
 }
@@ -3349,6 +3660,11 @@ function lastTechnicianJob(jobs, technician) {
 }
 
 function buildCockpitActivity(selectedJob, notifications, activityLogs, changeLogs, jobs) {
+  const importantActions = new Set(["created", "updated", "status_changed", "assigned", "tech_payment", "deleted"]);
+  const importantFields = new Set(["job", "status", "technician", "invoice", "techPaymentStatus", "photo_url"]);
+  const importantChangeLogs = changeLogs
+    .filter((item) => importantActions.has(item.action) || importantFields.has(item.field_name))
+    .slice(0, 8);
   const feed = [
     ...notifications.map((item) => ({
       id: `notification-${item.id}`,
@@ -3364,7 +3680,7 @@ function buildCockpitActivity(selectedJob, notifications, activityLogs, changeLo
       time: item.time || "Live",
       by: "Dispatcher",
     })),
-    ...changeLogs.slice(0, 8).map((item) => ({
+    ...importantChangeLogs.map((item) => ({
       id: `change-${item.id}`,
       title: `${item.action || "Updated"} ${item.field_name || "job"}`,
       detail: `${item.user_name || "Dispatcher"} · ${item.created_at ? new Date(item.created_at).toLocaleString() : "Recent"}`,
