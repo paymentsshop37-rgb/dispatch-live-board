@@ -920,7 +920,7 @@ profit: filteredJobs.reduce(
       return matchesLocation && matchesService;
     })
       .sort((a, b) => {
-        const scoreDifference = technicianLocationScore(b, city, state) - technicianLocationScore(a, city, state);
+        const scoreDifference = technicianAssignmentScore(b, city, state) - technicianAssignmentScore(a, city, state);
         if (scoreDifference !== 0) return scoreDifference;
 
         const availabilityDifference = technicianAvailabilityRank(b.availability) - technicianAvailabilityRank(a.availability);
@@ -3438,16 +3438,16 @@ function technicianCoverageText(technician) {
     .toLowerCase();
 }
 
-function technicianLocationScore(technician, city, state) {
+function technicianAssignmentScore(technician, city, state) {
   const homeCity = String(technician.city || "").trim().toLowerCase();
   const homeState = String(technician.state || "").trim().toLowerCase();
   const coverage = technicianCoverageText(technician);
   let score = 0;
 
-  if (city && homeCity === city) score += 40;
-  if (state && homeState === state) score += 30;
-  if (city && coverage.includes(city)) score += 20;
-  if (state && coverage.includes(state)) score += 10;
+  if (city && coverage.includes(city)) score += 50;
+  if (state && coverage.includes(state)) score += 25;
+  if (city && homeCity === city) score += 20;
+  if (state && homeState === state) score += 10;
   return score;
 }
 

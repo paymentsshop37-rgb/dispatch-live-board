@@ -859,16 +859,40 @@ function TechnicianDirectory({
 }) {
   const [lookup, setLookup] = useState({ city: "", state: "", service: "" });
   const [availabilityFilter, setAvailabilityFilter] = useState("All");
-  const rankedTechnicians = useMemo(
-    () => rankTechniciansByCoverage(technicians, lookup).filter((technician) => availabilityFilter === "All" || technician.availability === availabilityFilter),
-    [availabilityFilter, lookup, technicians]
-  );
+  const [selectedState, setSelectedState] = useState("");
+  const [selectedCity, setSelectedCity] = useState("");
+  const [expandedStates, setExpandedStates] = useState({});
+  const regionTree = useMemo(() => buildRegionTree(technicians), [technicians]);
+  const companyOptions = useMemo(() => ["All", ...new Set(technicians.map((technician) => technician.company).filter(Boolean))].sort(), [technicians]);
+  const coverageOptions = useMemo(() => ["All", ...new Set(technicians.flatMap((technician) => coverageAreas(technician)))].sort(), [technicians]);
+  const cityOptions = useMemo(() => {
+    const source = selectedState ? technicians.filter((technician) => technician.state === selectedState) : technicians;
+    return ["All", ...new Set(source.map((technician) => technician.city).filter(Boolean))].sort();
+  }, [selectedState, technicians]);
+  const [coverageFilter, setCoverageFilter] = useState("All");
+  const [ratingFilter, setRatingFilter] = useState("All");
+  const [companyFilter, setCompanyFilter] = useState("All");
+  const regionalStats = useMemo(() => buildRegionalStats(technicians), [technicians]);
+  const rankedTechnicians = useMemo(() => {
+    return rankTechniciansByCoverage(technicians, { ...lookup, state: selectedState || lookup.state, city: selectedCity || lookup.city })
+      .filter((technician) => availabilityFilter === "All" || technician.availability === availabilityFilter)
+      .filter((technician) => !selectedState || technician.state === selectedState)
+      .filter((technician) => !selectedCity || technician.city === selectedCity)
+      .filter((technician) => coverageFilter === "All" || coverageAreas(technician).includes(coverageFilter))
+      .filter((technician) => ratingFilter === "All" || Number(technician.rating || 0) >= Number(ratingFilter))
+      .filter((technician) => companyFilter === "All" || technician.company === companyFilter);
+  }, [availabilityFilter, companyFilter, coverageFilter, lookup, ratingFilter, selectedCity, selectedState, technicians]);
   const clearFilters = () => {
     onSearch("");
     onStatusFilter("All");
     onServiceFilter("All");
     onSort("Newest");
     setAvailabilityFilter("All");
+    setSelectedState("");
+    setSelectedCity("");
+    setCoverageFilter("All");
+    setRatingFilter("All");
+    setCompanyFilter("All");
     setLookup({ city: "", state: "", service: "" });
   };
 
@@ -885,96 +909,180 @@ function TechnicianDirectory({
         </button>
       </div>
 
-      <div className="mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-[1.4fr_0.7fr_0.8fr_0.8fr_0.7fr_auto]">
+      <RegionalStats stats={regionalStats} />
+
+      <div className="mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-[1.4fr_0.7fr_0.7fr_0.9fr_0.8fr_0.7fr_0.8fr_auto]">
           <SearchBox value={search} onChange={onSearch} placeholder="Search by name, phone, company" />
-          <Field label="State" value={lookup.state} onChange={(value) => setLookup((current) => ({ ...current, state: value }))} />
+          <Select value={selectedState || "All"} options={["All", ...regionTree.map((state) => state.state)]} onChange={(value) => { setSelectedState(value === "All" ? "" : value); setSelectedCity(""); }} />
+          <Select value={selectedCity || "All"} options={cityOptions} onChange={(value) => setSelectedCity(value === "All" ? "" : value)} />
+          <Select value={coverageFilter} options={coverageOptions} onChange={setCoverageFilter} />
           <Select value={serviceFilter} options={serviceOptions} onChange={onServiceFilter} />
           <Select value={availabilityFilter} options={["All", ...availabilityOptions]} onChange={setAvailabilityFilter} />
-          <Select value={sortBy} options={sortOptions} onChange={onSort} />
+          <Select value={ratingFilter} options={["All", "1", "2", "3", "4", "5"]} onChange={setRatingFilter} />
+          <Select value={companyFilter} options={companyOptions} onChange={setCompanyFilter} />
           <button type="button" onClick={clearFilters} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100">Clear Filters</button>
       </div>
 
-      <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
-        <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-            <tr>
-              <Th>Technician</Th>
-              <Th>Contact</Th>
-              <Th>Location</Th>
-              <Th>Coverage Areas</Th>
-              <Th>Services</Th>
-              <Th>Availability</Th>
-              <Th>Rating</Th>
-              <Th>Status</Th>
-              <Th>Last Used</Th>
-              <Th>Actions</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><Td colSpan={10}>Loading technicians...</Td></tr>
-            ) : rankedTechnicians.length === 0 ? (
-              <tr>
-                <Td colSpan={10}>
-                  <div className="flex flex-col items-center justify-center gap-4 py-12 text-center">
-                    <div className="rounded-2xl bg-slate-100 p-4 text-slate-500"><Users className="h-8 w-8" /></div>
-                    <div>
-                      <p className="text-lg font-black text-slate-950">No technicians found.</p>
-                      <p className="mt-1 text-sm text-slate-500">Add your first technician or invite one to register.</p>
+      <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3">
+            <p className="text-xs font-black uppercase tracking-wide text-slate-400">United States</p>
+            <p className="text-sm font-bold text-slate-700">{technicians.length} technicians</p>
+          </div>
+          <div className="max-h-[680px] space-y-2 overflow-y-auto pr-1">
+            {regionTree.map((stateGroup) => {
+              const expanded = expandedStates[stateGroup.state];
+              return (
+                <div key={stateGroup.state} className="rounded-xl bg-white shadow-sm">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpandedStates((current) => ({ ...current, [stateGroup.state]: !expanded }));
+                      setSelectedState(stateGroup.state);
+                      setSelectedCity("");
+                    }}
+                    className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-sm font-black ${selectedState === stateGroup.state && !selectedCity ? "bg-slate-950 text-white" : "text-slate-800 hover:bg-slate-100"}`}
+                  >
+                    <span>{stateGroup.state}</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{stateGroup.count}</span>
+                  </button>
+                  {expanded && (
+                    <div className="border-t border-slate-100 p-2">
+                      {stateGroup.cities.map((cityGroup) => (
+                        <button
+                          key={`${stateGroup.state}-${cityGroup.city}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedState(stateGroup.state);
+                            setSelectedCity(cityGroup.city);
+                          }}
+                          className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-bold ${selectedCity === cityGroup.city ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}
+                        >
+                          <span>{cityGroup.city}</span>
+                          <span>{cityGroup.count}</span>
+                        </button>
+                      ))}
                     </div>
-                    <div className="flex flex-wrap justify-center gap-2">
-                      {canEdit && <button type="button" onClick={onAdd} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Add Technician</button>}
-                      <button type="button" onClick={onInvite} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Invite Technician</button>
-                    </div>
-                  </div>
-                </Td>
-              </tr>
-            ) : (
-              rankedTechnicians.map((technician) => (
-                <tr key={technician.id} className="border-t border-slate-200 align-top hover:bg-slate-50">
-                  <Td>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-sm font-black text-blue-700">{initials(technician.full_name)}</div>
-                      <div className="min-w-0">
-                        <button type="button" onClick={() => onOpen(technician)} className="truncate font-black text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button>
-                        <p className="truncate text-xs text-slate-500">{technician.company || "No company listed"}</p>
-                      </div>
-                    </div>
-                  </Td>
-                  <Td>
-                    <p className="font-semibold text-slate-800">{technician.phone || "Not stored"}</p>
-                    <p className="text-xs text-slate-500">{technician.email || "Not stored"}</p>
-                  </Td>
-                  <Td>
-                    <p className="font-semibold text-slate-800">{technician.city || "Not stored"}</p>
-                    <p className="text-xs text-slate-500">{technician.state || "Not stored"}</p>
-                  </Td>
-                  <Td><ChipPreview items={coverageAreas(technician)} empty="Not stored" tone="blue" /></Td>
-                  <Td><ChipPreview items={splitServices(technician.services)} empty="Not stored" tone="slate" /></Td>
-                  <Td><AvailabilityBadge status={technician.availability} /></Td>
-                  <Td><RatingStars rating={technician.rating} /></Td>
-                  <Td><StatusBadge status={technician.status} /></Td>
-                  <Td>{dateTime(technician.lastUsed || technician.updatedAt)}</Td>
-                  <Td>
-                    <div className="flex flex-wrap gap-1.5">
-                      <IconMiniLink href={technician.phone ? `tel:${technician.phone}` : undefined} title="Call"><Phone className="h-4 w-4" /></IconMiniLink>
-                      <IconMiniLink href={directoryWhatsAppLink(technician, lookup)} title="WhatsApp" external tone="emerald"><MessageCircle className="h-4 w-4" /></IconMiniLink>
-                      <IconMiniLink href={technicianMapLink(technician)} title="Map" external tone="sky"><MapPin className="h-4 w-4" /></IconMiniLink>
-                      <IconMiniButton title="Nearby Parts" onClick={() => onNearbyParts(technician)} tone="amber"><Search className="h-4 w-4" /></IconMiniButton>
-                      {canEdit && <IconMiniButton title="Edit" onClick={() => onEdit(technician)}><Edit3 className="h-4 w-4" /></IconMiniButton>}
-                      {coverageAreas(technician).length > 0 && (
-                        <IconMiniButton title="More" onClick={() => onCoverage(technician)} tone="indigo"><MoreHorizontal className="h-4 w-4" /></IconMiniButton>
-                      )}
-                      {canDelete && <IconMiniButton title="Delete" onClick={() => onDelete(technician)} tone="red"><Trash2 className="h-4 w-4" /></IconMiniButton>}
-                    </div>
-                  </Td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </aside>
+
+        <section className="min-w-0">
+          {loading ? (
+            <div className="rounded-2xl border border-slate-200 p-8 text-sm font-bold text-slate-500">Loading technicians...</div>
+          ) : rankedTechnicians.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 py-16 text-center">
+              <div className="rounded-2xl bg-slate-100 p-4 text-slate-500"><Users className="h-8 w-8" /></div>
+              <div>
+                <p className="text-lg font-black text-slate-950">No technicians found.</p>
+                <p className="mt-1 text-sm text-slate-500">Add your first technician or invite one to register.</p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {canEdit && <button type="button" onClick={onAdd} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Add Technician</button>}
+                <button type="button" onClick={onInvite} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Invite Technician</button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-4 2xl:grid-cols-2">
+              {rankedTechnicians.map((technician) => (
+                <TechnicianRegionalCard
+                  key={technician.id}
+                  technician={technician}
+                  lookup={lookup}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  canAssign={canAssign}
+                  onOpen={onOpen}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onCoverage={onCoverage}
+                  onNearbyParts={onNearbyParts}
+                  onAssign={onAssign}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </section>
+  );
+}
+
+function RegionalStats({ stats }) {
+  const items = [
+    ["Total Technicians", stats.total],
+    ["Available", stats.available],
+    ["Busy", stats.busy],
+    ["Off Duty", stats.offDuty],
+    ["Average Rating", stats.averageRating],
+    ["States Covered", stats.statesCovered],
+    ["Cities Covered", stats.citiesCovered],
+  ];
+
+  return (
+    <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-7">
+      {items.map(([label, value]) => (
+        <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-2xl font-black text-slate-950">{value}</p>
+          <p className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-400">{label}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAssign, onOpen, onEdit, onDelete, onCoverage, onNearbyParts, onAssign }) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start gap-4">
+        <button type="button" onClick={() => onOpen(technician)} className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-lg font-black text-blue-700">
+          {initials(technician.full_name)}
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <button type="button" onClick={() => onOpen(technician)} className="truncate text-left text-lg font-black text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button>
+              <p className="text-sm font-semibold text-slate-500">{technician.company || "No company listed"}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <AvailabilityBadge status={technician.availability} />
+              <StatusBadge status={technician.status} />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <MiniStat label="Phone" value={technician.phone || "Not stored"} />
+            <MiniStat label="City" value={[technician.city, technician.state].filter(Boolean).join(", ") || "Not stored"} />
+            <MiniStat label="Rating" value={<RatingStars rating={technician.rating} />} />
+            <MiniStat label="Coverage Count" value={coverageAreas(technician).length || "Not stored"} />
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-400">Coverage Areas</p>
+            <ChipPreview items={coverageAreas(technician)} empty="Not stored" tone="blue" />
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-400">Services</p>
+            <ChipPreview items={splitServices(technician.services)} empty="Not stored" tone="slate" />
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            <IconTextLink href={technician.phone ? `tel:${technician.phone}` : undefined} label="Call"><Phone className="h-4 w-4" /></IconTextLink>
+            <IconTextLink href={directoryWhatsAppLink(technician, lookup)} label="WhatsApp" external tone="emerald"><MessageCircle className="h-4 w-4" /></IconTextLink>
+            <IconTextLink href={technicianMapLink(technician)} label="Map" external tone="sky"><MapPin className="h-4 w-4" /></IconTextLink>
+            <IconTextButton label="Nearby Parts" onClick={() => onNearbyParts(technician)} tone="amber"><Search className="h-4 w-4" /></IconTextButton>
+            {canAssign && <IconTextButton label="Assign" onClick={() => onAssign(technician)} tone="blue"><UserCheck className="h-4 w-4" /></IconTextButton>}
+            {canEdit && <IconTextButton label="Edit" onClick={() => onEdit(technician)}><Edit3 className="h-4 w-4" /></IconTextButton>}
+            {coverageAreas(technician).length > 0 && <IconTextButton label="Coverage" onClick={() => onCoverage(technician)} tone="indigo"><LocateFixed className="h-4 w-4" /></IconTextButton>}
+            {canDelete && <IconTextButton label="Delete" onClick={() => onDelete(technician)} tone="red"><Trash2 className="h-4 w-4" /></IconTextButton>}
+          </div>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -1817,6 +1925,37 @@ function prepareDirectoryTechnicianValues(values) {
   };
 }
 
+function buildRegionTree(technicians) {
+  const states = new Map();
+
+  technicians.forEach((technician) => {
+    const state = technician.state || "Unknown";
+    const city = technician.city || "Unknown";
+    if (!states.has(state)) states.set(state, new Map());
+    const cities = states.get(state);
+    cities.set(city, (cities.get(city) || 0) + 1);
+  });
+
+  return Array.from(states, ([state, cities]) => ({
+    state,
+    count: Array.from(cities.values()).reduce((sum, value) => sum + value, 0),
+    cities: Array.from(cities, ([city, count]) => ({ city, count })).sort((a, b) => a.city.localeCompare(b.city)),
+  })).sort((a, b) => a.state.localeCompare(b.state));
+}
+
+function buildRegionalStats(technicians) {
+  const ratings = technicians.map((technician) => Number(technician.rating || 0)).filter(Boolean);
+  return {
+    total: technicians.length,
+    available: technicians.filter((technician) => technician.availability === "Available").length,
+    busy: technicians.filter((technician) => technician.availability === "Busy").length,
+    offDuty: technicians.filter((technician) => technician.availability === "Off Duty").length,
+    averageRating: ratings.length ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1) : "0.0",
+    statesCovered: new Set(technicians.map((technician) => technician.state).filter(Boolean)).size,
+    citiesCovered: new Set(technicians.map((technician) => [technician.city, technician.state].filter(Boolean).join(", ")).filter(Boolean)).size,
+  };
+}
+
 function coverageAreas(technician) {
   return splitCoverageAreas(technician.coverage || technician.coverage_areas);
 }
@@ -2113,6 +2252,38 @@ function IconMiniLink({ title, href, children, external = false, tone = "slate" 
   );
 }
 
+function IconTextButton({ label, onClick, children, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 hover:bg-slate-200",
+    amber: "bg-amber-100 text-amber-700 hover:bg-amber-200",
+    indigo: "bg-indigo-100 text-indigo-700 hover:bg-indigo-200",
+    red: "bg-red-100 text-red-700 hover:bg-red-200",
+    blue: "bg-blue-600 text-white hover:bg-blue-700",
+  };
+
+  return (
+    <button type="button" onClick={onClick} className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${tones[tone] || tones.slate}`}>
+      {children}
+      {label}
+    </button>
+  );
+}
+
+function IconTextLink({ label, href, children, external = false, tone = "slate" }) {
+  const tones = {
+    slate: "bg-slate-100 text-slate-700 hover:bg-slate-200",
+    emerald: "bg-emerald-100 text-emerald-700 hover:bg-emerald-200",
+    sky: "bg-sky-100 text-sky-700 hover:bg-sky-200",
+  };
+
+  return (
+    <a href={href} target={external ? "_blank" : undefined} rel={external ? "noreferrer" : undefined} className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${tones[tone] || tones.slate}`}>
+      {children}
+      {label}
+    </a>
+  );
+}
+
 function CompliancePill({ score }) {
   const tone =
     score >= 80 ? "bg-emerald-100 text-emerald-700" : score >= 50 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700";
@@ -2196,7 +2367,7 @@ function MiniStat({ label, value }) {
   return (
     <div className="rounded-2xl bg-slate-50 p-3">
       <p className="text-xs font-bold uppercase text-slate-400">{label}</p>
-      <p className="mt-1 truncate text-sm font-bold text-slate-800">{value}</p>
+      <div className="mt-1 text-sm font-bold text-slate-800">{value || "Not set"}</div>
     </div>
   );
 }
