@@ -82,6 +82,31 @@ const nearbyPartsCategories = [
   "Battery Suppliers",
 ];
 const nearbyPartsCache = new Map();
+const technicianFavoritesKey = "nttr-technician-favorites";
+const regionalSidebarTemplate = [
+  { state: "Texas", cities: ["El Paso", "Dallas", "Houston", "Midland", "Odessa", "San Antonio", "Austin", "Amarillo", "Lubbock", "Fort Worth"] },
+  { state: "New Mexico", cities: ["Las Cruces", "Albuquerque", "Santa Fe"] },
+  { state: "Arizona", cities: ["Phoenix", "Tucson", "Flagstaff"] },
+  { state: "Oklahoma", cities: ["Tulsa", "Oklahoma City"] },
+  { state: "Colorado", cities: ["Denver", "Pueblo", "Colorado Springs"] },
+  { state: "Louisiana", cities: ["Shreveport", "Baton Rouge", "New Orleans"] },
+  { state: "Kansas", cities: ["Wichita", "Kansas City"] },
+  { state: "Arkansas", cities: ["Little Rock", "Fort Smith"] },
+  { state: "Mississippi", cities: ["Jackson"] },
+  { state: "Tennessee", cities: ["Memphis", "Nashville"] },
+];
+const stateAliases = {
+  TX: "Texas",
+  NM: "New Mexico",
+  AZ: "Arizona",
+  OK: "Oklahoma",
+  CO: "Colorado",
+  LA: "Louisiana",
+  KS: "Kansas",
+  AR: "Arkansas",
+  MS: "Mississippi",
+  TN: "Tennessee",
+};
 
 export default function TechnicianCenter() {
   const [technicians, setTechnicians] = useState([]);
@@ -861,27 +886,49 @@ function TechnicianDirectory({
   const [availabilityFilter, setAvailabilityFilter] = useState("All");
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
+  const [shortcut, setShortcut] = useState("all");
   const [expandedStates, setExpandedStates] = useState({});
+  const [favoriteIds, setFavoriteIds] = useState(() => loadFavoriteTechnicians());
   const regionTree = useMemo(() => buildRegionTree(technicians), [technicians]);
   const companyOptions = useMemo(() => ["All", ...new Set(technicians.map((technician) => technician.company).filter(Boolean))].sort(), [technicians]);
   const coverageOptions = useMemo(() => ["All", ...new Set(technicians.flatMap((technician) => coverageAreas(technician)))].sort(), [technicians]);
   const cityOptions = useMemo(() => {
-    const source = selectedState ? technicians.filter((technician) => technician.state === selectedState) : technicians;
-    return ["All", ...new Set(source.map((technician) => technician.city).filter(Boolean))].sort();
-  }, [selectedState, technicians]);
+    if (selectedState) {
+      const group = regionTree.find((item) => item.state === selectedState);
+      return ["All", ...(group?.cities || []).map((item) => item.city)];
+    }
+    return ["All", ...new Set(technicians.map((technician) => technician.city).filter(Boolean))].sort();
+  }, [regionTree, selectedState, technicians]);
   const [coverageFilter, setCoverageFilter] = useState("All");
   const [ratingFilter, setRatingFilter] = useState("All");
   const [companyFilter, setCompanyFilter] = useState("All");
-  const regionalStats = useMemo(() => buildRegionalStats(technicians), [technicians]);
+  const regionalStats = useMemo(() => buildRegionalStats(technicians, favoriteIds), [favoriteIds, technicians]);
   const rankedTechnicians = useMemo(() => {
     return rankTechniciansByCoverage(technicians, { ...lookup, state: selectedState || lookup.state, city: selectedCity || lookup.city })
+      .filter((technician) => shortcut !== "favorites" || favoriteIds.includes(String(technician.id)))
+      .filter((technician) => shortcut !== "available" || technician.availability === "Available")
       .filter((technician) => availabilityFilter === "All" || technician.availability === availabilityFilter)
-      .filter((technician) => !selectedState || technician.state === selectedState)
-      .filter((technician) => !selectedCity || technician.city === selectedCity)
+      .filter((technician) => !selectedState || normalizeStateName(technician.state) === selectedState)
+      .filter((technician) => !selectedCity || normalizeText(technician.city) === normalizeText(selectedCity))
       .filter((technician) => coverageFilter === "All" || coverageAreas(technician).includes(coverageFilter))
       .filter((technician) => ratingFilter === "All" || Number(technician.rating || 0) >= Number(ratingFilter))
       .filter((technician) => companyFilter === "All" || technician.company === companyFilter);
-  }, [availabilityFilter, companyFilter, coverageFilter, lookup, ratingFilter, selectedCity, selectedState, technicians]);
+  }, [availabilityFilter, companyFilter, coverageFilter, favoriteIds, lookup, ratingFilter, selectedCity, selectedState, shortcut, technicians]);
+  function selectShortcut(nextShortcut) {
+    setShortcut(nextShortcut);
+    setSelectedState("");
+    setSelectedCity("");
+    if (nextShortcut !== "available") setAvailabilityFilter("All");
+    if (nextShortcut === "available") setAvailabilityFilter("Available");
+  }
+  function toggleFavorite(technician) {
+    setFavoriteIds((current) => {
+      const id = String(technician.id);
+      const next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+      localStorage.setItem(technicianFavoritesKey, JSON.stringify(next));
+      return next;
+    });
+  }
   const clearFilters = () => {
     onSearch("");
     onStatusFilter("All");
@@ -890,6 +937,7 @@ function TechnicianDirectory({
     setAvailabilityFilter("All");
     setSelectedState("");
     setSelectedCity("");
+    setShortcut("all");
     setCoverageFilter("All");
     setRatingFilter("All");
     setCompanyFilter("All");
@@ -913,8 +961,8 @@ function TechnicianDirectory({
 
       <div className="mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-[1.4fr_0.7fr_0.7fr_0.9fr_0.8fr_0.7fr_0.8fr_auto]">
           <SearchBox value={search} onChange={onSearch} placeholder="Search by name, phone, company" />
-          <Select value={selectedState || "All"} options={["All", ...regionTree.map((state) => state.state)]} onChange={(value) => { setSelectedState(value === "All" ? "" : value); setSelectedCity(""); }} />
-          <Select value={selectedCity || "All"} options={cityOptions} onChange={(value) => setSelectedCity(value === "All" ? "" : value)} />
+          <Select value={selectedState || "All"} options={["All", ...regionTree.map((state) => state.state)]} onChange={(value) => { setShortcut("all"); setSelectedState(value === "All" ? "" : value); setSelectedCity(""); }} />
+          <Select value={selectedCity || "All"} options={cityOptions} onChange={(value) => { setShortcut("all"); setSelectedCity(value === "All" ? "" : value); }} />
           <Select value={coverageFilter} options={coverageOptions} onChange={setCoverageFilter} />
           <Select value={serviceFilter} options={serviceOptions} onChange={onServiceFilter} />
           <Select value={availabilityFilter} options={["All", ...availabilityOptions]} onChange={setAvailabilityFilter} />
@@ -926,8 +974,18 @@ function TechnicianDirectory({
       <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
         <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
           <div className="mb-3">
-            <p className="text-xs font-black uppercase tracking-wide text-slate-400">United States</p>
-            <p className="text-sm font-bold text-slate-700">{technicians.length} technicians</p>
+            <button type="button" onClick={() => selectShortcut("all")} className={`mb-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-black ${shortcut === "all" && !selectedState ? "bg-slate-950 text-white" : "bg-white text-slate-800 hover:bg-slate-100"}`}>
+              <span>🌎 United States</span>
+              <span>{technicians.length}</span>
+            </button>
+            <button type="button" onClick={() => selectShortcut("favorites")} className={`mb-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-black ${shortcut === "favorites" ? "bg-slate-950 text-white" : "bg-white text-slate-800 hover:bg-slate-100"}`}>
+              <span>⭐ Favorites</span>
+              <span>{favoriteIds.length}</span>
+            </button>
+            <button type="button" onClick={() => selectShortcut("available")} className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-black ${shortcut === "available" ? "bg-slate-950 text-white" : "bg-white text-slate-800 hover:bg-slate-100"}`}>
+              <span>🟢 Available Now</span>
+              <span>{technicians.filter((technician) => technician.availability === "Available").length}</span>
+            </button>
           </div>
           <div className="max-h-[680px] space-y-2 overflow-y-auto pr-1">
             {regionTree.map((stateGroup) => {
@@ -938,6 +996,7 @@ function TechnicianDirectory({
                     type="button"
                     onClick={() => {
                       setExpandedStates((current) => ({ ...current, [stateGroup.state]: !expanded }));
+                      setShortcut("all");
                       setSelectedState(stateGroup.state);
                       setSelectedCity("");
                     }}
@@ -955,6 +1014,7 @@ function TechnicianDirectory({
                           onClick={() => {
                             setSelectedState(stateGroup.state);
                             setSelectedCity(cityGroup.city);
+                            setShortcut("all");
                           }}
                           className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-bold ${selectedCity === cityGroup.city ? "bg-blue-50 text-blue-700" : "text-slate-600 hover:bg-slate-50"}`}
                         >
@@ -977,12 +1037,12 @@ function TechnicianDirectory({
             <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-slate-200 py-16 text-center">
               <div className="rounded-2xl bg-slate-100 p-4 text-slate-500"><Users className="h-8 w-8" /></div>
               <div>
-                <p className="text-lg font-black text-slate-950">No technicians found.</p>
-                <p className="mt-1 text-sm text-slate-500">Add your first technician or invite one to register.</p>
+                <p className="text-lg font-black text-slate-950">No technicians found in this region.</p>
+                <p className="mt-1 text-sm text-slate-500">Add your first technician or clear filters to expand the search.</p>
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 {canEdit && <button type="button" onClick={onAdd} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">Add Technician</button>}
-                <button type="button" onClick={onInvite} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Invite Technician</button>
+                <button type="button" onClick={clearFilters} className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800">Clear Filters</button>
               </div>
             </div>
           ) : (
@@ -1001,6 +1061,8 @@ function TechnicianDirectory({
                   onCoverage={onCoverage}
                   onNearbyParts={onNearbyParts}
                   onAssign={onAssign}
+                  isFavorite={favoriteIds.includes(String(technician.id))}
+                  onFavorite={toggleFavorite}
                 />
               ))}
             </div>
@@ -1017,7 +1079,7 @@ function RegionalStats({ stats }) {
     ["Available", stats.available],
     ["Busy", stats.busy],
     ["Off Duty", stats.offDuty],
-    ["Average Rating", stats.averageRating],
+    ["Favorites", stats.favorites],
     ["States Covered", stats.statesCovered],
     ["Cities Covered", stats.citiesCovered],
   ];
@@ -1034,7 +1096,7 @@ function RegionalStats({ stats }) {
   );
 }
 
-function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAssign, onOpen, onEdit, onDelete, onCoverage, onNearbyParts, onAssign }) {
+function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAssign, isFavorite, onOpen, onEdit, onDelete, onCoverage, onNearbyParts, onAssign, onFavorite }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start gap-4">
@@ -1055,9 +1117,10 @@ function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAss
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             <MiniStat label="Phone" value={technician.phone || "Not stored"} />
+            <MiniStat label="Email" value={technician.email || "Not stored"} />
             <MiniStat label="City" value={[technician.city, technician.state].filter(Boolean).join(", ") || "Not stored"} />
             <MiniStat label="Rating" value={<RatingStars rating={technician.rating} />} />
-            <MiniStat label="Coverage Count" value={coverageAreas(technician).length || "Not stored"} />
+            <MiniStat label="Last Used" value={dateTime(technician.lastUsed || technician.updatedAt)} />
           </div>
 
           <div className="mt-4">
@@ -1077,6 +1140,7 @@ function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAss
             <IconTextButton label="Nearby Parts" onClick={() => onNearbyParts(technician)} tone="amber"><Search className="h-4 w-4" /></IconTextButton>
             {canAssign && <IconTextButton label="Assign" onClick={() => onAssign(technician)} tone="blue"><UserCheck className="h-4 w-4" /></IconTextButton>}
             {canEdit && <IconTextButton label="Edit" onClick={() => onEdit(technician)}><Edit3 className="h-4 w-4" /></IconTextButton>}
+            <IconTextButton label={isFavorite ? "Favorited" : "Favorite"} onClick={() => onFavorite(technician)} tone={isFavorite ? "amber" : "slate"}><Star className="h-4 w-4" /></IconTextButton>
             {coverageAreas(technician).length > 0 && <IconTextButton label="Coverage" onClick={() => onCoverage(technician)} tone="indigo"><LocateFixed className="h-4 w-4" /></IconTextButton>}
             {canDelete && <IconTextButton label="Delete" onClick={() => onDelete(technician)} tone="red"><Trash2 className="h-4 w-4" /></IconTextButton>}
           </div>
@@ -1926,34 +1990,72 @@ function prepareDirectoryTechnicianValues(values) {
 }
 
 function buildRegionTree(technicians) {
-  const states = new Map();
+  const counts = new Map();
 
   technicians.forEach((technician) => {
-    const state = technician.state || "Unknown";
+    const state = normalizeStateName(technician.state) || "Unknown";
     const city = technician.city || "Unknown";
-    if (!states.has(state)) states.set(state, new Map());
-    const cities = states.get(state);
+    if (!counts.has(state)) counts.set(state, new Map());
+    const cities = counts.get(state);
     cities.set(city, (cities.get(city) || 0) + 1);
   });
 
-  return Array.from(states, ([state, cities]) => ({
-    state,
-    count: Array.from(cities.values()).reduce((sum, value) => sum + value, 0),
-    cities: Array.from(cities, ([city, count]) => ({ city, count })).sort((a, b) => a.city.localeCompare(b.city)),
-  })).sort((a, b) => a.state.localeCompare(b.state));
+  const templateStates = new Set(regionalSidebarTemplate.map((item) => item.state));
+  const templateGroups = regionalSidebarTemplate.map((group) => {
+    const liveCities = counts.get(group.state) || new Map();
+    const listedCities = group.cities.map((city) => ({ city, count: liveCities.get(city) || 0 }));
+    const listedCityNames = new Set(group.cities.map(normalizeText));
+    const extraCities = Array.from(liveCities, ([city, count]) => ({ city, count }))
+      .filter((item) => !listedCityNames.has(normalizeText(item.city)))
+      .sort((a, b) => a.city.localeCompare(b.city));
+    return {
+      state: group.state,
+      count: Array.from(liveCities.values()).reduce((sum, value) => sum + value, 0),
+      cities: [...listedCities, ...extraCities],
+    };
+  });
+  const extraGroups = Array.from(counts, ([state, cities]) => ({ state, cities }))
+    .filter((group) => !templateStates.has(group.state))
+    .map(({ state, cities }) => ({
+      state,
+      count: Array.from(cities.values()).reduce((sum, value) => sum + value, 0),
+      cities: Array.from(cities, ([city, count]) => ({ city, count })).sort((a, b) => a.city.localeCompare(b.city)),
+    }))
+    .sort((a, b) => a.state.localeCompare(b.state));
+
+  return [...templateGroups, ...extraGroups];
 }
 
-function buildRegionalStats(technicians) {
+function buildRegionalStats(technicians, favoriteIds = []) {
   const ratings = technicians.map((technician) => Number(technician.rating || 0)).filter(Boolean);
   return {
     total: technicians.length,
     available: technicians.filter((technician) => technician.availability === "Available").length,
     busy: technicians.filter((technician) => technician.availability === "Busy").length,
     offDuty: technicians.filter((technician) => technician.availability === "Off Duty").length,
+    favorites: favoriteIds.length,
     averageRating: ratings.length ? (ratings.reduce((sum, value) => sum + value, 0) / ratings.length).toFixed(1) : "0.0",
-    statesCovered: new Set(technicians.map((technician) => technician.state).filter(Boolean)).size,
+    statesCovered: new Set(technicians.map((technician) => normalizeStateName(technician.state)).filter(Boolean)).size,
     citiesCovered: new Set(technicians.map((technician) => [technician.city, technician.state].filter(Boolean).join(", ")).filter(Boolean)).size,
   };
+}
+
+function normalizeStateName(value) {
+  const state = String(value || "").trim();
+  return stateAliases[state.toUpperCase()] || state;
+}
+
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function loadFavoriteTechnicians() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(technicianFavoritesKey) || "[]");
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
 }
 
 function coverageAreas(technician) {
