@@ -20,7 +20,11 @@ import {
   X,
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
-import { clearAuthSession, loadCurrentProfile, profileToSession } from "./authUsers";
+import {
+  clearAuthSession,
+  loadCurrentProfile,
+  profileToSession,
+} from "./authUsers";
 import { ActivityLogPage, logActivity } from "./modules/activity";
 import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard } from "./modules/billing";
@@ -416,8 +420,13 @@ function LoginScreen({ message, onMessage }) {
       body: { accessCode: accessCode.trim() },
     });
     if (error || data?.error || !data?.session?.access_token || !data?.session?.refresh_token) {
+      const fallback = await signInWithUsernameAccessCode(accessCode.trim());
+      if (fallback.ok) {
+        setSubmitting(false);
+        return;
+      }
       setSubmitting(false);
-      onMessage(data?.error || error?.message || "Invalid password.");
+      onMessage(fallback.message || data?.error || "Invalid password.");
       return;
     }
     const { error: sessionError } = await supabase.auth.setSession({
@@ -457,6 +466,28 @@ function LoginScreen({ message, onMessage }) {
       </div>
     </div>
   );
+}
+
+async function signInWithUsernameAccessCode(accessCode) {
+  const separator = accessCode.indexOf("/");
+  if (separator === -1) return { ok: false, message: "Use username/password." };
+  const username = accessCode.slice(0, separator).trim();
+  const password = accessCode.slice(separator + 1);
+  if (!username || !password) return { ok: false, message: "Use username/password." };
+
+  const { data: profile, error: profileError } = await supabase
+    .from("app_users")
+    .select("email,status")
+    .eq("username", username)
+    .maybeSingle();
+
+  if (profileError) return { ok: false, message: "Login service is not ready. Deploy auth-access-code in Supabase." };
+  if (!profile?.email) return { ok: false, message: "Invalid password." };
+  if (profile.status !== "Active") return { ok: false, message: "Your account is inactive. Contact an administrator." };
+
+  const { error } = await supabase.auth.signInWithPassword({ email: profile.email, password });
+  if (error) return { ok: false, message: "Invalid password." };
+  return { ok: true };
 }
 
 function ChangePasswordScreen({ userId, onComplete }) {
