@@ -20,11 +20,7 @@ import {
   X,
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
-import {
-  clearAuthSession,
-  loadCurrentProfile,
-  profileToSession,
-} from "./authUsers";
+import { AUTH_USERS, clearAuthSession } from "./authUsers";
 import { ActivityLogPage, logActivity } from "./modules/activity";
 import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard } from "./modules/billing";
@@ -86,65 +82,27 @@ const sidebarSections = [
 
 export default function App() {
   const [activeView, setActiveView] = useState("dispatch");
-  const [session, setSession] = useState(emptySession());
-  const [authLoading, setAuthLoading] = useState(true);
-  const [authMessage, setAuthMessage] = useState("");
+  const [session, setSession] = useState(getSession());
   const [alertJobs, setAlertJobs] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isAuthenticated = Boolean(session.isAuthenticated);
 
   useEffect(() => {
-    let mounted = true;
-    async function validate(authSession) {
-      if (!authSession?.user) {
-        if (mounted) { setSession(emptySession()); setAuthLoading(false); }
-        return;
-      }
-      try {
-        const profile = await loadCurrentProfile(authSession.user.id);
-        if (profile.status !== "Active") {
-          await supabase.auth.signOut();
-          if (mounted) setAuthMessage("Your account is inactive. Contact an administrator.");
-          return;
-        }
-        if (!['admin', 'dispatcher'].includes(String(profile.role).toLowerCase())) {
-          await supabase.auth.signOut();
-          if (mounted) setAuthMessage("You do not have permission to access this application.");
-          return;
-        }
-        await supabase.from("app_users").update({ last_login_at: new Date().toISOString() }).eq("id", authSession.user.id);
-        if (mounted) setSession(profileToSession(profile, authSession));
-      } catch {
-        await supabase.auth.signOut();
-        if (mounted) setAuthMessage("Unable to verify your account profile.");
-      } finally {
-        if (mounted) setAuthLoading(false);
-      }
+    function syncSession() {
+      setSession(getSession());
     }
-    supabase.auth.getSession().then(({ data }) => validate(data?.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      window.setTimeout(() => validate(nextSession), 0);
-    });
-    return () => { mounted = false; data?.subscription?.unsubscribe(); };
-  }, []);
 
-  useEffect(() => {
-    if (!session.id) return undefined;
-    const channel = supabase.channel(`profile-access-${session.id}`).on(
-      "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "app_users", filter: `id=eq.${session.id}` },
-      async ({ new: profile }) => {
-        if (profile?.status !== "Active") {
-          setAuthMessage("Your account is inactive. Contact an administrator.");
-          await supabase.auth.signOut();
-        } else {
-          setSession((current) => ({ ...current, ...profileToSession(profile, { user: { id: current.id, email: current.email } }) }));
-        }
-      }
-    ).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [session.id]);
+    window.addEventListener("nttr-auth-changed", syncSession);
+    window.addEventListener("storage", syncSession);
+    window.addEventListener("focus", syncSession);
+
+    return () => {
+      window.removeEventListener("nttr-auth-changed", syncSession);
+      window.removeEventListener("storage", syncSession);
+      window.removeEventListener("focus", syncSession);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated && !isPublicRegistration && window.location.pathname !== "/") {
@@ -230,14 +188,8 @@ export default function App() {
     return <TechnicianRegistrationPortal />;
   }
 
-  if (authLoading) return <div className="flex min-h-screen items-center justify-center bg-slate-950 font-bold text-white">Loading...</div>;
-
-  if (isAuthenticated && session.forcePasswordChange) {
-    return <ChangePasswordScreen userId={session.id} onComplete={() => setSession((current) => ({ ...current, forcePasswordChange: false }))} />;
-  }
-
   if (!isAuthenticated) {
-    return <LoginScreen message={authMessage} onMessage={setAuthMessage} />;
+    return <LoginScreen />;
   }
 
   return (
@@ -350,7 +302,7 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
@@ -387,9 +339,25 @@ function roleLabel(role) {
   return "Access required";
 }
 
-function emptySession() {
+function getSession() {
+  const username = localStorage.getItem("currentUser") || "";
+  const storedUser = username ? AUTH_USERS[username] : null;
+
+  if (username && !storedUser) {
+    clearAuthSession();
+    return {
+      username: "",
+      name: "",
+      role: "dispatcher",
+      isAuthenticated: false,
+    };
+  }
+
   return {
-    id: "", username: "", email: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, isAuthenticated: false,
+    username,
+    name: storedUser?.name || localStorage.getItem("currentUserName") || "",
+    role: storedUser?.role || localStorage.getItem("currentUserRole") || "dispatcher",
+    isAuthenticated: Boolean(storedUser),
   };
 }
 
@@ -408,46 +376,52 @@ function viewTitle(view) {
   return titles[view] || "Dispatch Center";
 }
 
-function LoginScreen({ message, onMessage }) {
+function LoginScreen() {
   const [accessCode, setAccessCode] = useState("");
-  const [submitting, setSubmitting] = useState(false);
 
-  async function handleLogin() {
-    if (!accessCode.trim()) return onMessage("Password is required.");
-    setSubmitting(true);
-    onMessage("");
-    const { data, error } = await supabase.functions.invoke("auth-access-code", {
-      body: { accessCode: accessCode.trim() },
-    });
-    if (error || data?.error || !data?.session?.access_token || !data?.session?.refresh_token) {
-      const fallback = await signInWithUsernameAccessCode(accessCode.trim());
-      if (fallback.ok) {
-        setSubmitting(false);
-        return;
-      }
-      setSubmitting(false);
-      onMessage(fallback.message || data?.error || "Invalid password.");
+  function handleLogin() {
+    const input = accessCode.trim();
+    const userFound = Object.entries(AUTH_USERS).find(
+      ([username, user]) => input === `${username}/${user.password}`
+    );
+
+    if (!userFound) {
+      logActivity({
+        entityType: "auth",
+        entityId: "login",
+        action: "Login Failure",
+        description: "Invalid access code attempt",
+        createdBy: "Unknown",
+      });
+      alert("Invalid username or password");
       return;
     }
-    const { error: sessionError } = await supabase.auth.setSession({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
+
+    const [username, user] = userFound;
+    localStorage.setItem("currentUser", username);
+    localStorage.setItem("currentUserName", user.name);
+    localStorage.setItem("currentUserRole", user.role);
+    logActivity({
+      entityType: "auth",
+      entityId: username,
+      action: "Login Success",
+      description: `${user.name} signed in`,
+      createdBy: user.name,
+      metadata: { role: user.role },
     });
-    setSubmitting(false);
-    if (sessionError) onMessage("Unable to start session.");
+    window.dispatchEvent(new Event("nttr-auth-changed"));
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
         <h1 className="text-3xl font-bold text-slate-900">Dispatch Live Access</h1>
-        <p className="mt-2 text-sm text-slate-500">Enter your password to continue.</p>
-        {message && <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{message}</div>}
+        <p className="mt-2 text-sm text-slate-500">Enter your access code to continue.</p>
 
         <input
           type="password"
           className="mt-6 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-slate-900"
-          placeholder="Password"
+          placeholder="Access code"
           value={accessCode}
           onChange={(event) => setAccessCode(event.target.value)}
           onKeyDown={(event) => {
@@ -458,56 +432,13 @@ function LoginScreen({ message, onMessage }) {
         <button
           type="button"
           onClick={handleLogin}
-          disabled={submitting}
-          className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800 disabled:bg-slate-400"
+          className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800"
         >
-          {submitting ? "Signing in..." : "Enter System"}
+          Enter System
         </button>
       </div>
     </div>
   );
-}
-
-async function signInWithUsernameAccessCode(accessCode) {
-  const separator = accessCode.indexOf("/");
-  if (separator === -1) return { ok: false, message: "Use username/password." };
-  const username = accessCode.slice(0, separator).trim();
-  const password = accessCode.slice(separator + 1);
-  if (!username || !password) return { ok: false, message: "Use username/password." };
-
-  const { data: profile, error: profileError } = await supabase
-    .from("app_users")
-    .select("email,status")
-    .eq("username", username)
-    .maybeSingle();
-
-  if (profileError) return { ok: false, message: "Login service is not ready. Deploy auth-access-code in Supabase." };
-  if (!profile?.email) return { ok: false, message: "Invalid password." };
-  if (profile.status !== "Active") return { ok: false, message: "Your account is inactive. Contact an administrator." };
-
-  const { error } = await supabase.auth.signInWithPassword({ email: profile.email, password });
-  if (error) return { ok: false, message: "Invalid password." };
-  return { ok: true };
-}
-
-function ChangePasswordScreen({ userId, onComplete }) {
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [message, setMessage] = useState("");
-  const [saving, setSaving] = useState(false);
-  async function submit(event) {
-    event.preventDefault();
-    if (password.length < 8) return setMessage("The password must contain at least 8 characters.");
-    if (password !== confirm) return setMessage("Passwords do not match.");
-    setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password });
-    if (!error) {
-      const result = await supabase.from("app_users").update({ force_password_change: false }).eq("id", userId);
-      if (!result.error) onComplete(); else setMessage("Unable to finish the password change.");
-    } else setMessage("Unable to change password.");
-    setSaving(false);
-  }
-  return <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6"><form onSubmit={submit} className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl"><h1 className="text-3xl font-bold">Change password</h1><p className="mt-2 text-sm text-slate-500">You must set a new password before continuing.</p>{message && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{message}</p>}<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="New Password" className="mt-6 w-full rounded-xl border px-4 py-3"/><input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="Confirm New Password" className="mt-3 w-full rounded-xl border px-4 py-3"/><button disabled={saving} className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-3 font-bold text-white disabled:bg-slate-400">{saving ? "Updating..." : "Change Password"}</button></form></div>;
 }
 
 function NotificationBell({ count, onClick }) {
