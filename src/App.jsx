@@ -405,38 +405,42 @@ function viewTitle(view) {
 }
 
 function LoginScreen({ message, onMessage }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [accessCode, setAccessCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function handleLogin() {
-    if (!email.trim() || !password) return onMessage("Email and password are required.");
-    setSubmitting(true); onMessage("");
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    if (!accessCode.trim()) return onMessage("Password is required.");
+    setSubmitting(true);
+    onMessage("");
+    const { data, error } = await supabase.functions.invoke("auth-access-code", {
+      body: { accessCode: accessCode.trim() },
+    });
+    if (error || data?.error || !data?.session?.access_token || !data?.session?.refresh_token) {
+      setSubmitting(false);
+      onMessage(data?.error || error?.message || "Invalid password.");
+      return;
+    }
+    const { error: sessionError } = await supabase.auth.setSession({
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+    });
     setSubmitting(false);
-    if (error) onMessage("Invalid email or password.");
+    if (sessionError) onMessage("Unable to start session.");
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
         <h1 className="text-3xl font-bold text-slate-900">Dispatch Live Access</h1>
-        <p className="mt-2 text-sm text-slate-500">Sign in with your Supabase account.</p>
+        <p className="mt-2 text-sm text-slate-500">Enter your password to continue.</p>
         {message && <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{message}</div>}
 
         <input
-          type="email"
-          className="mt-6 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-slate-900"
-          placeholder="Email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-        />
-        <input
           type="password"
-          className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-slate-900"
+          className="mt-6 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-slate-900"
           placeholder="Password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          value={accessCode}
+          onChange={(event) => setAccessCode(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") handleLogin();
           }}

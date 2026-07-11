@@ -39,6 +39,7 @@ function createDisabledSupabaseClient() {
     auth: {
       getSession: async () => ({ data: { session: null }, error: createMissingConfigError() }),
       signInWithPassword: async () => ({ data: null, error: createMissingConfigError() }),
+      setSession: async () => ({ data: null, error: createMissingConfigError() }),
       signOut: async () => ({ error: createMissingConfigError() }),
       updateUser: async () => ({ data: null, error: createMissingConfigError() }),
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
