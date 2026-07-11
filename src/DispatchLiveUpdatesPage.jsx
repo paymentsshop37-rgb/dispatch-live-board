@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
-import { AUTH_USERS, clearAuthSession } from "./authUsers";
+import { clearAuthSession } from "./authUsers";
 import { logActivity } from "./modules/activity";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
@@ -384,14 +384,13 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage() {
+export default function DispatchLiveUpdatesPage({ currentUser }) {
   const formRef = useRef(null);
   const searchInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
-  const [accessGranted, setAccessGranted] = useState(() => Boolean(AUTH_USERS[localStorage.getItem("currentUser") || ""]));
-  const [accessCode, setAccessCode] = useState("");
+  const [accessGranted] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState(
-    localStorage.getItem("currentUserRole") || null
+    currentUser?.role || null
   );
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
@@ -442,7 +441,7 @@ export default function DispatchLiveUpdatesPage() {
   const [notifications, setNotifications] = useState([]);
   const [jobContextMenu, setJobContextMenu] = useState(null);
   const [currentUserName, setCurrentUserName] = useState(
-  localStorage.getItem("currentUserName") || ""
+  currentUser?.name || ""
 );
   
   const permissions = getPermissions(currentUserRole);
@@ -450,29 +449,6 @@ export default function DispatchLiveUpdatesPage() {
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
-
-  function handleLogin() {
-  const input = accessCode.trim();
-
-  const userFound = Object.entries(AUTH_USERS).find(
-    ([username, user]) => input === `${username}/${user.password}`
-  );
-
-  if (userFound) {
-    const [username, user] = userFound;
-
-setCurrentUserRole(user.role);
-setCurrentUserName(user.name);
-setAccessGranted(true);
-
-localStorage.setItem("currentUser", username);
-localStorage.setItem("currentUserName", user.name);
-localStorage.setItem("currentUserRole", user.role);
-window.dispatchEvent(new Event("nttr-auth-changed"));
-  } else {
-    alert("Invalid username or password");
-  }
-}
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -1488,36 +1464,6 @@ await logActivity({
     if (action === "whatsapp") {
       window.open(customerWhatsAppLink(job), "_blank", "noopener,noreferrer");
     }
-  }
-
-  if (!accessGranted) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
-        <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
-          <h1 className="text-3xl font-bold text-slate-900">Dispatch Live Access</h1>
-          <p className="mt-2 text-sm text-slate-500">Enter your access code to continue.</p>
-
-          <input
-            type="password"
-            className="mt-6 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none focus:border-slate-900"
-            placeholder="Access code"
-            value={accessCode}
-            onChange={(e) => setAccessCode(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleLogin();
-            }}
-          />
-
-          <button
-            type="button"
-            onClick={handleLogin}
-            className="mt-4 w-full rounded-xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800"
-          >
-            Enter System
-          </button>
-        </div>
-      </div>
-    );
   }
 
   return (

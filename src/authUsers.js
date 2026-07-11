@@ -1,20 +1,26 @@
-export const AUTH_USERS = {
-  admin: { password: "Admin#2026", role: "admin", name: "Owner Admin" },
-  dispatcher01: { password: "Dsp#1001", role: "dispatcher", name: "Daniel" },
-  dispatcher02: { password: "Dsp#1002", role: "dispatcher", name: "Gonzalo" },
-  dispatcher03: { password: "Dsp#1003", role: "dispatcher", name: "Janeth" },
-  dispatcher04: { password: "Dsp#1004", role: "dispatcher", name: "Victor" },
-  dispatcher05: { password: "Dsp#1005", role: "dispatcher", name: "Cris" },
-  dispatcher06: { password: "Dsp#1006", role: "dispatcher", name: "Mike" },
-  dispatcher07: { password: "Dsp#1007", role: "dispatcher", name: "Dispatcher 07" },
-  dispatcher08: { password: "Dsp#1008", role: "dispatcher", name: "Dispatcher 08" },
-  dispatcher09: { password: "Dsp#1009", role: "dispatcher", name: "Dispatcher 09" },
-  dispatcher10: { password: "Dsp#1010", role: "dispatcher", name: "Dispatcher 10" },
-};
+import { supabase } from "./lib/supabase";
 
-export function clearAuthSession() {
-  localStorage.removeItem("currentUser");
-  localStorage.removeItem("currentUserName");
-  localStorage.removeItem("currentUserRole");
+export async function loadCurrentProfile(userId) {
+  if (!userId) return null;
+  const { data, error } = await supabase.from("app_users").select("*").eq("id", userId).single();
+  if (error) throw error;
+  return data;
+}
+
+export function profileToSession(profile, authSession) {
+  return {
+    id: profile?.id || authSession?.user?.id || "",
+    username: profile?.username || "",
+    email: profile?.email || authSession?.user?.email || "",
+    name: profile?.name || "",
+    role: String(profile?.role || "dispatcher").toLowerCase(),
+    status: profile?.status || "Inactive",
+    forcePasswordChange: Boolean(profile?.force_password_change),
+    isAuthenticated: Boolean(authSession?.user && profile?.status === "Active"),
+  };
+}
+
+export async function clearAuthSession() {
+  await supabase.auth.signOut();
   window.dispatchEvent(new Event("nttr-auth-changed"));
 }
