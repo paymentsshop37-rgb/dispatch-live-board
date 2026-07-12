@@ -10,7 +10,6 @@ export default function CustomerCRM() {
   const [customerRows, setCustomerRows] = useState([]);
   const [contactRows, setContactRows] = useState([]);
   const [locationRows, setLocationRows] = useState([]);
-  const [tableSupport, setTableSupport] = useState({ customers: false, contacts: false, locations: false });
   const [warnings, setWarnings] = useState([]);
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -23,7 +22,6 @@ export default function CustomerCRM() {
 
   async function loadCustomers() {
     setLoading(true);
-    const nextWarnings = [];
     const [customerResult, contactsResult, locationsResult, jobsResult] = await Promise.all([
       supabase.from("customers").select("*"),
       supabase.from("customer_contacts").select("*"),
@@ -31,27 +29,16 @@ export default function CustomerCRM() {
       supabase.from("jobs").select("*"),
     ]);
 
-    setTableSupport({
-      customers: !customerResult.error,
-      contacts: !contactsResult.error,
-      locations: !locationsResult.error,
-    });
+    const loadErrors = [customerResult, contactsResult, locationsResult, jobsResult]
+      .filter((result) => result.error)
+      .map((result) => result.error.message);
 
-    if (customerResult.error) nextWarnings.push("Safe mode: customers table is not available. CRM is using Dispatch jobs as the customer source.");
-    if (contactsResult.error) nextWarnings.push("Safe mode: customer_contacts table is not available. Contact edits will not persist until the table exists.");
-    if (locationsResult.error) nextWarnings.push("Safe mode: customer_locations table is not available. Location edits will not persist until the table exists.");
-
-    if (jobsResult.error) {
-      nextWarnings.push(`Safe mode: unable to load jobs table (${jobsResult.error.message}).`);
-      setJobs([]);
-    } else {
-      setJobs((jobsResult.data || []).map(normalizeJob));
-    }
+    setWarnings(loadErrors.length ? [`Unable to load CRM data: ${loadErrors.join("; ")}`] : []);
+    setJobs((jobsResult.data || []).map(normalizeJob));
 
     setCustomerRows(customerResult.data || []);
     setContactRows(contactsResult.data || []);
     setLocationRows(locationsResult.data || []);
-    setWarnings(nextWarnings);
     setLoading(false);
   }
 
@@ -62,24 +49,16 @@ export default function CustomerCRM() {
     const saveWarnings = [];
     let customerId = draft.id;
 
-    if (!tableSupport.customers) {
-      saveWarnings.push("Safe mode: customers table is not available. Customer profile fields were not saved.");
-    } else {
-      const result = await saveCustomerRow(customerPayloadFromDraft(draft));
-      if (!result.ok) saveWarnings.push(result.message);
-      if (result.id) customerId = result.id;
-    }
+    const result = await saveCustomerRow(customerPayloadFromDraft(draft));
+    if (!result.ok) saveWarnings.push(result.message);
+    if (result.id) customerId = result.id;
 
-    if (!tableSupport.contacts) {
-      saveWarnings.push("Safe mode: customer_contacts table is not available. Contact changes were not saved.");
-    } else if (customerId) {
+    if (customerId) {
       const result = await replaceChildRows("customer_contacts", "customer_id", customerId, draft.contacts.map(contactPayloadFromDraft));
       if (!result.ok) saveWarnings.push(result.message);
     }
 
-    if (!tableSupport.locations) {
-      saveWarnings.push("Safe mode: customer_locations table is not available. Location changes were not saved.");
-    } else if (customerId) {
+    if (customerId) {
       const result = await replaceChildRows("customer_locations", "customer_id", customerId, draft.locations.map(locationPayloadFromDraft));
       if (!result.ok) saveWarnings.push(result.message);
     }
@@ -178,14 +157,13 @@ export default function CustomerCRM() {
           onClose={() => setSelectedCustomer(null)}
           openProfile={openProfile}
           onSave={saveCustomerProfile}
-          tableSupport={tableSupport}
         />
       )}
     </div>
   );
 }
 
-function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfile, onSave, tableSupport }) {
+function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfile, onSave }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => createCustomerDraft(customer));
@@ -246,12 +224,6 @@ function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfi
               <button type="button" onClick={onClose} className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-200">Close</button>
             </div>
           </div>
-
-          {editing && (!tableSupport.customers || !tableSupport.contacts || !tableSupport.locations) && (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">
-              Safe mode: some customer tables are missing. Available tables will save; missing table sections will be skipped.
-            </div>
-          )}
 
           <div className="mt-4 flex gap-2 overflow-x-auto">
             {profileTabs.map((tab) => (
@@ -596,6 +568,7 @@ function customerPayloadFromDraft(draft) {
     ...(draft.id ? { id: draft.id } : {}),
     company_name: draft.company,
     name: draft.company,
+    account_status: draft.customerStatus,
     main_phone: draft.mainPhone,
     phone: draft.mainPhone,
     main_email: draft.mainEmail,
@@ -618,24 +591,32 @@ function customerPayloadFromDraft(draft) {
 async function saveCustomerRow(payload) {
   const insertPayload = { ...payload, created_at: new Date().toISOString() };
   const result = await retryingWrite("customers", insertPayload, "upsert");
-  if (!result.error) return { ok: true, id: result.data?.id || payload.id };
-  return { ok: false, message: `Safe mode: unable to save customer (${result.error.message}).` };
+  if (!result.error) {
+    const customerId = result.data?.id || payload.id;
+    if (customerId && payload.company_name) {
+      await supabase.from("jobs").update({ customer_id: customerId }).ilike("company", payload.company_name);
+    }
+    return { ok: true, id: customerId };
+  }
+  return { ok: false, message: `Unable to save customer (${result.error.message}).` };
 }
 
 async function replaceChildRows(table, foreignKey, parentId, rows) {
   const deleteResult = await supabase.from(table).delete().eq(foreignKey, parentId);
-  if (deleteResult.error) return { ok: false, message: `Safe mode: unable to update ${table} (${deleteResult.error.message}).` };
+  if (deleteResult.error) return { ok: false, message: `Unable to update ${table} (${deleteResult.error.message}).` };
   const payload = rows.filter((row) => Object.values(row).some(Boolean)).map((row) => ({ ...row, [foreignKey]: parentId }));
   if (!payload.length) return { ok: true };
   const result = await retryingWrite(table, payload, "insert");
   if (!result.error) return { ok: true };
-  return { ok: false, message: `Safe mode: unable to save ${table} (${result.error.message}).` };
+  return { ok: false, message: `Unable to save ${table} (${result.error.message}).` };
 }
 
 function contactPayloadFromDraft(contact) {
   return {
     role: contact.role,
     contact_role: contact.role,
+    position: contact.role,
+    is_primary: contact.role === "Fleet Manager" || contact.isPrimary === true,
     name: contact.name,
     phone: contact.phone,
     email: contact.email,
@@ -653,6 +634,8 @@ function locationPayloadFromDraft(location) {
     state: location.state,
     zip: location.zip,
     zip_code: location.zip,
+    latitude: location.latitude || null,
+    longitude: location.longitude || null,
     notes: location.notes,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
