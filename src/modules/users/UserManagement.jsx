@@ -32,6 +32,7 @@ export default function UserManagement({ currentUser }) {
   const [notice, setNotice] = useState(null);
   const [resetUser, setResetUser] = useState(null);
   const [deleteUser, setDeleteUser] = useState(null);
+  const [syncUser, setSyncUser] = useState(null);
   const [saveState, setSaveState] = useState({});
   const [authWarning, setAuthWarning] = useState("");
 
@@ -155,10 +156,10 @@ export default function UserManagement({ currentUser }) {
 
     setBusy(`delete-${deleteUser.id}`);
     try {
-      await request("DELETE", { id: deleteUser.id });
+      await request("DELETE", { id: deleteUser.id, profileOnly: deleteUser.isDesynced });
       setDeleteUser(null);
       await loadUsers();
-      show("User deleted successfully.");
+      show(deleteUser.isDesynced ? "User profile deleted successfully." : "User deleted successfully.");
     } catch (error) {
       show(error.message || "Unable to delete user.", true);
     } finally {
@@ -251,7 +252,7 @@ export default function UserManagement({ currentUser }) {
               <table className="min-w-[1250px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    {["Name", "Username", "Email", "Role", "Status", "Force Change", "Last Login", "Notes", "Actions"].map((header) => (
+                    {["Name", "Username", "Email", "Role", "Status", "Force Change", "Auth", "Last Login", "Notes", "Actions"].map((header) => (
                       <th key={header} className="px-3 py-3">{header}</th>
                     ))}
                   </tr>
@@ -281,6 +282,11 @@ export default function UserManagement({ currentUser }) {
                           {user.forcePasswordChange ? "REQUIRED" : "NOT REQUIRED"}
                         </span>
                       </td>
+                      <td className="px-3 py-3">
+                        <span className={`rounded-full px-2 py-1 text-xs font-black ${user.isDesynced ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>
+                          {user.isDesynced ? "DESYNCED" : "LINKED"}
+                        </span>
+                      </td>
                       <td className="px-3 py-3 text-slate-600">{formatDate(user.lastLoginAt)}</td>
                       <td className="px-3 py-3">
                         <Editable wide value={user.notes} onSave={(value) => updateUser(user, { notes: value })} />
@@ -289,13 +295,24 @@ export default function UserManagement({ currentUser }) {
                         <div className="grid gap-2">
                           <button
                             type="button"
-                            disabled={Boolean(busy)}
+                            disabled={Boolean(busy) || user.isDesynced}
                             onClick={() => setResetUser(user)}
                             className="flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300"
                           >
                             <RotateCcw className="h-4 w-4" />
                             Reset Password
                           </button>
+                          {user.isDesynced && (
+                            <button
+                              type="button"
+                              disabled={Boolean(busy)}
+                              onClick={() => setSyncUser(user)}
+                              className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                              Sync Auth
+                            </button>
+                          )}
                           <button
                             type="button"
                             disabled={Boolean(busy) || isCurrentUser(user, currentUser)}
@@ -308,7 +325,7 @@ export default function UserManagement({ currentUser }) {
                             className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300"
                           >
                             <Trash2 className="h-4 w-4" />
-                            Delete User
+                            {user.isDesynced ? "Delete Profile" : "Delete User"}
                           </button>
                         </div>
                       </td>
@@ -344,7 +361,11 @@ export default function UserManagement({ currentUser }) {
 
       {deleteUser && (
         <Modal title="Delete User" onClose={() => setDeleteUser(null)}>
-          <p>Are you sure you want to delete this user? This will permanently remove their access to the system.</p>
+          <p>
+            {deleteUser.isDesynced
+              ? "This profile is not linked to a Supabase Auth account. Delete only the app_users profile, or cancel and sync it first."
+              : "Are you sure you want to delete this user? This will permanently remove their access to the system."}
+          </p>
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" onClick={() => setDeleteUser(null)} className="rounded-xl border px-4 py-2 font-bold">
               Cancel
@@ -355,10 +376,31 @@ export default function UserManagement({ currentUser }) {
               disabled={busy === `delete-${deleteUser.id}`}
               className="rounded-xl bg-red-600 px-4 py-2 font-bold text-white disabled:bg-slate-300"
             >
-              {busy === `delete-${deleteUser.id}` ? "Deleting..." : "Delete User"}
+              {busy === `delete-${deleteUser.id}` ? "Deleting..." : deleteUser.isDesynced ? "Delete Profile" : "Delete User"}
             </button>
           </div>
         </Modal>
+      )}
+
+      {syncUser && (
+        <SyncModal
+          user={syncUser}
+          busy={busy}
+          onClose={() => setSyncUser(null)}
+          onSave={async (password, force) => {
+            setBusy(`sync-${syncUser.id}`);
+            try {
+              await request("POST", { action: "sync-auth", id: syncUser.id, temporaryPassword: password, forcePasswordChange: force });
+              setSyncUser(null);
+              await loadUsers();
+              show("User synced with Supabase Auth successfully.");
+            } catch (error) {
+              show(error.message || "Unable to sync user.", true);
+            } finally {
+              setBusy("");
+            }
+          }}
+        />
       )}
     </div>
   );
@@ -395,6 +437,43 @@ function ResetModal({ user, onClose, onSave, busy }) {
           className="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white disabled:bg-slate-300"
         >
           {busy ? "Resetting..." : "Reset Password"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+function SyncModal({ user, onClose, onSave, busy }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [force, setForce] = useState(true);
+  const [error, setError] = useState("");
+
+  function submit() {
+    if (password.length < 8) return setError("The password must contain at least 8 characters.");
+    if (password !== confirm) return setError("Passwords do not match.");
+    onSave(password, force);
+  }
+
+  return (
+    <Modal title="Sync User with Supabase Auth" onClose={onClose}>
+      <p className="font-bold">{user.name}</p>
+      <p className="text-sm text-slate-500">{user.email}</p>
+      <div className="mt-4 grid gap-3">
+        <Field type="password" label="Temporary password" value={password} onChange={setPassword} />
+        <Field type="password" label="Confirm password" value={confirm} onChange={setConfirm} />
+        <label className="flex gap-2 text-sm font-bold">
+          <input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />
+          Force password change on next login
+        </label>
+        {error && <p className="text-sm font-bold text-red-600">{error}</p>}
+        <button
+          type="button"
+          disabled={Boolean(busy)}
+          onClick={submit}
+          className="rounded-xl bg-blue-600 px-4 py-3 font-bold text-white disabled:bg-slate-300"
+        >
+          {busy ? "Syncing..." : "Sync Auth"}
         </button>
       </div>
     </Modal>
@@ -490,6 +569,7 @@ function Metric({ icon: Icon, label, value }) {
 function normalizeUser(row) {
   return {
     id: row.id,
+    authUserId: row.auth_user_id || "",
     name: row.name || "",
     username: row.username || "",
     email: row.email || "",
@@ -498,6 +578,8 @@ function normalizeUser(row) {
     forcePasswordChange: Boolean(row.force_password_change),
     lastLoginAt: row.last_login_at,
     notes: row.notes || "",
+    authExists: Boolean(row.auth_exists),
+    isDesynced: Boolean(row.is_desynced),
   };
 }
 
@@ -515,6 +597,8 @@ function isCurrentUser(user, currentUser) {
   if (!user || !currentUser) return false;
   return Boolean(
     (currentUser.id && user.id === currentUser.id) ||
+      (currentUser.authUserId && user.authUserId === currentUser.authUserId) ||
+      (currentUser.authUserId && user.id === currentUser.authUserId) ||
       (currentUser.username && user.username === currentUser.username) ||
       (currentUser.email && user.email === currentUser.email)
   );

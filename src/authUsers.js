@@ -2,7 +2,11 @@ import { supabase } from "./lib/supabase";
 
 export async function loadCurrentProfile(userId) {
   if (!userId) return null;
-  const { data, error } = await supabase.from("app_users").select("*").eq("id", userId).single();
+  const { data, error } = await supabase
+    .from("app_users")
+    .select("*")
+    .or(`auth_user_id.eq.${userId},id.eq.${userId}`)
+    .single();
   if (error) throw error;
   return data;
 }
@@ -10,6 +14,7 @@ export async function loadCurrentProfile(userId) {
 export function profileToSession(profile, authSession) {
   return {
     id: profile?.id || authSession?.user?.id || "",
+    authUserId: profile?.auth_user_id || authSession?.user?.id || "",
     username: profile?.username || "",
     email: profile?.email || authSession?.user?.email || "",
     name: profile?.name || "",

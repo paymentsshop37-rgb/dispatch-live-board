@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
     const { data: profile, error: profileError } = await admin
       .from("app_users")
-      .select("id,username,email,status,role,name,force_password_change,login_count")
+      .select("id,auth_user_id,username,email,status,role,name,force_password_change,login_count")
       .ilike("username", username)
       .maybeSingle();
 
@@ -41,6 +41,11 @@ Deno.serve(async (req) => {
     const client = createClient(url, anon, { auth: { autoRefreshToken: false, persistSession: false } });
     const { data, error } = await client.auth.signInWithPassword({ email: profile.email, password });
     if (error || !data.session) return json({ error: "Invalid password." }, 401);
+    if (profile.auth_user_id && profile.auth_user_id !== data.user.id) return json({ error: "This user is out of sync. Contact an administrator." }, 409);
+    if (!profile.auth_user_id) {
+      const { error: linkError } = await admin.from("app_users").update({ auth_user_id: data.user.id }).eq("id", profile.id);
+      if (linkError) return json({ error: "Unable to link account profile." }, 500);
+    }
 
     const loginAt = new Date().toISOString();
     const loginCount = Number(profile.login_count || 0) + 1;
@@ -67,6 +72,7 @@ Deno.serve(async (req) => {
       },
       profile: {
         id: profile.id,
+        auth_user_id: data.user.id,
         username: profile.username,
         name: profile.name,
         email: profile.email,

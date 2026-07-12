@@ -125,10 +125,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!session.id) return undefined;
-    const channel = supabase.channel(`profile-access-${session.id}`).on(
+    const authUserId = session.authUserId || session.id;
+    if (!authUserId) return undefined;
+    const channel = supabase.channel(`profile-access-${authUserId}`).on(
       "postgres_changes",
-      { event: "UPDATE", schema: "public", table: "app_users", filter: `id=eq.${session.id}` },
+      { event: "UPDATE", schema: "public", table: "app_users", filter: `auth_user_id=eq.${authUserId}` },
       async ({ new: profile }) => {
         if (profile?.status !== "Active") {
           setAuthMessage("Your account is inactive. Contact an administrator.");
@@ -139,7 +140,7 @@ export default function App() {
       }
     ).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [session.id]);
+  }, [session.authUserId, session.id]);
 
   useEffect(() => {
     if (!isAuthenticated && !isPublicRegistration && window.location.pathname !== "/") {
@@ -384,7 +385,7 @@ function roleLabel(role) {
 
 function emptySession() {
   return {
-    id: "", username: "", email: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, isAuthenticated: false,
+    id: "", authUserId: "", username: "", email: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, isAuthenticated: false,
   };
 }
 
