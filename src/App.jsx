@@ -472,7 +472,11 @@ function LoginScreen({ message, onMessage }) {
 }
 
 function readFunctionError(error) {
-  return error?.message || "";
+  const message = error?.message || "";
+  if (message.toLowerCase().includes("edge function")) {
+    return "Login service is not deployed yet. Deploy the auth-access-code Edge Function and try again.";
+  }
+  return message;
 }
 
 function ChangePasswordScreen({ userId, onComplete }) {
