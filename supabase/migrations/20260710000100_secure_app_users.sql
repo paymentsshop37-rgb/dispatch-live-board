@@ -9,6 +9,7 @@ create table if not exists public.app_users (
   notes text not null default '',
   force_password_change boolean not null default true,
   last_login_at timestamptz,
+  login_count integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint app_users_role_check check (role in ('admin', 'dispatcher')),
@@ -23,6 +24,7 @@ alter table public.app_users add column if not exists status text default 'Activ
 alter table public.app_users add column if not exists notes text default '';
 alter table public.app_users add column if not exists force_password_change boolean default true;
 alter table public.app_users add column if not exists last_login_at timestamptz;
+alter table public.app_users add column if not exists login_count integer default 0;
 alter table public.app_users add column if not exists created_at timestamptz default now();
 alter table public.app_users add column if not exists updated_at timestamptz default now();
 
@@ -62,6 +64,20 @@ alter table public.app_users alter column email set not null;
 alter table public.app_users alter column role set not null;
 alter table public.app_users alter column status set not null;
 alter table public.app_users alter column force_password_change set not null;
+alter table public.app_users alter column login_count set default 0;
+update public.app_users set login_count = 0 where login_count is null;
+alter table public.app_users alter column login_count set not null;
+
+create table if not exists public.user_access_history (
+  id bigserial primary key,
+  user_id uuid references public.app_users(id) on delete set null,
+  username text,
+  action text not null,
+  ip_address text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+alter table public.user_access_history enable row level security;
 
 create or replace function public.set_updated_at() returns trigger language plpgsql set search_path = '' as $$
 begin new.updated_at = now(); return new; end; $$;
@@ -78,6 +94,9 @@ revoke all on function public.is_active_app_user() from public;
 revoke all on function public.is_active_admin() from public;
 grant execute on function public.is_active_app_user() to authenticated;
 grant execute on function public.is_active_admin() to authenticated;
+
+drop policy if exists "admins read access history" on public.user_access_history;
+create policy "admins read access history" on public.user_access_history for select to authenticated using (public.is_active_admin());
 
 alter table public.app_users enable row level security;
 drop policy if exists "users read own profile" on public.app_users;
