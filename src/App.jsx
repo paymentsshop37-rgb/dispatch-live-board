@@ -135,7 +135,7 @@ export default function App() {
           setAuthMessage("Your account is inactive. Contact an administrator.");
           await supabase.auth.signOut();
         } else {
-          setSession((current) => ({ ...current, ...profileToSession(profile, { user: { id: current.id, email: current.email } }) }));
+          setSession((current) => ({ ...current, ...profileToSession(profile, { user: { id: current.id } }) }));
         }
       }
     ).subscribe();
@@ -385,7 +385,7 @@ function roleLabel(role) {
 
 function emptySession() {
   return {
-    id: "", authUserId: "", username: "", email: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, isAuthenticated: false,
+    id: "", authUserId: "", username: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, isAuthenticated: false,
   };
 }
 

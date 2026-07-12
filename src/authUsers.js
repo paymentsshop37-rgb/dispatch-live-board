@@ -16,7 +16,6 @@ export function profileToSession(profile, authSession) {
     id: profile?.id || authSession?.user?.id || "",
     authUserId: profile?.auth_user_id || authSession?.user?.id || "",
     username: profile?.username || "",
-    email: profile?.email || authSession?.user?.email || "",
     name: profile?.name || "",
     role: String(profile?.role || "dispatcher").toLowerCase(),
     status: profile?.status || "Inactive",

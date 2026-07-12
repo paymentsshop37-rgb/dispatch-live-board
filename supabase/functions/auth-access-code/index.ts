@@ -75,7 +75,6 @@ Deno.serve(async (req) => {
         auth_user_id: data.user.id,
         username: profile.username,
         name: profile.name,
-        email: profile.email,
         role: profile.role,
         status: profile.status,
         force_password_change: profile.force_password_change,

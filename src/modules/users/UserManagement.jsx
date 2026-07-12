@@ -16,7 +16,6 @@ const statuses = ["Active", "Inactive"];
 const emptyForm = {
   name: "",
   username: "",
-  email: "",
   temporaryPassword: "",
   role: "Dispatcher",
   status: "Active",
@@ -100,7 +99,6 @@ export default function UserManagement({ currentUser }) {
       ...form,
       name: form.name.trim(),
       username: form.username.trim(),
-      email: form.email.trim().toLowerCase(),
       notes: form.notes.trim(),
       role: roleToDb(form.role),
     };
@@ -221,7 +219,6 @@ export default function UserManagement({ currentUser }) {
             <div className="grid gap-4">
               <Field label="Username" value={form.username} required onChange={(value) => setForm((current) => ({ ...current, username: value }))} />
               <Field label="Name" value={form.name} required onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
-              <Field label="Email" type="email" value={form.email} required onChange={(value) => setForm((current) => ({ ...current, email: value }))} />
               <Field label="Temporary Password" type="password" value={form.temporaryPassword} required onChange={(value) => setForm((current) => ({ ...current, temporaryPassword: value }))} />
               <Select label="Role" value={form.role} options={roles} onChange={(value) => setForm((current) => ({ ...current, role: value }))} />
               <Select label="Status" value={form.status} options={statuses} onChange={(value) => setForm((current) => ({ ...current, status: value }))} />
@@ -252,7 +249,7 @@ export default function UserManagement({ currentUser }) {
               <table className="min-w-[1250px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    {["Name", "Username", "Email", "Role", "Status", "Force Change", "Auth", "Last Login", "Notes", "Actions"].map((header) => (
+                    {["Name", "Username", "Role", "Status", "Force Change", "Auth", "Last Login", "Notes", "Actions"].map((header) => (
                       <th key={header} className="px-3 py-3">{header}</th>
                     ))}
                   </tr>
@@ -267,7 +264,6 @@ export default function UserManagement({ currentUser }) {
                       <td className="px-3 py-3">
                         <Editable value={user.username} onSave={(value) => updateUser(user, { username: value })} />
                       </td>
-                      <td className="px-3 py-3 text-slate-600">{user.email}</td>
                       <td className="px-3 py-3">
                         <Select value={user.role} options={roles} onChange={(value) => updateUser(user, { role: value })} />
                       </td>
@@ -421,7 +417,7 @@ function ResetModal({ user, onClose, onSave, busy }) {
   return (
     <Modal title="Reset Password" onClose={onClose}>
       <p className="font-bold">{user.name}</p>
-      <p className="text-sm text-slate-500">{user.email}</p>
+      <p className="text-sm text-slate-500">{user.username}</p>
       <div className="mt-4 grid gap-3">
         <Field type="password" label="New temporary password" value={password} onChange={setPassword} />
         <Field type="password" label="Confirm password" value={confirm} onChange={setConfirm} />
@@ -458,7 +454,7 @@ function SyncModal({ user, onClose, onSave, busy }) {
   return (
     <Modal title="Sync User with Supabase Auth" onClose={onClose}>
       <p className="font-bold">{user.name}</p>
-      <p className="text-sm text-slate-500">{user.email}</p>
+      <p className="text-sm text-slate-500">{user.username}</p>
       <div className="mt-4 grid gap-3">
         <Field type="password" label="Temporary password" value={password} onChange={setPassword} />
         <Field type="password" label="Confirm password" value={confirm} onChange={setConfirm} />
@@ -572,7 +568,6 @@ function normalizeUser(row) {
     authUserId: row.auth_user_id || "",
     name: row.name || "",
     username: row.username || "",
-    email: row.email || "",
     role: String(row.role).toLowerCase() === "admin" ? "Administrator" : "Dispatcher",
     status: row.status || "Inactive",
     forcePasswordChange: Boolean(row.force_password_change),
@@ -599,8 +594,7 @@ function isCurrentUser(user, currentUser) {
     (currentUser.id && user.id === currentUser.id) ||
       (currentUser.authUserId && user.authUserId === currentUser.authUserId) ||
       (currentUser.authUserId && user.id === currentUser.authUserId) ||
-      (currentUser.username && user.username === currentUser.username) ||
-      (currentUser.email && user.email === currentUser.email)
+      (currentUser.username && user.username === currentUser.username)
   );
 }
 
@@ -616,10 +610,9 @@ function roleToDb(role) {
 }
 
 function validateCreatePayload(payload) {
-  if (!payload.username || !payload.name || !payload.email || !payload.temporaryPassword || !payload.role || !payload.status) {
+  if (!payload.username || !payload.name || !payload.temporaryPassword || !payload.role || !payload.status) {
     return "Complete all required fields.";
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) return "Enter a valid email address.";
   if (payload.temporaryPassword.length < 8) return "The password must contain at least 8 characters.";
   return "";
 }

@@ -4,6 +4,7 @@ const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const clean = (value: unknown) => String(value ?? "").trim();
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const internalEmailForUsername = (username: string) => `${username.trim().toLowerCase()}@nttr.local`;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -55,8 +56,9 @@ Deno.serve(async (req) => {
       if (target.auth_user_id) return json({ error: "This user is already linked to Supabase Auth." }, 400);
       const password = String(body.temporaryPassword || "");
       if (password.length < 8) return json({ error: "The password must contain at least 8 characters." }, 400);
-      const email = clean(target.email).toLowerCase();
-      if (!emailPattern.test(email)) return json({ error: "This profile needs a valid email before it can be synced." }, 400);
+      const email = emailPattern.test(clean(target.email).toLowerCase())
+        ? clean(target.email).toLowerCase()
+        : internalEmailForUsername(clean(target.username));
       const role = clean(target.role);
       const { data: created, error: createError } = await admin.auth.admin.createUser({
         email,
@@ -75,23 +77,22 @@ Deno.serve(async (req) => {
       return json({ ok: true, auth_user_id: created.user.id });
     }
     if (req.method === "POST") {
-      const name = clean(body.name), username = clean(body.username), email = clean(body.email).toLowerCase(), password = String(body.temporaryPassword || ""), role = clean(body.role), status = clean(body.status);
-      if (!name || !username || !email || !password || !["admin", "dispatcher"].includes(role) || !["Active", "Inactive"].includes(status)) return json({ error: "Invalid user data." }, 400);
-      if (!emailPattern.test(email)) return json({ error: "Invalid email address." }, 400);
+      const name = clean(body.name), username = clean(body.username), email = internalEmailForUsername(username), password = String(body.temporaryPassword || ""), role = clean(body.role), status = clean(body.status);
+      if (!name || !username || !password || !["admin", "dispatcher"].includes(role) || !["Active", "Inactive"].includes(status)) return json({ error: "Invalid user data." }, 400);
       if (password.length < 8) return json({ error: "The password must contain at least 8 characters." }, 400);
       const [{ data: duplicateEmail }, { data: duplicateUsername }] = await Promise.all([
         admin.from("app_users").select("id").eq("email", email).maybeSingle(),
         admin.from("app_users").select("id").eq("username", username).maybeSingle(),
       ]);
-      if (duplicateEmail) return json({ error: "This email is already registered." }, 409);
+      if (duplicateEmail) return json({ error: "This username is already in use." }, 409);
       if (duplicateUsername) return json({ error: "This username is already in use." }, 409);
       const { data: created, error: createError } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { username, name, role } });
-      if (createError || !created.user) return json({ error: createError?.message?.toLowerCase().includes("registered") ? "This email is already registered." : "Unable to create user." }, createError?.message?.toLowerCase().includes("registered") ? 409 : 400);
+      if (createError || !created.user) return json({ error: createError?.message?.toLowerCase().includes("registered") ? "This username is already in use." : "Unable to create user." }, createError?.message?.toLowerCase().includes("registered") ? 409 : 400);
       const { error: profileError } = await admin.from("app_users").insert({ id: created.user.id, auth_user_id: created.user.id, username, name, email, role, status, notes: clean(body.notes), force_password_change: body.forcePasswordChange !== false });
       if (profileError) {
         await admin.auth.admin.deleteUser(created.user.id);
         const details = `${profileError.message || ""} ${profileError.details || ""}`.toLowerCase();
-        const duplicateMessage = details.includes("email") ? "This email is already registered." : "This username is already in use.";
+        const duplicateMessage = "This username is already in use.";
         return json({ error: profileError.code === "23505" ? duplicateMessage : "Unable to create user." }, profileError.code === "23505" ? 409 : 500);
       }
       if (status === "Inactive") await admin.auth.admin.updateUserById(created.user.id, { ban_duration: "876000h" });
@@ -146,7 +147,7 @@ Deno.serve(async (req) => {
       const { error } = await admin.from("app_users").update(allowed).eq("id", before.id);
       if (error) {
         const details = `${error.message || ""} ${error.details || ""}`.toLowerCase();
-        const duplicateMessage = details.includes("email") ? "This email is already registered." : "This username is already in use.";
+        const duplicateMessage = "This username is already in use.";
         return json({ error: error.code === "23505" ? duplicateMessage : error.message || "Unable to update user." }, error.code === "23505" ? 409 : 500);
       }
       const metadata = { ...(before as any), ...allowed };
