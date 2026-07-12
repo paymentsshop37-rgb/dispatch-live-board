@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyRound,
   Plus,
@@ -33,6 +33,7 @@ export default function UserManagement({ currentUser }) {
   const [resetUser, setResetUser] = useState(null);
   const [deleteUser, setDeleteUser] = useState(null);
   const [saveState, setSaveState] = useState({});
+  const [authWarning, setAuthWarning] = useState("");
 
   const stats = useMemo(
     () => ({
@@ -45,12 +46,31 @@ export default function UserManagement({ currentUser }) {
   );
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (!data?.session) {
+        setAuthWarning(
+          "Users administration requires a Supabase Auth admin session. Local access-code login can open the app, but secure create/delete/reset actions need Supabase Auth and the admin-users Edge Function."
+        );
+      }
+    });
     loadUsers();
   }, []);
 
   async function request(method, body) {
     const { data, error } = await supabase.functions.invoke("admin-users", { method, body });
-    if (error) throw new Error(error.message || "Administrative request failed.");
+    if (error) {
+      let message = error.message || "Administrative request failed.";
+      const response = error.context;
+      if (response?.clone) {
+        try {
+          const details = await response.clone().json();
+          message = details?.error || message;
+        } catch {
+          // Keep the Supabase error message when the response body is not JSON.
+        }
+      }
+      throw new Error(message);
+    }
     if (data?.error) throw new Error(data.error);
     return data;
   }
@@ -128,7 +148,7 @@ export default function UserManagement({ currentUser }) {
 
   async function confirmDelete() {
     if (!deleteUser) return;
-    if (deleteUser.id === currentUser?.id) {
+    if (isCurrentUser(deleteUser, currentUser)) {
       show("You cannot delete your own account while signed in.", true);
       return;
     }
@@ -175,6 +195,12 @@ export default function UserManagement({ currentUser }) {
             }`}
           >
             {notice.message}
+          </div>
+        )}
+
+        {authWarning && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+            {authWarning}
           </div>
         )}
 
@@ -272,10 +298,10 @@ export default function UserManagement({ currentUser }) {
                           </button>
                           <button
                             type="button"
-                            disabled={Boolean(busy) || user.id === currentUser?.id}
+                            disabled={Boolean(busy) || isCurrentUser(user, currentUser)}
                             title="Delete user"
                             onClick={() =>
-                              user.id === currentUser?.id
+                              isCurrentUser(user, currentUser)
                                 ? show("You cannot delete your own account while signed in.", true)
                                 : setDeleteUser(user)
                             }
@@ -391,13 +417,17 @@ function Modal({ title, onClose, children }) {
 
 function Editable({ value, onSave, wide }) {
   const [draft, setDraft] = useState(value || "");
+  const onSaveRef = useRef(onSave);
 
+  useEffect(() => {
+    onSaveRef.current = onSave;
+  }, [onSave]);
   useEffect(() => setDraft(value || ""), [value]);
   useEffect(() => {
     if (draft === (value || "")) return undefined;
-    const id = window.setTimeout(() => onSave(draft.trim()), 650);
+    const id = window.setTimeout(() => onSaveRef.current(draft.trim()), 650);
     return () => window.clearTimeout(id);
-  }, [draft, value, onSave]);
+  }, [draft, value]);
 
   return (
     <input
@@ -479,6 +509,15 @@ function normalizePatch(patch) {
   if (patch.role !== undefined) normalized.role = roleToDb(patch.role);
   if (patch.status !== undefined) normalized.status = patch.status;
   return normalized;
+}
+
+function isCurrentUser(user, currentUser) {
+  if (!user || !currentUser) return false;
+  return Boolean(
+    (currentUser.id && user.id === currentUser.id) ||
+      (currentUser.username && user.username === currentUser.username) ||
+      (currentUser.email && user.email === currentUser.email)
+  );
 }
 
 function profilePatchToUi(patch) {

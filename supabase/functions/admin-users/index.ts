@@ -98,7 +98,14 @@ Deno.serve(async (req) => {
 });
 
 async function audit(client: any, action: string, target: string, actor: string, details: Record<string, unknown> = {}) {
-  const payload = { entity_type: "user", entity_id: target, action, description: action.replaceAll("_", " "), created_by: actor, metadata: { target_user_id: target, performed_by: actor, ...details } };
-  const { error } = await client.from("activity_log").insert(payload);
-  if (error) { const { metadata: _metadata, ...fallback } = payload; await client.from("activity_log").insert(fallback); }
+  try {
+    const payload = { entity_type: "user", entity_id: target, action, description: action.replaceAll("_", " "), created_by: actor, metadata: { target_user_id: target, performed_by: actor, ...details } };
+    const { error } = await client.from("activity_log").insert(payload);
+    if (!error) return;
+    const { metadata: _metadata, ...fallback } = payload;
+    const fallbackResult = await client.from("activity_log").insert(fallback);
+    if (fallbackResult.error) console.error("admin-users audit:", fallbackResult.error.message);
+  } catch (error) {
+    console.error("admin-users audit:", error instanceof Error ? error.message : error);
+  }
 }
