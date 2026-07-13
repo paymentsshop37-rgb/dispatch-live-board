@@ -45,20 +45,6 @@ const columnAliases = {
   techPaymentStatus: ["tech_payment_status"],
 };
 
-const requiredFields = [
-  "date",
-  "company",
-  "location",
-  "status",
-  "dispatch",
-  "technician",
-  "paymentMethod",
-  "invoiceStatus",
-  "totalBill",
-  "parts",
-  "techLabor",
-];
-
 const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "This Year", "Custom Range"];
 
 const importantActivityActions = new Set([
@@ -118,21 +104,10 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
     const nextWarnings = [];
 
     if (error) {
-      nextWarnings.push(`Safe mode: unable to load jobs table (${error.message}).`);
+      nextWarnings.push("Unable to load dashboard data. Dispatch Board is still available.");
       setJobs([]);
     } else {
       const rows = data || [];
-      const availableColumns = new Set(rows.flatMap((row) => Object.keys(row || {})));
-      const missingFields = requiredFields.filter((field) => !columnAliases[field].some((column) => availableColumns.has(column)));
-
-      if (!rows.length) {
-        nextWarnings.push("No jobs found yet. Executive Dashboard totals will show zero until dispatch data exists.");
-      }
-
-      if (missingFields.length) {
-        nextWarnings.push(`Safe mode: missing dashboard columns or no rows available for: ${missingFields.join(", ")}.`);
-      }
-
       setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
     }
 
@@ -198,6 +173,12 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
             {warning}
           </div>
         ))}
+
+        {!loading && warnings.length === 0 && filteredJobs.length === 0 && (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-semibold text-slate-200">
+            No jobs found for this date range.
+          </div>
+        )}
 
         <section className="grid gap-4 lg:grid-cols-3 2xl:grid-cols-6">
           <KpiCard title="Revenue" value={money(analytics.revenue)} detail="Today's trend" icon={CircleDollarSign} tone="blue" trend={analytics.todayRevenue} />

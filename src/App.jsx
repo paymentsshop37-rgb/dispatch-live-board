@@ -420,7 +420,8 @@ function LoginScreen({ message, onMessage }) {
 
     if (error || data?.error || !data?.session?.access_token || !data?.session?.refresh_token) {
       setSubmitting(false);
-      return onMessage(data?.error || readFunctionError(error) || "Invalid username or password.");
+      const message = data?.error || (await readFunctionError(error)) || "Invalid username or password.";
+      return onMessage(message);
     }
 
     const { error: sessionError } = await supabase.auth.setSession({
@@ -472,8 +473,17 @@ function LoginScreen({ message, onMessage }) {
   );
 }
 
-function readFunctionError(error) {
+async function readFunctionError(error) {
   const message = error?.message || "";
+  const response = error?.context;
+  if (response?.clone) {
+    try {
+      const details = await response.clone().json();
+      if (details?.error) return details.error;
+    } catch {
+      // Keep the SDK message when the response body is not JSON.
+    }
+  }
   if (message.toLowerCase().includes("edge function")) {
     return "Login service is not deployed yet. Deploy the auth-access-code Edge Function and try again.";
   }
