@@ -80,6 +80,7 @@ const nearbyPartsCategories = [
   "Welding Shops",
   "Hydraulic Hose Shops",
   "Battery Suppliers",
+  "Road Service",
 ];
 const nearbyPartsCache = new Map();
 const technicianFavoritesKey = "nttr-technician-favorites";
@@ -2128,7 +2129,8 @@ function googleMapsSearchLink(query) {
 }
 
 function googleMapsNearbyLink(category, location) {
-  return `https://www.google.com/maps/search/${encodeURIComponent(`${category} near ${location || ""}`).replace(/%20/g, "+")}`;
+  const searchTerm = category === "Road Service" ? "mobile truck repair" : category;
+  return `https://www.google.com/maps/search/${encodeURIComponent(`${searchTerm} near ${location || ""}`).replace(/%20/g, "+")}`;
 }
 
 function technicianPartsLocation(technician) {
