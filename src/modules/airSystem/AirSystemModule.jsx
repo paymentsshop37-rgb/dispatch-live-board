@@ -36,6 +36,7 @@ const conditions = [
 ];
 
 const componentFilters = ["All", "Truck", "Trailer", "ABS", "Air Supply", "Brakes"];
+const airSystemDiagramSrc = "/air-system-diagram.png";
 const diagramSections = [
   { id: "Truck", label: "TRUCK / TRACTOR SYSTEM" },
   { id: "Trailer", label: "TRAILER SYSTEM - 53 FT DRY VAN" },
@@ -82,6 +83,51 @@ const trailerAirLines = [
   airLine("abs-control", "ABS modulator control", "Trailer service circuit", "trailer-abs-ecu", "trailer-abs-modulators", "M 420 385 C 520 420 625 420 705 370"),
   airLine("suspension-air", "Suspension air supply", "Trailer supply circuit", "trailer-reservoir", "air-suspension-bags", "M 420 250 C 530 160 620 150 700 170"),
 ];
+const diagramHotspots = [
+  hotspot("air-compressor", "Air compressor", 7, 24, 8, 8, ["charging-1"]),
+  hotspot("governor", "Governor", 14, 17, 7, 7, ["charging-1"]),
+  hotspot("air-dryer", "Air dryer", 21, 30, 8, 8, ["charging-1", "charging-2"]),
+  hotspot("wet-tank", "Supply reservoir", 31, 38, 9, 8, ["charging-2", "primary-feed", "secondary-feed"]),
+  hotspot("secondary-tank", "Front axle service reservoir", 42, 34, 10, 8, ["secondary-feed", "secondary-service"]),
+  hotspot("primary-tank", "Rear axle service reservoir", 42, 47, 10, 8, ["primary-feed", "primary-service"]),
+  hotspot("foot-brake-valve", "Foot brake valve", 31, 61, 8, 8, ["primary-service", "secondary-service", "trailer-service"]),
+  hotspot("parking-brake-valve", "Parking control valve", 39, 61, 8, 8, ["parking-control"]),
+  hotspot("trailer-supply-valve", "Trailer supply control", 48, 61, 8, 8, ["tractor-protection"]),
+  hotspot("tractor-protection-valve", "Tractor protection valve", 59, 54, 9, 8, ["tractor-protection", "trailer-service"]),
+  hotspot("quick-release-valves", "Quick release valves", 55, 71, 9, 8, ["secondary-service"]),
+  hotspot("relay-valves", "Relay valves", 67, 70, 8, 8, ["primary-service"]),
+  hotspot("spring-brake-chambers", "Spring brake chambers", 78, 76, 10, 9, ["parking-control"]),
+  hotspot("red-glad-hand", "Red trailer supply line", 67, 38, 12, 7, ["tractor-protection", "trailer-supply"]),
+  hotspot("blue-glad-hand", "Blue trailer service line", 67, 48, 12, 7, ["trailer-service"]),
+  hotspot("trailer-reservoir", "Trailer reservoir", 78, 39, 10, 8, ["trailer-supply", "reservoir-relay"]),
+  hotspot("spring-brake-control-valve", "Trailer spring brake control valve", 83, 52, 10, 8, ["parking-spring"]),
+  hotspot("anti-compounding-valve", "Anti-compounding valve", 87, 61, 9, 8, ["parking-spring", "relay-service-chambers"]),
+  hotspot("relay-emergency-valve", "Trailer relay valve", 78, 58, 9, 8, ["reservoir-relay", "relay-service-chambers"]),
+  hotspot("trailer-brake-chambers", "Trailer brake chambers", 91, 72, 10, 10, ["relay-service-chambers", "parking-spring"]),
+];
+const diagramLineOverlays = [
+  lineOverlay("charging-1", "Compressor charging line", 12, 24, 18, 4, "Charging circuit"),
+  lineOverlay("charging-2", "Air dryer to supply reservoir", 27, 32, 18, 4, "Charging circuit"),
+  lineOverlay("primary-feed", "Supply to rear axle service reservoir", 38, 41, 16, 4, "Primary circuit"),
+  lineOverlay("secondary-feed", "Supply to front axle service reservoir", 38, 31, 16, 4, "Secondary circuit"),
+  lineOverlay("primary-service", "Primary service brake line", 35, 60, 34, 5, "Primary circuit"),
+  lineOverlay("secondary-service", "Secondary service brake line", 35, 67, 25, 5, "Secondary circuit"),
+  lineOverlay("parking-control", "Parking control line", 42, 73, 38, 5, "Parking circuit"),
+  lineOverlay("tractor-protection", "Red trailer supply line", 58, 38, 36, 5, "Trailer supply circuit"),
+  lineOverlay("trailer-service", "Blue trailer service line", 57, 49, 36, 5, "Trailer service circuit"),
+  lineOverlay("trailer-supply", "Trailer supply line", 70, 38, 20, 5, "Trailer supply circuit"),
+  lineOverlay("reservoir-relay", "Trailer reservoir feed to relay valve", 76, 49, 14, 5, "Trailer supply circuit"),
+  lineOverlay("relay-service-chambers", "Trailer relay to brake chambers", 79, 65, 16, 6, "Trailer service circuit"),
+  lineOverlay("parking-spring", "Trailer spring brake parking line", 82, 57, 16, 5, "Trailer parking circuit"),
+];
+
+function hotspot(componentKey, label, x, y, width, height, lineIds = []) {
+  return { componentKey, label, x, y, width, height, lineIds };
+}
+
+function lineOverlay(id, label, x, y, width, height, circuit) {
+  return { id, label, x, y, width, height, circuit };
+}
 
 function airLine(id, name, circuit, source, target, path) {
   return { id, name, circuit, source, target, path };
@@ -122,6 +168,7 @@ const trailerComponents = [
   component("trailer-reservoir", "Trailer air reservoir", "Tanque de aire del trailer", "Trailer", "Air Supply", "Under trailer frame", "Stores air for trailer brakes and suspension controls.", "Low trailer PSI, spring brakes apply.", "Tank leak, drain leak, supply restriction.", "Drain and pressure test reservoir.", "Repair fittings or replace damaged tank.", ["Relay emergency valve", "Spring brake control valve"], 38, 45),
   component("relay-emergency-valve", "Relay emergency valve", "Valvula relay de emergencia", "Trailer", "Brakes", "Near trailer reservoir", "Controls service and emergency brake application.", "Brakes locked, not applying, leaking exhaust.", "Internal leak, contamination, control failure.", "Check supply, service signal, and exhaust leaks.", "Replace valve if leakage or delivery is incorrect.", ["Trailer reservoir", "Brake chambers"], 48, 55),
   component("spring-brake-control-valve", "Spring brake control valve", "Valvula control spring brake", "Trailer", "Brakes", "Near spring brake circuit", "Controls trailer parking brake release/application.", "Spring brakes not releasing or applying unexpectedly.", "Valve leak, low supply, blocked line.", "Verify supply and delivery to spring chambers.", "Replace valve or repair air supply.", ["Spring brake chambers", "Red emergency/supply line"], 59, 55),
+  component("anti-compounding-valve", "Anti-compounding valve", "Valvula anti-compounding", "Trailer", "Brakes", "Trailer spring/service brake control area", "Prevents service and spring brake forces from stacking at the same time.", "Dragging brakes, overheated brakes, harsh application.", "Incorrect plumbing, stuck valve, blocked control line.", "Verify service and parking circuits do not apply together.", "Replace valve or correct air line routing.", ["Relay emergency valve", "Spring brake chambers"], 64, 62),
   component("trailer-abs-ecu", "ABS ECU", "Modulo ABS del trailer", "Trailer", "ABS", "Trailer frame electrical box", "Monitors trailer ABS and fault codes.", "ABS warning lamp, stored fault.", "Sensor, power, ground, ECU issue.", "Scan ABS and verify power/ground.", "Repair circuit or replace ECU.", ["ABS modulator valves", "Wheel-speed sensors"], 42, 72),
   component("trailer-abs-modulators", "ABS modulator valves", "Valvulas moduladoras ABS", "Trailer", "ABS", "Near axle brake circuits", "Modulate trailer brake pressure during ABS event.", "ABS code, uneven braking.", "Valve failure, wiring, contamination.", "Command ABS valve and inspect wiring.", "Replace modulator or repair wiring.", ["ABS ECU", "Brake chambers"], 70, 72),
   component("wheel-speed-sensors", "Wheel-speed sensors", "Sensores de velocidad", "Trailer", "ABS", "At wheel hubs", "Report wheel speed to ABS ECU.", "ABS light, intermittent faults.", "Sensor gap, damaged cable, bad sensor.", "Inspect sensor gap and harness.", "Adjust/replace sensor and secure harness.", ["ABS ECU", "Tandem axles"], 80, 83),
@@ -554,6 +601,7 @@ export default function AirSystemModule({ currentUser }) {
                     <button type="button" onClick={() => setZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))} className="rounded-xl border border-slate-200 p-2 text-slate-600"><ZoomOut className="h-4 w-4" /></button>
                     <span className="flex h-9 items-center rounded-xl bg-slate-100 px-3 text-xs font-black text-slate-600">{Math.round(zoom * 100)}%</span>
                     <button type="button" onClick={() => setZoom((value) => Math.min(1.8, Number((value + 0.1).toFixed(2))))} className="rounded-xl border border-slate-200 p-2 text-slate-600"><ZoomIn className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => setZoom(1)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700">Reset Zoom</button>
                     <button type="button" onClick={() => setFullScreen((value) => !value)} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><Maximize2 className="h-4 w-4" />{fullScreen ? "Exit Full" : "Full Screen"}</button>
                   </div>
                 </div>
@@ -864,114 +912,89 @@ function shortLabel(value) {
 }
 
 function AirDiagram({ section, components, lines, selectedKey, selectedLineId, selectedLines, simulation, traceMode, traceCircuit, zoom, language, onSelect, onLineSelect }) {
-  const selectedLineKeys = new Set(selectedLines.map((line) => line.id));
-  const selectedComponent = components.find((item) => item.key === selectedKey);
-  const isTrailerLike = section !== "Truck";
+  const activeHotspot = diagramHotspots.find((item) => item.componentKey === selectedKey);
+  const activeLineIds = new Set([...(activeHotspot?.lineIds || []), selectedLineId, ...selectedLines.map((line) => line.id)].filter(Boolean));
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-black">{sectionTitle(section)}</h2>
-          <p className="text-xs font-semibold text-slate-500">SVG schematic. Select components or air lines to trace pressure and flow.</p>
+          <h2 className="text-lg font-black">Truck / Tractor System and Trailer System Reference</h2>
+          <p className="text-xs font-semibold text-slate-500">Primary visual uses the uploaded air-brake diagram with aligned transparent hotspots.</p>
         </div>
         <Truck className="h-6 w-6 text-blue-600" />
       </div>
-      <div className="overflow-auto rounded-2xl border border-slate-200 bg-white">
-        <svg
-          viewBox="0 0 1000 520"
-          role="img"
-          aria-label={`${sectionTitle(section)} interactive air-brake schematic`}
-          className="min-h-[520px] min-w-[980px] origin-top-left transition-transform"
+      <div className="max-h-[70vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
+        <div
+          className="relative mx-auto w-full min-w-[980px] max-w-[1600px] origin-top-left"
           style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
         >
-          <defs>
-            <marker id="arrow-flow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-              <path d="M 0 0 L 8 4 L 0 8 z" fill="#0f172a" />
-            </marker>
-            <style>{`
-              .air-flow { stroke-dasharray: 10 10; animation: airFlow 1.1s linear infinite; }
-              .air-fault { animation: airFault 0.8s ease-in-out infinite; }
-              @keyframes airFlow { to { stroke-dashoffset: -40; } }
-              @keyframes airFault { 0%,100% { opacity: 1; } 50% { opacity: .28; } }
-            `}</style>
-          </defs>
-
-          <rect x="20" y="20" width="960" height="470" rx="24" fill="#f8fafc" stroke="#cbd5e1" />
-          {isTrailerLike ? (
-            <>
-              <rect x="95" y="120" width="780" height="210" rx="14" fill="#ffffff" stroke="#94a3b8" strokeWidth="4" />
-              <line x1="150" y1="330" x2="850" y2="330" stroke="#64748b" strokeWidth="8" />
-              {[250, 670, 790].map((x) => <WheelSvg key={x} x={x} y={395} />)}
-              <text x="110" y="105" className="fill-slate-500 text-xs font-bold">{section}</text>
-            </>
-          ) : (
-            <>
-              <rect x="90" y="145" width="790" height="210" rx="70" fill="#ffffff" stroke="#94a3b8" strokeWidth="4" />
-              <path d="M 95 145 L 265 145 Q 345 170 345 245 L 345 355 L 95 355 Z" fill="#f1f5f9" stroke="#94a3b8" strokeWidth="4" />
-              <line x1="145" y1="355" x2="850" y2="355" stroke="#64748b" strokeWidth="8" />
-              {[180, 720, 835].map((x) => <WheelSvg key={x} x={x} y={420} />)}
-              <text x="110" y="130" className="fill-slate-500 text-xs font-bold">Class 8 tractor side / component schematic</text>
-            </>
-          )}
-
-          {lines.map((line) => {
-            const pressure = linePressure(line, simulation);
-            const isSelected = selectedLineId === line.id || selectedLineKeys.has(line.id);
-            const faded = traceMode && traceCircuit !== "All circuits" && line.circuit !== traceCircuit;
-            const faulted = simulation.fault && (selectedLineId === line.id || faultTarget(simulation.fault).lineId === line.id);
-            const active = pressure > 20 && !faded;
-            const stroke = circuitStyles[line.circuit]?.color || "#64748b";
-            return (
-              <g key={line.id} className={faded ? "opacity-20" : "opacity-100"}>
-                <path
-                  d={line.path}
-                  fill="none"
-                  stroke={stroke}
-                  strokeWidth={isSelected ? 8 : 5}
-                  strokeLinecap="round"
-                  markerEnd={active ? "url(#arrow-flow)" : ""}
-                  className={`${active ? "air-flow" : ""} ${faulted ? "air-fault" : ""} cursor-pointer transition-all hover:stroke-[8px]`}
+          <img
+            src={airSystemDiagramSrc}
+            alt="Truck/Tractor System and Trailer System air-brake diagram"
+            className="block h-auto w-full select-none bg-white object-contain"
+            draggable="false"
+          />
+          <div className="pointer-events-none absolute inset-0">
+            {diagramLineOverlays.map((line) => {
+              const pressure = linePressure(line, simulation);
+              const isActive = activeLineIds.has(line.id) || (traceMode && traceCircuit === line.circuit);
+              const faded = traceMode && traceCircuit !== "All circuits" && traceCircuit !== line.circuit;
+              const faulted = simulation.fault && faultTarget(simulation.fault).lineId === line.id;
+              return (
+                <button
+                  key={line.id}
+                  type="button"
+                  title={`${line.label} - ${line.circuit} - ${pressure} PSI`}
                   onClick={() => onLineSelect(line.id)}
+                  className={`pointer-events-auto absolute rounded-full border transition ${
+                    isActive ? "border-blue-700 bg-blue-500/25 shadow-[0_0_0_2px_rgba(37,99,235,0.2)]" : "border-transparent bg-transparent hover:border-blue-400 hover:bg-blue-400/15"
+                  } ${faded ? "opacity-15" : "opacity-100"} ${faulted ? "animate-pulse bg-red-500/35" : ""}`}
+                  style={{
+                    left: `${line.x}%`,
+                    top: `${line.y}%`,
+                    width: `${line.width}%`,
+                    height: `${line.height}%`,
+                  }}
                 >
-                  <title>{`${line.name} - ${line.circuit} - ${pressure} PSI`}</title>
-                </path>
-                <text x={lineLabelX(line.path)} y={lineLabelY(line.path)} className="pointer-events-none fill-slate-700 text-[11px] font-black">
-                  {line.name} · {pressure} PSI
-                </text>
-              </g>
-            );
-          })}
-
-          {components.map((item) => {
-            const isSelected = item.key === selectedKey;
-            const connected = selectedLines.some((line) => line.source === item.key || line.target === item.key);
-            const faded = selectedComponent && !isSelected && !connected;
-            const faulted = simulation.fault && faultTarget(simulation.fault).componentKey === item.key;
-            const label = language === "es" ? item.nameEs : item.name;
-            return (
-              <g
-                key={item.key}
-                onClick={() => onSelect(item.key)}
-                className={`cursor-pointer transition-opacity ${faded ? "opacity-35" : "opacity-100"} ${faulted ? "air-fault" : ""}`}
-              >
-                <rect
-                  x={item.x * 10 - 44}
-                  y={item.y * 5.2 - 17}
-                  width="88"
-                  height="34"
-                  rx="10"
-                  fill={isSelected ? "#2563eb" : componentFill(item)}
-                  stroke={isSelected ? "#1d4ed8" : "#64748b"}
-                  strokeWidth={isSelected ? 3 : 1.5}
-                />
-                <text x={item.x * 10} y={item.y * 5.2 + 4} textAnchor="middle" className={`pointer-events-none text-[10px] font-black ${isSelected ? "fill-white" : "fill-slate-800"}`}>
-                  {shortLabel(label)}
-                </text>
-                <title>{`${item.name} / ${item.nameEs}. ${componentCircuit(item)}. Current PSI: ${componentPsi(item, simulation)}`}</title>
-              </g>
-            );
-          })}
-        </svg>
+                  <span className="sr-only">{line.label}</span>
+                </button>
+              );
+            })}
+            {diagramHotspots.map((spot) => {
+              const component = allComponents.find((item) => item.key === spot.componentKey);
+              const isSelected = selectedKey === spot.componentKey;
+              const faulted = simulation.fault && faultTarget(simulation.fault).componentKey === spot.componentKey;
+              const relatedActive = spot.lineIds.some((id) => activeLineIds.has(id));
+              const label = component ? (language === "es" ? component.nameEs : component.name) : spot.label;
+              return (
+                <button
+                  key={spot.componentKey}
+                  type="button"
+                  title={spot.label}
+                  onClick={() => {
+                    onSelect(spot.componentKey);
+                    if (spot.lineIds[0]) onLineSelect(spot.lineIds[0]);
+                  }}
+                  className={`pointer-events-auto absolute rounded-xl border-2 transition ${
+                    isSelected
+                      ? "border-blue-700 bg-blue-500/25 shadow-[0_0_0_3px_rgba(37,99,235,0.25)]"
+                      : relatedActive
+                        ? "border-emerald-500 bg-emerald-400/20"
+                        : "border-transparent bg-transparent hover:border-blue-500 hover:bg-blue-500/15"
+                  } ${faulted ? "animate-pulse border-red-600 bg-red-500/30" : ""}`}
+                  style={{
+                    left: `${spot.x}%`,
+                    top: `${spot.y}%`,
+                    width: `${spot.width}%`,
+                    height: `${spot.height}%`,
+                  }}
+                >
+                  <span className="sr-only">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </section>
   );
