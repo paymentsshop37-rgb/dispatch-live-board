@@ -15,6 +15,11 @@ import {
   Wind,
   Wrench,
   X,
+  Maximize2,
+  ZoomIn,
+  ZoomOut,
+  Languages,
+  Route,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { logActivity } from "../activity";
@@ -31,6 +36,56 @@ const conditions = [
 ];
 
 const componentFilters = ["All", "Truck", "Trailer", "ABS", "Air Supply", "Brakes"];
+const diagramSections = [
+  { id: "Truck", label: "TRUCK / TRACTOR SYSTEM" },
+  { id: "Trailer", label: "TRAILER SYSTEM - 53 FT DRY VAN" },
+  { id: "Towing Trailer", label: "TOWING TRAILER" },
+  { id: "Converter Dolly", label: "CONVERTER DOLLY" },
+];
+const utilityTabs = ["Diagnostics", "Saved Inspections"];
+const traceCircuits = [
+  "All circuits",
+  "Charging circuit",
+  "Primary circuit",
+  "Secondary circuit",
+  "Parking circuit",
+  "Trailer supply circuit",
+  "Trailer service circuit",
+];
+const circuitStyles = {
+  "Charging circuit": { color: "#111827", label: "Black: Charging" },
+  "Primary circuit": { color: "#16a34a", label: "Green: Primary" },
+  "Secondary circuit": { color: "#f97316", label: "Orange: Secondary" },
+  "Parking circuit": { color: "#eab308", label: "Yellow: Parking / Control" },
+  "Park / Supply": { color: "#dc2626", label: "Red: Park / Supply" },
+  "Trailer supply circuit": { color: "#dc2626", label: "Red: Trailer Supply" },
+  "Trailer service circuit": { color: "#2563eb", label: "Blue: Trailer Control / Service" },
+  "Trailer parking circuit": { color: "#eab308", label: "Yellow: Trailer Parking" },
+};
+const truckAirLines = [
+  airLine("charging-1", "Compressor to air dryer", "Charging circuit", "air-compressor", "air-dryer", "M 120 180 C 180 120 240 122 300 170"),
+  airLine("charging-2", "Air dryer to supply reservoir", "Charging circuit", "air-dryer", "wet-tank", "M 300 170 C 370 190 405 225 450 245"),
+  airLine("primary-feed", "Supply to primary reservoir", "Primary circuit", "wet-tank", "primary-tank", "M 450 245 C 510 205 570 205 625 230"),
+  airLine("secondary-feed", "Supply to secondary reservoir", "Secondary circuit", "wet-tank", "secondary-tank", "M 450 245 C 500 300 560 305 625 275"),
+  airLine("primary-service", "Primary service delivery", "Primary circuit", "foot-brake-valve", "relay-valves", "M 365 320 C 475 380 590 390 690 365"),
+  airLine("secondary-service", "Secondary service delivery", "Secondary circuit", "foot-brake-valve", "quick-release-valves", "M 365 320 C 435 275 500 295 560 345"),
+  airLine("parking-control", "Parking control to spring brakes", "Parking circuit", "parking-brake-valve", "spring-brake-chambers", "M 465 315 C 555 315 670 415 835 405"),
+  airLine("tractor-protection", "Trailer supply through tractor protection", "Trailer supply circuit", "trailer-supply-valve", "red-glad-hand", "M 585 315 C 675 245 790 245 900 225"),
+  airLine("trailer-service", "Trailer service blue line", "Trailer service circuit", "foot-brake-valve", "blue-glad-hand", "M 365 320 C 550 460 760 375 900 275"),
+];
+const trailerAirLines = [
+  airLine("trailer-supply", "Trailer red supply line", "Trailer supply circuit", "trailer-red-glad-hand", "trailer-reservoir", "M 90 190 C 220 170 330 195 420 250"),
+  airLine("trailer-service", "Trailer blue service line", "Trailer service circuit", "trailer-blue-glad-hand", "relay-emergency-valve", "M 90 255 C 240 305 355 325 480 300"),
+  airLine("reservoir-relay", "Reservoir to relay emergency valve", "Trailer supply circuit", "trailer-reservoir", "relay-emergency-valve", "M 420 250 C 455 250 480 265 500 300"),
+  airLine("relay-service-chambers", "Relay to service brake chambers", "Trailer service circuit", "relay-emergency-valve", "trailer-brake-chambers", "M 500 300 C 615 365 700 335 780 335"),
+  airLine("parking-spring", "Trailer parking spring brake control", "Trailer parking circuit", "spring-brake-control-valve", "trailer-spring-brake-chambers", "M 600 285 C 670 250 740 300 800 390"),
+  airLine("abs-control", "ABS modulator control", "Trailer service circuit", "trailer-abs-ecu", "trailer-abs-modulators", "M 420 385 C 520 420 625 420 705 370"),
+  airLine("suspension-air", "Suspension air supply", "Trailer supply circuit", "trailer-reservoir", "air-suspension-bags", "M 420 250 C 530 160 620 150 700 170"),
+];
+
+function airLine(id, name, circuit, source, target, path) {
+  return { id, name, circuit, source, target, path };
+}
 
 const truckComponents = [
   component("air-compressor", "Air compressor", "Compresor de aire", "Truck", "Air Supply", "Engine accessory drive", "Builds compressed air for the brake system.", "Slow air build, oil in air system, no pressure.", "Worn compressor, intake restriction, governor issue.", "Check build rate, leaks, discharge line, and oil contamination.", "Inspect drive, governor signal, and replace compressor if output is low.", ["Governor", "Air dryer", "Wet tank"], 16, 34),
@@ -83,26 +138,91 @@ const trailerComponents = [
   component("height-control-valve", "Height control valve", "Valvula niveladora", "Trailer", "Air Supply", "Suspension linkage", "Maintains trailer ride height.", "Overinflated bags, low ride height.", "Bad linkage, valve leak, blockage.", "Move linkage and verify fill/exhaust.", "Repair linkage or replace height valve.", ["Air suspension bags", "Trailer reservoir"], 61, 35),
 ];
 
-const faultSimulations = [
-  "No air pressure",
-  "Slow pressure build-up",
-  "System air leak",
-  "Trailer brakes locked",
-  "Trailer brakes not applying",
-  "Trailer brakes not releasing",
-  "Red glad hand leaking",
-  "Blue glad hand leaking",
-  "Brake chamber leaking",
-  "Relay valve leaking",
-  "Air dryer continuously purging",
-  "Tractor protection valve failure",
-  "ABS warning",
-  "Uneven braking",
-  "Low-pressure warning",
-  "Spring brakes applying unexpectedly",
+const towingTrailerComponents = trailerComponents.map((item) => ({
+  ...item,
+  key: `towing-${item.key}`,
+  section: "Towing Trailer",
+  location: item.location.replace("trailer", "towing trailer"),
+}));
+
+const converterDollyComponents = [
+  component("dolly-red-glad-hand", "Red supply glad hand", "Mano roja del dolly", "Converter Dolly", "Air Supply", "Dolly front air connection", "Receives supply air for dolly and rear trailer.", "Leak at connection, rear trailer brakes locked.", "Bad seal, cracked glad hand, damaged hose.", "Inspect seal, connection face, and supply pressure.", "Replace seal or glad hand assembly.", ["Dolly relay emergency valve", "Dolly reservoir"], 14, 42),
+  component("dolly-blue-glad-hand", "Blue service glad hand", "Mano azul del dolly", "Converter Dolly", "Brakes", "Dolly front service connection", "Receives service signal from lead trailer/tractor.", "Rear trailer brakes not applying.", "Bad seal, blocked line, control loss.", "Apply service brakes and verify blue line signal.", "Repair coupling or service hose.", ["Dolly relay valve"], 14, 54),
+  component("dolly-reservoir", "Dolly air reservoir", "Tanque de aire del dolly", "Converter Dolly", "Air Supply", "Dolly frame", "Stores air for dolly brake circuit.", "Low dolly pressure, spring brakes apply.", "Tank or fitting leak, supply restriction.", "Drain and pressure test dolly reservoir.", "Repair leaks or replace tank.", ["Dolly relay valve"], 42, 44),
+  component("dolly-relay-valve", "Dolly relay emergency valve", "Valvula relay de emergencia del dolly", "Converter Dolly", "Brakes", "Dolly axle frame", "Delivers brake air to dolly chambers.", "Dolly brakes dragging or not applying.", "Relay valve leak, bad service signal.", "Check supply, service signal, and exhaust.", "Replace relay valve if leaking or stuck.", ["Dolly brake chambers"], 55, 58),
+  component("dolly-spring-control", "Spring brake control valve", "Valvula spring brake del dolly", "Converter Dolly", "Brakes", "Dolly spring brake circuit", "Controls parking/emergency release.", "Dolly brakes locked, not releasing.", "Low supply, valve leak, chamber issue.", "Verify release pressure at spring chambers.", "Repair valve or spring brake circuit.", ["Dolly spring brake chambers"], 65, 48),
+  component("dolly-abs-ecu", "ABS ECU", "Modulo ABS del dolly", "Converter Dolly", "ABS", "Dolly electrical box", "Monitors dolly wheel speed and ABS faults.", "ABS warning, intermittent fault.", "Power, ground, sensor, ECU fault.", "Scan ABS and verify sensor circuits.", "Repair wiring or replace failed component.", ["Wheel-speed sensors"], 48, 76),
+  component("dolly-brake-chambers", "Service brake chambers", "Camaras de servicio del dolly", "Converter Dolly", "Brakes", "Dolly axle wheel ends", "Convert air into brake force.", "Air leak on apply, weak braking.", "Diaphragm leak, loose clamp.", "Listen for leaks and measure stroke.", "Replace chamber and verify stroke.", ["Slack adjusters", "S-cams"], 78, 60),
+  component("dolly-spring-brakes", "Spring brake chambers", "Camaras spring brake del dolly", "Converter Dolly", "Brakes", "Dolly axle wheel ends", "Apply emergency/parking brake by spring.", "Locked dolly brakes, air leak.", "Low air, chamber leak, control valve fault.", "Check release pressure and leaks.", "Replace chamber or repair release circuit.", ["Spring brake control valve"], 80, 72),
+  component("dolly-slack-adjusters", "Slack adjusters", "Ajustadores del dolly", "Converter Dolly", "Brakes", "Dolly brake camshafts", "Maintain dolly brake stroke.", "Excess stroke, uneven braking.", "Failed adjuster, worn clevis.", "Measure pushrod stroke.", "Replace adjuster and inspect foundation brakes.", ["S-cams"], 86, 80),
+  component("dolly-drums", "Brake drums and shoes", "Tambores y zapatas del dolly", "Converter Dolly", "Brakes", "Dolly wheel ends", "Friction braking components.", "Heat damage, worn linings.", "Worn, contaminated, cracked components.", "Inspect drum, shoes, rollers, and springs.", "Replace in axle sets as needed.", ["Slack adjusters"], 90, 88),
 ];
 
-const allComponents = [...truckComponents, ...trailerComponents];
+const faultSimulations = [
+  "Compressor not building pressure",
+  "Governor failure",
+  "Air dryer restriction",
+  "Supply reservoir leak",
+  "Primary tank leak",
+  "Secondary tank leak",
+  "Foot valve leak",
+  "Tractor protection valve failure",
+  "Red glad hand leak",
+  "Blue glad hand leak",
+  "Broken air line",
+  "Restricted air line",
+  "Relay valve leaking",
+  "Relay valve not delivering air",
+  "Brake chamber diaphragm leak",
+  "Spring brake not releasing",
+  "Trailer brakes locked",
+  "Trailer brakes not applying",
+  "ABS sensor failure",
+  "ABS modulator failure",
+  "Uneven braking",
+  "Low-air warning",
+];
+
+const diagnosticProblems = [
+  {
+    label: "Trailer brakes will not release",
+    steps: [
+      "Verify tractor air pressure.",
+      "Verify red supply line pressure.",
+      "Inspect glad hand seals.",
+      "Check trailer reservoir pressure.",
+      "Check relay emergency valve.",
+      "Check spring brake control valve.",
+      "Check spring brake chambers.",
+      "Record findings.",
+    ],
+  },
+  {
+    label: "Trailer brakes not applying",
+    steps: [
+      "Verify tractor primary and secondary pressure.",
+      "Apply foot brake and verify blue service signal.",
+      "Inspect blue glad hand and service hose.",
+      "Check relay emergency valve delivery.",
+      "Inspect ABS modulator valves.",
+      "Measure service brake chamber stroke.",
+      "Record findings.",
+    ],
+  },
+  {
+    label: "Low-air warning",
+    steps: [
+      "Start engine and measure compressor build rate.",
+      "Check governor cut-in/cut-out.",
+      "Inspect dryer purge and restrictions.",
+      "Drain and inspect reservoirs.",
+      "Listen for leaks in primary and secondary circuits.",
+      "Record findings.",
+    ],
+  },
+];
+
+const allComponents = [...truckComponents, ...trailerComponents, ...towingTrailerComponents, ...converterDollyComponents];
 
 export default function AirSystemModule({ currentUser }) {
   const [activeTab, setActiveTab] = useState("Truck");
@@ -119,7 +239,18 @@ export default function AirSystemModule({ currentUser }) {
   const [jobSearch, setJobSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [traceMode, setTraceMode] = useState(false);
+  const [traceCircuit, setTraceCircuit] = useState("All circuits");
+  const [selectedLineId, setSelectedLineId] = useState("");
+  const [zoom, setZoom] = useState(1);
+  const [fullScreen, setFullScreen] = useState(false);
+  const [language, setLanguage] = useState("en");
+  const [diagnosticProblem, setDiagnosticProblem] = useState(diagnosticProblems[0].label);
+  const [diagnosticResults, setDiagnosticResults] = useState(
+    Object.fromEntries(diagnosticProblems[0].steps.map((step) => [step, "Not Tested"]))
+  );
   const [simulation, setSimulation] = useState({
+    supply: 0,
     primary: 0,
     secondary: 0,
     trailer: 0,
@@ -132,8 +263,9 @@ export default function AirSystemModule({ currentUser }) {
   const fileInputRef = useRef(null);
 
   const selectedComponent = allComponents.find((item) => item.key === selectedKey) || truckComponents[0];
+  const selectedLines = useMemo(() => activeAirLines(activeTab).filter((line) => line.source === selectedComponent.key || line.target === selectedComponent.key), [activeTab, selectedComponent.key]);
   const visibleComponents = useMemo(() => {
-    const base = activeTab === "Trailer" ? trailerComponents : activeTab === "Truck" ? truckComponents : allComponents;
+    const base = componentsForSection(activeTab);
     return base.filter((item) => {
       const text = `${item.name} ${item.nameEs} ${item.category} ${item.section}`.toLowerCase();
       const matchesSearch = !search || text.includes(search.toLowerCase());
@@ -141,6 +273,8 @@ export default function AirSystemModule({ currentUser }) {
       return matchesSearch && matchesFilter;
     });
   }, [activeTab, filter, search]);
+
+  const activeProblem = diagnosticProblems.find((item) => item.label === diagnosticProblem) || diagnosticProblems[0];
 
   const filteredJobs = useMemo(() => {
     const term = jobSearch.trim().toLowerCase();
@@ -167,6 +301,19 @@ export default function AirSystemModule({ currentUser }) {
     setPhotos([]);
   }, [selectedKey]);
 
+  useEffect(() => {
+    const problem = diagnosticProblems.find((item) => item.label === diagnosticProblem) || diagnosticProblems[0];
+    setDiagnosticResults(Object.fromEntries(problem.steps.map((step) => [step, "Not Tested"])));
+  }, [diagnosticProblem]);
+
+  useEffect(() => {
+    const first = componentsForSection(activeTab)[0];
+    if (first && !componentsForSection(activeTab).some((item) => item.key === selectedKey)) {
+      setSelectedKey(first.key);
+      setSelectedLineId("");
+    }
+  }, [activeTab, selectedKey]);
+
   async function loadJobs() {
     const { data } = await supabase
       .from("jobs")
@@ -190,13 +337,17 @@ export default function AirSystemModule({ currentUser }) {
   }
 
   function selectFault(fault) {
+    const target = faultTarget(fault);
+    if (target.componentKey) setSelectedKey(target.componentKey);
+    if (target.lineId) setSelectedLineId(target.lineId);
     setSimulation((current) => ({
       ...current,
       fault,
       state: fault,
-      primary: fault === "No air pressure" ? 0 : fault.includes("Low") ? 65 : current.primary || 95,
-      secondary: fault === "No air pressure" ? 0 : fault.includes("Low") ? 62 : current.secondary || 95,
-      trailer: fault.includes("Trailer") || fault.includes("glad hand") ? 45 : current.trailer || 90,
+      supply: target.pressure?.supply ?? current.supply,
+      primary: target.pressure?.primary ?? (fault.includes("Primary") || fault.includes("Low") ? 55 : current.primary || 95),
+      secondary: target.pressure?.secondary ?? (fault.includes("Secondary") || fault.includes("Low") ? 55 : current.secondary || 95),
+      trailer: target.pressure?.trailer ?? (fault.includes("Trailer") || fault.includes("glad hand") ? 35 : current.trailer || 90),
     }));
   }
 
@@ -210,6 +361,8 @@ export default function AirSystemModule({ currentUser }) {
       simulation,
       job,
       currentUser,
+      failure: simulation.fault,
+      diagnosticResults,
     });
 
     const { data, error } = await supabase.from("air_system_inspections").insert(payload).select().single();
@@ -274,8 +427,11 @@ export default function AirSystemModule({ currentUser }) {
       `Symptoms: ${selectedComponent.symptoms}`,
       `Possible causes: ${selectedComponent.causes}`,
       `Recommendation: ${selectedComponent.repair}`,
+      `Failure: ${simulation.fault || "None"}`,
+      `Diagnostic results: ${diagnosticSummary(diagnosticResults) || "No guided diagnostic completed"}`,
+      `Required parts: ${selectedComponent.related.join(", ")}`,
       `Notes: ${notes || "None"}`,
-      `PSI: Primary ${simulation.primary} / Secondary ${simulation.secondary} / Trailer ${simulation.trailer}`,
+      `PSI: Supply ${simulation.supply} / Primary ${simulation.primary} / Secondary ${simulation.secondary} / Trailer ${simulation.trailer}`,
       `Inspection ID: ${inspection.id}`,
       `Dispatcher: ${currentUser?.name || currentUser?.username || "Dispatcher"}`,
       `Date: ${new Date().toLocaleString()}`,
@@ -296,8 +452,11 @@ export default function AirSystemModule({ currentUser }) {
       `<div class='box'><div class='label'>Symptoms</div><p>${selectedComponent.symptoms}</p></div>`,
       `<div class='box'><div class='label'>Possible causes</div><p>${selectedComponent.causes}</p></div>`,
       `<div class='box'><div class='label'>Recommendation</div><p>${selectedComponent.repair}</p></div>`,
+      `<div class='box'><div class='label'>Failure</div><p>${simulation.fault || "None"}</p></div>`,
+      `<div class='box'><div class='label'>Diagnostic results</div><p>${diagnosticSummary(diagnosticResults) || "No guided diagnostic completed"}</p></div>`,
+      `<div class='box'><div class='label'>Required parts</div><p>${selectedComponent.related.join(", ")}</p></div>`,
       `<div class='box'><div class='label'>Notes</div><p>${notes || "None"}</p></div>`,
-      `<div class='box'><div class='label'>Simulation</div><p>${simulation.state}. Primary ${simulation.primary} PSI, Secondary ${simulation.secondary} PSI, Trailer ${simulation.trailer} PSI.</p></div>`,
+      `<div class='box'><div class='label'>Simulation</div><p>${simulation.state}. Supply ${simulation.supply} PSI, Primary ${simulation.primary} PSI, Secondary ${simulation.secondary} PSI, Trailer ${simulation.trailer} PSI.</p></div>`,
       "<p><strong>Training and diagnostic reference only. Air-brake inspections and repairs must be performed by qualified personnel.</strong></p>",
       "<script>window.print()</script></body></html>",
     ].join("");
@@ -320,7 +479,8 @@ export default function AirSystemModule({ currentUser }) {
                 Inspect air-brake components, simulate common faults, and attach diagnostic notes to active jobs.
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-slate-50 p-2 text-center text-xs font-black text-slate-600">
+            <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-50 p-2 text-center text-xs font-black text-slate-600">
+              <PsiBadge label="Supply" value={simulation.supply} />
               <PsiBadge label="Primary" value={simulation.primary} />
               <PsiBadge label="Secondary" value={simulation.secondary} />
               <PsiBadge label="Trailer" value={simulation.trailer} />
@@ -335,14 +495,14 @@ export default function AirSystemModule({ currentUser }) {
         )}
 
         <nav className="flex flex-wrap gap-2">
-          {["Truck", "Trailer", "Diagnostics", "Saved Inspections"].map((tab) => (
+          {[...diagramSections, ...utilityTabs.map((tab) => ({ id: tab, label: tab }))].map((tab) => (
             <button
-              key={tab}
+              key={tab.id}
               type="button"
-              onClick={() => setActiveTab(tab)}
-              className={`rounded-xl px-4 py-2 text-sm font-black transition ${activeTab === tab ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-xl px-4 py-2 text-sm font-black transition ${activeTab === tab.id ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </nav>
@@ -350,10 +510,10 @@ export default function AirSystemModule({ currentUser }) {
         {activeTab === "Saved Inspections" ? (
           <SavedInspections inspections={inspections} jobs={jobs} onRefresh={loadInspections} />
         ) : (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <div className={`grid gap-5 ${fullScreen ? "" : "xl:grid-cols-[minmax(0,1fr)_390px]"}`}>
             <main className="space-y-5">
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+                <div className="grid gap-3 xl:grid-cols-[1fr_auto] xl:items-center">
                   <div className="relative">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                     <input
@@ -376,29 +536,73 @@ export default function AirSystemModule({ currentUser }) {
                     ))}
                   </div>
                 </div>
+                <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_auto] xl:items-center">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" onClick={() => setTraceMode((value) => !value)} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-black ${traceMode ? "bg-emerald-600 text-white" : "border border-slate-200 bg-white text-slate-600"}`}>
+                      <Route className="h-4 w-4" />
+                      Trace Air Flow
+                    </button>
+                    <select value={traceCircuit} onChange={(event) => setTraceCircuit(event.target.value)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700 outline-none focus:border-blue-500">
+                      {traceCircuits.map((item) => <option key={item}>{item}</option>)}
+                    </select>
+                    <button type="button" onClick={() => setLanguage((value) => (value === "en" ? "es" : "en"))} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700">
+                      <Languages className="h-4 w-4" />
+                      {language === "en" ? "English" : "Español"}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))} className="rounded-xl border border-slate-200 p-2 text-slate-600"><ZoomOut className="h-4 w-4" /></button>
+                    <span className="flex h-9 items-center rounded-xl bg-slate-100 px-3 text-xs font-black text-slate-600">{Math.round(zoom * 100)}%</span>
+                    <button type="button" onClick={() => setZoom((value) => Math.min(1.8, Number((value + 0.1).toFixed(2))))} className="rounded-xl border border-slate-200 p-2 text-slate-600"><ZoomIn className="h-4 w-4" /></button>
+                    <button type="button" onClick={() => setFullScreen((value) => !value)} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><Maximize2 className="h-4 w-4" />{fullScreen ? "Exit Full" : "Full Screen"}</button>
+                  </div>
+                </div>
               </div>
 
               <AirDiagram
-                section={activeTab === "Trailer" ? "Trailer" : "Truck"}
+                section={diagramSections.some((item) => item.id === activeTab) ? activeTab : "Truck"}
                 components={visibleComponents}
+                lines={activeAirLines(activeTab)}
                 selectedKey={selectedKey}
+                selectedLineId={selectedLineId}
+                selectedLines={selectedLines}
                 simulation={simulation}
+                traceMode={traceMode}
+                traceCircuit={traceCircuit}
+                zoom={zoom}
+                language={language}
                 onSelect={setSelectedKey}
+                onLineSelect={setSelectedLineId}
               />
+
+              <ColorLegend />
 
               <ComponentGrid components={visibleComponents} selectedKey={selectedKey} onSelect={setSelectedKey} />
 
               {activeTab === "Diagnostics" && (
-                <DiagnosticsPanel simulation={simulation} onAction={runSimulation} onFault={selectFault} />
+                <DiagnosticsPanel
+                  simulation={simulation}
+                  problem={activeProblem}
+                  selectedProblem={diagnosticProblem}
+                  results={diagnosticResults}
+                  onProblem={setDiagnosticProblem}
+                  onResult={(step, result) => setDiagnosticResults((current) => ({ ...current, [step]: result }))}
+                  onAction={runSimulation}
+                  onFault={selectFault}
+                />
               )}
             </main>
 
-            <ComponentPanel
+            {!fullScreen && <ComponentPanel
               component={selectedComponent}
               condition={condition}
               notes={notes}
               photos={photos}
               saving={saving}
+              simulation={simulation}
+              connectedLines={selectedLines}
+              diagnosticResults={diagnosticResults}
+              language={language}
               fileInputRef={fileInputRef}
               onCondition={setCondition}
               onNotes={setNotes}
@@ -407,7 +611,7 @@ export default function AirSystemModule({ currentUser }) {
               onAddJob={() => setJobModalOpen(true)}
               onNearby={() => setNearbyModalOpen(true)}
               onReport={generateReport}
-            />
+            />}
           </div>
         )}
 
@@ -452,20 +656,25 @@ function component(key, name, nameEs, section, category, location, fn, symptoms,
 }
 
 function applySimulation(current, action) {
-  if (action === "Reset Simulation") return { primary: 0, secondary: 0, trailer: 0, state: "System inactive", fault: "", serviceApplied: false, parkingSet: true, trailerSupplied: false };
-  if (action === "Build Air Pressure") return { ...current, primary: 120, secondary: 120, trailer: current.trailerSupplied ? 110 : current.trailer, state: "Normal air pressure", fault: "" };
-  if (action === "Apply Service Brakes") return { ...current, primary: Math.max(0, current.primary - 8), secondary: Math.max(0, current.secondary - 8), trailer: current.trailerSupplied ? Math.max(0, current.trailer - 6) : current.trailer, serviceApplied: true, state: "Service brakes applied" };
-  if (action === "Release Service Brakes") return { ...current, serviceApplied: false, state: "Service brakes released" };
-  if (action === "Set Parking Brakes") return { ...current, parkingSet: true, state: "Parking brakes set" };
-  if (action === "Release Parking Brakes") return { ...current, parkingSet: false, state: "Parking brakes released" };
+  if (action === "Reset System" || action === "Reset Simulation") return { supply: 0, primary: 0, secondary: 0, trailer: 0, state: "System inactive", fault: "", serviceApplied: false, parkingSet: true, trailerSupplied: false, compressorRunning: false };
+  if (action === "Start Engine / Compressor") return { ...current, compressorRunning: true, supply: Math.max(current.supply, 35), state: "Compressor running" };
+  if (action === "Stop Compressor") return { ...current, compressorRunning: false, state: "Compressor stopped" };
+  if (action === "Build Air Pressure") return { ...current, supply: 125, primary: 120, secondary: 120, trailer: current.trailerSupplied ? 110 : current.trailer, state: "Normal air pressure", fault: "" };
+  if (action === "Apply Foot Brake" || action === "Apply Service Brakes") return { ...current, primary: Math.max(0, current.primary - 8), secondary: Math.max(0, current.secondary - 8), trailer: current.trailerSupplied ? Math.max(0, current.trailer - 6) : current.trailer, serviceApplied: true, state: "Service brakes applied" };
+  if (action === "Release Foot Brake" || action === "Release Service Brakes") return { ...current, serviceApplied: false, state: "Service brakes released" };
+  if (action === "Set Tractor Parking Brakes" || action === "Set Parking Brakes") return { ...current, parkingSet: true, state: "Parking brakes set" };
+  if (action === "Release Tractor Parking Brakes" || action === "Release Parking Brakes") return { ...current, parkingSet: false, state: "Parking brakes released" };
   if (action === "Supply Air to Trailer") return { ...current, trailerSupplied: true, trailer: current.primary > 80 ? 105 : 55, state: "Trailer supplied" };
-  if (action === "Disconnect Red Line") return { ...current, trailerSupplied: false, trailer: 0, parkingSet: true, fault: "Red glad hand disconnected", state: "Trailer emergency brakes applied" };
-  if (action === "Disconnect Blue Line") return { ...current, serviceApplied: false, fault: "Blue service line disconnected", state: "Trailer service signal lost" };
+  if (action === "Pull Trailer Supply Valve" || action === "Disconnect Red Glad Hand" || action === "Disconnect Red Line") return { ...current, trailerSupplied: false, trailer: 0, parkingSet: true, fault: action, state: "Trailer emergency brakes applied" };
+  if (action === "Disconnect Blue Glad Hand" || action === "Disconnect Blue Line") return { ...current, serviceApplied: false, fault: action, state: "Trailer service signal lost" };
+  if (action === "Drain Supply Tank") return { ...current, supply: 0, primary: Math.min(current.primary, 40), secondary: Math.min(current.secondary, 40), state: "Supply tank drained", fault: "Supply reservoir leak" };
+  if (action === "Drain Primary Tank") return { ...current, primary: 0, state: "Primary tank drained", fault: "Primary tank leak" };
+  if (action === "Drain Secondary Tank") return { ...current, secondary: 0, state: "Secondary tank drained", fault: "Secondary tank leak" };
   if (action === "Simulate Air Leak") return { ...current, primary: Math.max(0, current.primary - 35), secondary: Math.max(0, current.secondary - 30), trailer: Math.max(0, current.trailer - 40), fault: "System air leak", state: "Air pressure dropping" };
   return current;
 }
 
-function buildInspectionPayload({ component, condition, notes, simulation, job, currentUser }) {
+function buildInspectionPayload({ component, condition, notes, simulation, job, currentUser, failure, diagnosticResults }) {
   return {
     job_id: job?.id || null,
     created_by: currentUser?.id || currentUser?.authUserId || null,
@@ -475,15 +684,108 @@ function buildInspectionPayload({ component, condition, notes, simulation, job, 
     component_name: component.name,
     component_name_es: component.nameEs,
     condition,
+    failure_type: failure || "",
     symptoms: component.symptoms,
     possible_causes: component.causes,
     recommendation: component.repair,
     dispatcher_notes: notes,
+    diagnostic_results: Object.entries(diagnosticResults || {}).map(([step, result]) => ({ step, result })),
+    required_parts: component.related.join(", "),
     primary_psi: simulation.primary,
     secondary_psi: simulation.secondary,
     trailer_psi: simulation.trailer,
     simulation_type: simulation.fault || simulation.state,
   };
+}
+
+function componentsForSection(section) {
+  if (section === "Trailer") return trailerComponents;
+  if (section === "Towing Trailer") return towingTrailerComponents;
+  if (section === "Converter Dolly") return converterDollyComponents;
+  if (section === "Truck") return truckComponents;
+  return allComponents;
+}
+
+function activeAirLines(section) {
+  if (section === "Truck") return truckAirLines;
+  if (section === "Trailer") return trailerAirLines;
+  if (section === "Towing Trailer") return trailerAirLines.map((line) => ({
+    ...line,
+    id: `towing-${line.id}`,
+    source: `towing-${line.source}`,
+    target: `towing-${line.target}`,
+    name: line.name.replace("Trailer", "Towing trailer"),
+  }));
+  if (section === "Converter Dolly") return [
+    airLine("dolly-supply", "Dolly red supply line", "Trailer supply circuit", "dolly-red-glad-hand", "dolly-reservoir", "M 100 210 C 245 180 335 205 420 230"),
+    airLine("dolly-service", "Dolly blue service line", "Trailer service circuit", "dolly-blue-glad-hand", "dolly-relay-valve", "M 100 280 C 250 330 385 340 550 300"),
+    airLine("dolly-reservoir-relay", "Dolly reservoir to relay valve", "Trailer supply circuit", "dolly-reservoir", "dolly-relay-valve", "M 420 230 C 470 245 520 265 550 300"),
+    airLine("dolly-parking", "Dolly spring brake control", "Trailer parking circuit", "dolly-spring-control", "dolly-spring-brakes", "M 650 250 C 710 305 770 330 800 370"),
+    airLine("dolly-service-chambers", "Dolly relay to service chambers", "Trailer service circuit", "dolly-relay-valve", "dolly-brake-chambers", "M 550 300 C 635 340 710 325 780 312"),
+  ];
+  return [...truckAirLines, ...trailerAirLines];
+}
+
+function linePressure(line, simulation) {
+  if (line.circuit === "Charging circuit") return simulation.supply || 0;
+  if (line.circuit === "Primary circuit") return simulation.primary || 0;
+  if (line.circuit === "Secondary circuit") return simulation.secondary || 0;
+  if (line.circuit === "Trailer supply circuit") return simulation.trailerSupplied ? simulation.trailer || 0 : 0;
+  if (line.circuit === "Trailer service circuit") return simulation.serviceApplied ? Math.max(0, simulation.trailer - 8) : 0;
+  if (line.circuit === "Parking circuit" || line.circuit === "Trailer parking circuit") return simulation.parkingSet ? 0 : simulation.primary || 0;
+  return 0;
+}
+
+function componentCircuit(component) {
+  if (component.key.includes("abs") || component.category === "ABS") return "ABS electronic control";
+  if (component.key.includes("primary")) return "Primary circuit";
+  if (component.key.includes("secondary")) return "Secondary circuit";
+  if (component.key.includes("parking") || component.key.includes("spring")) return "Parking circuit";
+  if (component.key.includes("red") || component.key.includes("supply")) return component.section === "Truck" ? "Park / Supply" : "Trailer supply circuit";
+  if (component.key.includes("blue") || component.key.includes("service")) return component.section === "Truck" ? "Secondary circuit" : "Trailer service circuit";
+  if (component.category === "Air Supply") return "Charging circuit";
+  if (component.category === "Brakes") return "Primary circuit / Service circuit";
+  return component.category;
+}
+
+function componentPsi(component, simulation) {
+  const circuit = componentCircuit(component);
+  if (circuit.includes("Primary")) return simulation.primary;
+  if (circuit.includes("Secondary")) return simulation.secondary;
+  if (circuit.includes("Trailer")) return simulation.trailer;
+  if (circuit.includes("Charging") || circuit.includes("Supply")) return simulation.supply;
+  if (circuit.includes("Parking")) return simulation.parkingSet ? 0 : simulation.primary;
+  return Math.max(simulation.primary, simulation.secondary, simulation.trailer);
+}
+
+function faultTarget(fault) {
+  const normalized = String(fault || "").toLowerCase();
+  if (normalized.includes("compressor")) return { componentKey: "air-compressor", lineId: "charging-1", pressure: { supply: 20, primary: 0, secondary: 0, trailer: 0 } };
+  if (normalized.includes("governor")) return { componentKey: "governor", lineId: "charging-1", pressure: { supply: 150, primary: 95, secondary: 95 } };
+  if (normalized.includes("dryer")) return { componentKey: "air-dryer", lineId: "charging-2", pressure: { supply: 45, primary: 25, secondary: 25 } };
+  if (normalized.includes("supply reservoir")) return { componentKey: "wet-tank", lineId: "charging-2", pressure: { supply: 30, primary: 35, secondary: 35 } };
+  if (normalized.includes("primary")) return { componentKey: "primary-tank", lineId: "primary-feed", pressure: { primary: 25 } };
+  if (normalized.includes("secondary")) return { componentKey: "secondary-tank", lineId: "secondary-feed", pressure: { secondary: 25 } };
+  if (normalized.includes("foot")) return { componentKey: "foot-brake-valve", lineId: "primary-service", pressure: { primary: 70, secondary: 70 } };
+  if (normalized.includes("tractor protection")) return { componentKey: "tractor-protection-valve", lineId: "tractor-protection", pressure: { trailer: 0 } };
+  if (normalized.includes("red")) return { componentKey: "red-glad-hand", lineId: "tractor-protection", pressure: { trailer: 0 } };
+  if (normalized.includes("blue")) return { componentKey: "blue-glad-hand", lineId: "trailer-service", pressure: { trailer: 90 } };
+  if (normalized.includes("relay")) return { componentKey: "relay-valves", lineId: "primary-service", pressure: { primary: 75, trailer: 55 } };
+  if (normalized.includes("abs sensor")) return { componentKey: "wheel-speed-sensors", lineId: "abs-control" };
+  if (normalized.includes("abs modulator")) return { componentKey: "abs-modulator", lineId: "abs-control" };
+  if (normalized.includes("brake chamber") || normalized.includes("spring brake")) return { componentKey: "spring-brake-chambers", lineId: "parking-control", pressure: { primary: 80, trailer: 45 } };
+  if (normalized.includes("trailer brakes")) return { componentKey: "relay-emergency-valve", lineId: "trailer-supply", pressure: { trailer: 30 } };
+  return { componentKey: selectedDefaultComponentForFault(), lineId: "", pressure: { supply: 75, primary: 65, secondary: 65, trailer: 45 } };
+}
+
+function selectedDefaultComponentForFault() {
+  return "air-compressor";
+}
+
+function diagnosticSummary(results) {
+  return Object.entries(results || {})
+    .map(([step, result]) => `${step}: ${result}`)
+    .join("; ");
 }
 
 function PsiBadge({ label, value }) {
@@ -496,43 +798,180 @@ function PsiBadge({ label, value }) {
   );
 }
 
-function AirDiagram({ section, components, selectedKey, simulation, onSelect }) {
-  const lineTone = simulation.fault ? "bg-red-500 animate-pulse" : simulation.primary > 90 ? "bg-emerald-500" : simulation.primary > 0 ? "bg-amber-400" : "bg-slate-300";
+function ColorLegend() {
+  const items = [
+    "Charging circuit",
+    "Primary circuit",
+    "Secondary circuit",
+    "Park / Supply",
+    "Parking circuit",
+    "Trailer supply circuit",
+    "Trailer service circuit",
+    "Trailer parking circuit",
+  ];
+  return (
+    <div className="sticky bottom-0 z-10 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
+      <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Color legend</p>
+      <div className="flex flex-wrap gap-2">
+        {items.map((item) => (
+          <span key={item} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700">
+            <span className="h-2.5 w-8 rounded-full" style={{ backgroundColor: circuitStyles[item]?.color || "#64748b" }} />
+            {circuitStyles[item]?.label || item}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WheelSvg({ x, y }) {
+  return (
+    <g>
+      <circle cx={x} cy={y} r="38" fill="#1f2937" />
+      <circle cx={x} cy={y} r="22" fill="#cbd5e1" />
+      <circle cx={x} cy={y} r="8" fill="#64748b" />
+    </g>
+  );
+}
+
+function sectionTitle(section) {
+  if (section === "Trailer") return "Trailer System - 53 ft Dry Van";
+  if (section === "Towing Trailer") return "Towing Trailer Air System";
+  if (section === "Converter Dolly") return "Converter Dolly Air System";
+  return "Truck / Tractor Air System";
+}
+
+function lineLabelX(path) {
+  const numbers = path.match(/-?\d+(\.\d+)?/g)?.map(Number) || [120];
+  return numbers[Math.max(0, Math.floor(numbers.length / 2) - 1)] || 120;
+}
+
+function lineLabelY(path) {
+  const numbers = path.match(/-?\d+(\.\d+)?/g)?.map(Number) || [0, 120];
+  return (numbers[Math.max(1, Math.floor(numbers.length / 2))] || 120) - 10;
+}
+
+function componentFill(component) {
+  if (component.category === "ABS") return "#dbeafe";
+  if (component.category === "Air Supply") return "#ecfdf5";
+  if (component.key.includes("spring") || component.key.includes("parking")) return "#fef3c7";
+  return "#ffffff";
+}
+
+function shortLabel(value) {
+  const text = String(value || "");
+  return text.length > 18 ? `${text.slice(0, 17)}...` : text;
+}
+
+function AirDiagram({ section, components, lines, selectedKey, selectedLineId, selectedLines, simulation, traceMode, traceCircuit, zoom, language, onSelect, onLineSelect }) {
+  const selectedLineKeys = new Set(selectedLines.map((line) => line.id));
+  const selectedComponent = components.find((item) => item.key === selectedKey);
+  const isTrailerLike = section !== "Truck";
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-black">{section === "Truck" ? "Class 8 Tractor Air System" : "53 ft Dry Van Trailer Air System"}</h2>
-          <p className="text-xs font-semibold text-slate-500">Red: emergency/supply. Blue: service. Green: normal flow.</p>
+          <h2 className="text-lg font-black">{sectionTitle(section)}</h2>
+          <p className="text-xs font-semibold text-slate-500">SVG schematic. Select components or air lines to trace pressure and flow.</p>
         </div>
         <Truck className="h-6 w-6 text-blue-600" />
       </div>
-      <div className="relative h-[420px] overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-        <div className="absolute left-[7%] top-[24%] h-[46%] w-[86%] rounded-[42px] border-4 border-slate-300 bg-white" />
-        {section === "Truck" ? (
-          <div className="absolute left-[8%] top-[18%] h-[38%] w-[28%] rounded-t-[40px] border-4 border-slate-300 bg-slate-100" />
-        ) : (
-          <div className="absolute left-[10%] top-[20%] h-[36%] w-[80%] rounded-lg border-4 border-slate-300 bg-white" />
-        )}
-        <div className="absolute left-[14%] right-[10%] top-[44%] h-1 rounded-full bg-red-500" />
-        <div className="absolute left-[14%] right-[10%] top-[54%] h-1 rounded-full bg-blue-500" />
-        <div className={`absolute left-[18%] right-[18%] top-[64%] h-1 rounded-full ${lineTone}`} />
-        <div className="absolute bottom-[13%] left-[18%] h-16 w-16 rounded-full border-8 border-slate-700 bg-slate-200" />
-        <div className="absolute bottom-[13%] right-[18%] h-16 w-16 rounded-full border-8 border-slate-700 bg-slate-200" />
-        {section === "Trailer" && <div className="absolute bottom-[13%] right-[34%] h-16 w-16 rounded-full border-8 border-slate-700 bg-slate-200" />}
-        {components.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => onSelect(item.key)}
-            style={{ left: `${item.x}%`, top: `${item.y}%` }}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full border px-2 py-1 text-[10px] font-black shadow-sm transition ${
-              selectedKey === item.key ? "border-blue-600 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-blue-300"
-            }`}
-          >
-            {item.name}
-          </button>
-        ))}
+      <div className="overflow-auto rounded-2xl border border-slate-200 bg-white">
+        <svg
+          viewBox="0 0 1000 520"
+          role="img"
+          aria-label={`${sectionTitle(section)} interactive air-brake schematic`}
+          className="min-h-[520px] min-w-[980px] origin-top-left transition-transform"
+          style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+        >
+          <defs>
+            <marker id="arrow-flow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="#0f172a" />
+            </marker>
+            <style>{`
+              .air-flow { stroke-dasharray: 10 10; animation: airFlow 1.1s linear infinite; }
+              .air-fault { animation: airFault 0.8s ease-in-out infinite; }
+              @keyframes airFlow { to { stroke-dashoffset: -40; } }
+              @keyframes airFault { 0%,100% { opacity: 1; } 50% { opacity: .28; } }
+            `}</style>
+          </defs>
+
+          <rect x="20" y="20" width="960" height="470" rx="24" fill="#f8fafc" stroke="#cbd5e1" />
+          {isTrailerLike ? (
+            <>
+              <rect x="95" y="120" width="780" height="210" rx="14" fill="#ffffff" stroke="#94a3b8" strokeWidth="4" />
+              <line x1="150" y1="330" x2="850" y2="330" stroke="#64748b" strokeWidth="8" />
+              {[250, 670, 790].map((x) => <WheelSvg key={x} x={x} y={395} />)}
+              <text x="110" y="105" className="fill-slate-500 text-xs font-bold">{section}</text>
+            </>
+          ) : (
+            <>
+              <rect x="90" y="145" width="790" height="210" rx="70" fill="#ffffff" stroke="#94a3b8" strokeWidth="4" />
+              <path d="M 95 145 L 265 145 Q 345 170 345 245 L 345 355 L 95 355 Z" fill="#f1f5f9" stroke="#94a3b8" strokeWidth="4" />
+              <line x1="145" y1="355" x2="850" y2="355" stroke="#64748b" strokeWidth="8" />
+              {[180, 720, 835].map((x) => <WheelSvg key={x} x={x} y={420} />)}
+              <text x="110" y="130" className="fill-slate-500 text-xs font-bold">Class 8 tractor side / component schematic</text>
+            </>
+          )}
+
+          {lines.map((line) => {
+            const pressure = linePressure(line, simulation);
+            const isSelected = selectedLineId === line.id || selectedLineKeys.has(line.id);
+            const faded = traceMode && traceCircuit !== "All circuits" && line.circuit !== traceCircuit;
+            const faulted = simulation.fault && (selectedLineId === line.id || faultTarget(simulation.fault).lineId === line.id);
+            const active = pressure > 20 && !faded;
+            const stroke = circuitStyles[line.circuit]?.color || "#64748b";
+            return (
+              <g key={line.id} className={faded ? "opacity-20" : "opacity-100"}>
+                <path
+                  d={line.path}
+                  fill="none"
+                  stroke={stroke}
+                  strokeWidth={isSelected ? 8 : 5}
+                  strokeLinecap="round"
+                  markerEnd={active ? "url(#arrow-flow)" : ""}
+                  className={`${active ? "air-flow" : ""} ${faulted ? "air-fault" : ""} cursor-pointer transition-all hover:stroke-[8px]`}
+                  onClick={() => onLineSelect(line.id)}
+                >
+                  <title>{`${line.name} - ${line.circuit} - ${pressure} PSI`}</title>
+                </path>
+                <text x={lineLabelX(line.path)} y={lineLabelY(line.path)} className="pointer-events-none fill-slate-700 text-[11px] font-black">
+                  {line.name} · {pressure} PSI
+                </text>
+              </g>
+            );
+          })}
+
+          {components.map((item) => {
+            const isSelected = item.key === selectedKey;
+            const connected = selectedLines.some((line) => line.source === item.key || line.target === item.key);
+            const faded = selectedComponent && !isSelected && !connected;
+            const faulted = simulation.fault && faultTarget(simulation.fault).componentKey === item.key;
+            const label = language === "es" ? item.nameEs : item.name;
+            return (
+              <g
+                key={item.key}
+                onClick={() => onSelect(item.key)}
+                className={`cursor-pointer transition-opacity ${faded ? "opacity-35" : "opacity-100"} ${faulted ? "air-fault" : ""}`}
+              >
+                <rect
+                  x={item.x * 10 - 44}
+                  y={item.y * 5.2 - 17}
+                  width="88"
+                  height="34"
+                  rx="10"
+                  fill={isSelected ? "#2563eb" : componentFill(item)}
+                  stroke={isSelected ? "#1d4ed8" : "#64748b"}
+                  strokeWidth={isSelected ? 3 : 1.5}
+                />
+                <text x={item.x * 10} y={item.y * 5.2 + 4} textAnchor="middle" className={`pointer-events-none text-[10px] font-black ${isSelected ? "fill-white" : "fill-slate-800"}`}>
+                  {shortLabel(label)}
+                </text>
+                <title>{`${item.name} / ${item.nameEs}. ${componentCircuit(item)}. Current PSI: ${componentPsi(item, simulation)}`}</title>
+              </g>
+            );
+          })}
+        </svg>
       </div>
     </section>
   );
@@ -561,24 +1000,36 @@ function ComponentGrid({ components, selectedKey, onSelect }) {
   );
 }
 
-function ComponentPanel({ component, condition, notes, photos, saving, fileInputRef, onCondition, onNotes, onPhotos, onSave, onAddJob, onNearby, onReport }) {
+function ComponentPanel({ component, condition, notes, photos, saving, simulation, connectedLines, diagnosticResults, language, fileInputRef, onCondition, onNotes, onPhotos, onSave, onAddJob, onNearby, onReport }) {
+  const displayName = language === "es" ? component.nameEs : component.name;
+  const secondaryName = language === "es" ? component.name : component.nameEs;
+  const inputs = connectedLines.filter((line) => line.target === component.key).map((line) => line.name).join(", ") || "Manual/linked circuit";
+  const outputs = connectedLines.filter((line) => line.source === component.key).map((line) => line.name).join(", ") || "Downstream components";
   return (
     <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-4 xl:self-start">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-600">{component.section} / {component.category}</p>
-          <h2 className="mt-1 text-2xl font-black">{component.name}</h2>
-          <p className="text-sm font-bold text-slate-500">{component.nameEs}</p>
+          <h2 className="mt-1 text-2xl font-black">{displayName}</h2>
+          <p className="text-sm font-bold text-slate-500">{secondaryName}</p>
         </div>
         <Wind className="h-6 w-6 text-blue-600" />
       </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <InfoPill label="Circuit" value={componentCircuit(component)} />
+        <InfoPill label="Current PSI" value={`${componentPsi(component, simulation)} PSI`} />
+      </div>
       <InfoBlock label="Location" value={component.location} />
       <InfoBlock label="Function" value={component.function} />
+      <InfoBlock label="Normal operating condition" value="90-125 PSI available, no audible leak, correct delivery and release response." />
+      <InfoBlock label="Input source" value={inputs} />
+      <InfoBlock label="Output destination" value={outputs} />
       <InfoBlock label="Common symptoms" value={component.symptoms} />
       <InfoBlock label="Possible causes" value={component.causes} />
       <InfoBlock label="Basic inspection" value={component.inspect} />
       <InfoBlock label="Recommended repair" value={component.repair} />
       <InfoBlock label="Related components" value={component.related.join(", ")} />
+      <InfoBlock label="Diagnostic results" value={diagnosticSummary(diagnosticResults) || "No guided diagnostic steps marked yet."} />
 
       <label className="mt-4 block text-xs font-black uppercase tracking-wide text-slate-500">
         Component condition
@@ -640,18 +1091,32 @@ function InfoBlock({ label, value }) {
   );
 }
 
-function DiagnosticsPanel({ simulation, onAction, onFault }) {
+function InfoPill({ label, value }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 text-xs font-black text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function DiagnosticsPanel({ simulation, problem, selectedProblem, results, onProblem, onResult, onAction, onFault }) {
   const actions = [
+    "Start Engine / Compressor",
+    "Stop Compressor",
     "Build Air Pressure",
-    "Apply Service Brakes",
-    "Release Service Brakes",
-    "Set Parking Brakes",
-    "Release Parking Brakes",
+    "Apply Foot Brake",
+    "Release Foot Brake",
+    "Set Tractor Parking Brakes",
+    "Release Tractor Parking Brakes",
     "Supply Air to Trailer",
-    "Disconnect Red Line",
-    "Disconnect Blue Line",
-    "Simulate Air Leak",
-    "Reset Simulation",
+    "Pull Trailer Supply Valve",
+    "Disconnect Red Glad Hand",
+    "Disconnect Blue Glad Hand",
+    "Drain Supply Tank",
+    "Drain Primary Tank",
+    "Drain Secondary Tank",
+    "Reset System",
   ];
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -676,6 +1141,26 @@ function DiagnosticsPanel({ simulation, onAction, onFault }) {
             {fault}
           </button>
         ))}
+      </div>
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <label className="text-xs font-black uppercase tracking-wide text-slate-500">
+            Guided diagnostic mode
+            <select value={selectedProblem} onChange={(event) => onProblem(event.target.value)} className="mt-1 h-10 w-full rounded-xl border border-slate-200 px-3 text-sm font-bold outline-none focus:border-blue-500">
+              {diagnosticProblems.map((item) => <option key={item.label}>{item.label}</option>)}
+            </select>
+          </label>
+          <div className="grid gap-2">
+            {problem.steps.map((step, index) => (
+              <div key={step} className="grid gap-2 rounded-xl bg-white p-3 md:grid-cols-[1fr_180px] md:items-center">
+                <p className="text-sm font-bold text-slate-700">{index + 1}. {step}</p>
+                <select value={results[step] || "Not Tested"} onChange={(event) => onResult(step, event.target.value)} className="h-9 rounded-xl border border-slate-200 px-2 text-xs font-black text-slate-700">
+                  {["Passed", "Failed", "Not Tested", "Needs Technician Inspection"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </section>
   );
