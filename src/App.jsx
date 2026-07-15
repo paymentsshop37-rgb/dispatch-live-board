@@ -17,11 +17,13 @@ import {
   Shield,
   ShieldCheck,
   Users,
+  Wind,
   X,
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
 import { clearAuthSession, loadCurrentProfile, profileToSession } from "./authUsers";
 import { ActivityLogPage } from "./modules/activity";
+import { AirSystemModule } from "./modules/airSystem";
 import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard } from "./modules/billing";
 import { CustomerCRM } from "./modules/customers";
@@ -66,6 +68,7 @@ const sidebarSections = [
     label: "Operations",
     items: [
       { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
+      { id: "air-system", label: "Air System", icon: Wind, roles: ["admin", "dispatcher"] },
       { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
       { id: "invoices", label: "Invoices", icon: FileText, target: "billing", adminOnly: true },
     ],
@@ -348,6 +351,7 @@ export default function App() {
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
         {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter />}
+        {canAccessActiveView && activeView === "air-system" && <AirSystemModule currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
@@ -369,6 +373,7 @@ function canAccessView(view, role, permissions) {
   if (view === "dispatch") return true;
   if (view === "dashboard") return role === "admin" || role === "dispatcher";
   if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
+  if (view === "air-system") return role === "admin" || role === "dispatcher";
   if (view === "activity") return role === "admin" || role === "dispatcher";
   if (view === "customers") return role === "admin" || role === "dispatcher";
   if (["billing", "administration", "users", "reports", "settings"].includes(view)) {
@@ -394,6 +399,7 @@ function viewTitle(view) {
     dashboard: "Dashboard",
     dispatch: "Dispatch Center",
     technicians: "Technician Center",
+    "air-system": "Air System",
     customers: "Customers",
     billing: "Billing",
     administration: "Administration",
