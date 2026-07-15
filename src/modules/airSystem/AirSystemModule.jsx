@@ -183,6 +183,59 @@ const faultSimulations = [
 ];
 
 const allComponents = components;
+const diagramImageSrc = "/air-system-diagram.png";
+const diagramWidth = 732;
+const diagramHeight = 296;
+const xScale = diagramWidth / 1350;
+const yScale = diagramHeight / 620;
+const imageHotspots = [
+  h("mv3-control-module", 62, 61, 44, 28),
+  h("system-parking-brake", 117, 53, 16, 22),
+  h("tractor-parking-brake", 146, 53, 16, 22),
+  h("trailer-air-supply-control", 173, 53, 16, 22),
+  h("brake-chambers", 67, 98, 28, 90),
+  h("qr1-quick-release-valve", 74, 178, 30, 28),
+  h("lq5-double-check-valve", 108, 137, 36, 24),
+  h("pp1-parking-control-valve", 153, 134, 36, 25),
+  h("tp3-tractor-protection-valve", 349, 69, 52, 18),
+  h("service-line", 405, 64, 120, 12),
+  h("supply-line", 405, 78, 120, 12),
+  h("spring-brake-chambers", 414, 214, 74, 64),
+  h("bpr1-bobtail-relay-valve", 414, 148, 42, 33),
+  h("r14-relay-valve", 399, 133, 38, 28),
+  h("anti-compounding-circuit", 481, 168, 78, 16),
+  h("compressor", 108, 251, 43, 24),
+  h("d2-governor", 133, 262, 48, 18),
+  h("air-dryer", 103, 215, 44, 32),
+  h("safety-valve", 145, 217, 34, 24),
+  h("supply-reservoir", 179, 219, 55, 35),
+  h("front-axle-service-reservoir", 228, 246, 74, 28),
+  h("rear-axle-service-reservoir", 228, 201, 74, 29),
+  h("low-pressure-indicator", 253, 232, 34, 20),
+  h("air-pressure-gauge", 270, 245, 24, 18),
+  h("check-valve", 230, 155, 26, 19),
+  h("foot-brake-valve", 261, 151, 42, 25),
+  h("double-check-valve", 229, 170, 36, 22),
+  h("quick-release-valve", 354, 133, 33, 23),
+  h("relay-valve", 425, 128, 38, 31),
+  h("spring-brake-valve", 368, 125, 42, 31),
+  h("tractor-brake-chamber-front-left", 69, 76, 32, 42),
+  h("tractor-brake-chamber-rear-left", 421, 99, 70, 55),
+  h("tractor-brake-chamber-rear-right", 415, 225, 76, 52),
+  h("trailer-supply-line", 492, 76, 86, 13),
+  h("trailer-control-service-line", 487, 64, 92, 13),
+  h("trailer-reservoir", 624, 191, 49, 67),
+  h("anti-compound-line", 506, 173, 72, 14),
+  h("sr5-trailer-spring-brake-valve", 536, 186, 45, 32),
+  h("r12-relay-valve", 581, 173, 38, 32),
+  h("trailer-spring-brake-chambers", 606, 94, 170, 178),
+  h("trailer-brake-chambers", 607, 95, 170, 178),
+];
+const hotspotByKey = new Map(imageHotspots.map((hotspot) => [hotspot.key, hotspot]));
+
+function h(key, x, y, width, height) {
+  return { key, x, y, width, height };
+}
 
 export default function AirSystemModule({ currentUser }) {
   const diagramRef = useRef(null);
@@ -435,7 +488,7 @@ export default function AirSystemModule({ currentUser }) {
               <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">Diagnostics</p>
               <h1 className="mt-1 text-3xl font-black">Truck & Trailer Air System</h1>
               <p className="mt-2 max-w-3xl text-sm font-semibold text-slate-500">
-                High-resolution SVG schematic rebuilt from the uploaded truck/tractor and trailer air-brake reference.
+                Uploaded truck/tractor and trailer air-brake diagram with aligned interactive hotspots, diagnostics, PSI simulations, and job attachment tools.
               </p>
             </div>
             <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-50 p-2 text-center text-xs font-black text-slate-600">
@@ -601,17 +654,43 @@ function Toolbar({ search, filter, zoom, panMode, language, fullScreen, onSearch
 }
 
 function AirBrakeSvg({ diagramRef, components, selectedKey, selectedLineId, connectedLines, simulation, zoom, panMode, language, onSelect, onLineSelect }) {
+  const dragRef = useRef({ active: false, x: 0, y: 0, left: 0, top: 0 });
   const visibleIds = new Set(components.map((component) => component.key));
   const connectedIds = new Set(connectedLines.map((line) => line.id));
   const selectedComponent = allComponents.find((item) => item.key === selectedKey);
+  function startPan(event) {
+    if (!panMode || !diagramRef.current) return;
+    dragRef.current = {
+      active: true,
+      x: event.clientX,
+      y: event.clientY,
+      left: diagramRef.current.scrollLeft,
+      top: diagramRef.current.scrollTop,
+    };
+  }
+  function movePan(event) {
+    if (!dragRef.current.active || !diagramRef.current) return;
+    diagramRef.current.scrollLeft = dragRef.current.left - (event.clientX - dragRef.current.x);
+    diagramRef.current.scrollTop = dragRef.current.top - (event.clientY - dragRef.current.y);
+  }
+  function stopPan() {
+    dragRef.current.active = false;
+  }
   return (
-    <section ref={diagramRef} className={`max-h-[78vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm ${panMode ? "cursor-grab" : ""}`}>
+    <section
+      ref={diagramRef}
+      onMouseDown={startPan}
+      onMouseMove={movePan}
+      onMouseUp={stopPan}
+      onMouseLeave={stopPan}
+      className={`max-h-[78vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm ${panMode ? "cursor-grab active:cursor-grabbing" : ""}`}
+    >
       <svg
         id="air-system-svg"
-        viewBox="0 0 1350 620"
+        viewBox={`0 0 ${diagramWidth} ${diagramHeight}`}
         role="img"
-        aria-label="High-resolution interactive truck tractor and trailer air brake system schematic"
-        className="block min-h-[720px] min-w-[1500px] origin-top-left"
+        aria-label="Interactive truck tractor and trailer air brake system diagram"
+        className="block h-auto min-w-[1180px] origin-top-left bg-white"
         style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
       >
         <defs>
@@ -625,35 +704,31 @@ function AirBrakeSvg({ diagramRef, components, selectedKey, selectedLineId, conn
             @keyframes airFault { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
           `}</style>
         </defs>
-        <rect x="0" y="0" width="1350" height="620" fill="#ffffff" />
-        <text x="44" y="42" className="fill-slate-900 text-2xl font-black">TRUCK / TRACTOR SYSTEM</text>
-        <text x="780" y="42" className="fill-slate-900 text-2xl font-black">TRAILER SYSTEM</text>
-        <line x1="735" y1="20" x2="735" y2="590" stroke="#cbd5e1" strokeWidth="2" strokeDasharray="8 8" />
-        <rect x="36" y="58" width="660" height="514" rx="18" fill="#f8fafc" stroke="#cbd5e1" />
-        <rect x="765" y="58" width="540" height="514" rx="18" fill="#f8fafc" stroke="#cbd5e1" />
+        <rect x="0" y="0" width={diagramWidth} height={diagramHeight} fill="#ffffff" />
+        <image href={diagramImageSrc} x="0" y="0" width={diagramWidth} height={diagramHeight} preserveAspectRatio="xMidYMid meet" />
 
         {lines.map((line) => {
           const isSelected = selectedLineId === line.id || connectedIds.has(line.id);
           const isFaulted = simulation.fault && faultTarget(simulation.fault).lineId === line.id;
           const active = linePressure(line, simulation) > 15;
           return (
-            <g key={line.id} className={!isSelected && selectedComponent ? "opacity-30" : "opacity-100"}>
+            <g key={line.id} transform={`scale(${xScale} ${yScale})`} className={isSelected ? "opacity-100" : selectedComponent ? "opacity-0" : "opacity-20"}>
               <path
                 id={`svg-line-${line.id}`}
                 d={line.path}
                 fill="none"
                 stroke={circuitStyles[line.circuit]?.color || "#64748b"}
-                strokeWidth={isSelected ? 8 : 5}
+                strokeWidth={isSelected ? 10 : 6}
                 strokeLinecap="round"
                 markerEnd={active ? "url(#air-arrow)" : ""}
-                className={`${active ? "air-flow" : ""} ${isFaulted ? "air-fault" : ""} cursor-pointer transition-all hover:stroke-[9px]`}
+                className={`${active ? "air-flow" : ""} ${isFaulted ? "air-fault" : ""} cursor-pointer transition-all hover:stroke-[12px]`}
                 onClick={() => onLineSelect(line.id)}
               >
                 <title>{`${line.name} - ${circuitStyles[line.circuit]?.name || line.circuit} - ${linePressure(line, simulation)} PSI`}</title>
               </path>
-              <text x={labelPoint(line.path).x} y={labelPoint(line.path).y} className="pointer-events-none fill-slate-700 text-[13px] font-black">
+              {isSelected && <text x={labelPoint(line.path).x} y={labelPoint(line.path).y} className="pointer-events-none fill-slate-900 text-[16px] font-black">
                 {line.name} - {linePressure(line, simulation)} PSI
-              </text>
+              </text>}
             </g>
           );
         })}
@@ -665,6 +740,12 @@ function AirBrakeSvg({ diagramRef, components, selectedKey, selectedLineId, conn
           const faded = selectedComponent && !isSelected && !related;
           const isFaulted = simulation.fault && faultTarget(simulation.fault).componentKey === component.key;
           const label = language === "es" ? component.nameEs : component.name;
+          const hotspot = hotspotByKey.get(component.key) || {
+            x: component.x * xScale - 20,
+            y: component.y * yScale - 12,
+            width: component.size === "wide" ? 70 : 44,
+            height: 28,
+          };
           return (
             <g
               key={component.key}
@@ -678,12 +759,22 @@ function AirBrakeSvg({ diagramRef, components, selectedKey, selectedLineId, conn
               }}
               className={`cursor-pointer transition-opacity ${!isVisible || faded ? "opacity-25" : "opacity-100"} ${isFaulted ? "air-fault" : ""}`}
             >
-              <ComponentShape component={component} selected={isSelected} related={related} />
-              <text x={component.x} y={component.y + 5} textAnchor="middle" className={`pointer-events-none text-[12px] font-black ${isSelected ? "fill-white" : "fill-slate-900"}`}>
-                {wrapLabel(label).map((line, index) => (
-                  <tspan key={line} x={component.x} dy={index === 0 ? 0 : 14}>{line}</tspan>
-                ))}
-              </text>
+              <rect
+                x={hotspot.x}
+                y={hotspot.y}
+                width={hotspot.width}
+                height={hotspot.height}
+                rx="4"
+                fill={isSelected ? "rgba(37,99,235,0.18)" : "transparent"}
+                stroke={isSelected ? "#2563eb" : related ? "#0ea5e9" : "transparent"}
+                strokeWidth={isSelected ? 2.5 : 1.8}
+                className="transition-all hover:fill-blue-500/10 hover:stroke-blue-500"
+              />
+              {isSelected && (
+                <text x={hotspot.x + hotspot.width / 2} y={Math.max(12, hotspot.y - 4)} textAnchor="middle" className="pointer-events-none fill-blue-700 text-[10px] font-black">
+                  {label}
+                </text>
+              )}
               <title>{`${component.name} / ${component.nameEs}. ${circuitStyles[component.circuit]?.name || component.circuit}. ${componentPsi(component, simulation)} PSI`}</title>
             </g>
           );
@@ -691,20 +782,6 @@ function AirBrakeSvg({ diagramRef, components, selectedKey, selectedLineId, conn
       </svg>
     </section>
   );
-}
-
-function ComponentShape({ component, selected, related }) {
-  const width = component.size === "wide" ? 128 : 92;
-  const height = component.size === "wide" ? 42 : 38;
-  const fill = selected ? "#2563eb" : related ? "#dbeafe" : componentFill(component);
-  const stroke = selected ? "#1d4ed8" : related ? "#2563eb" : "#64748b";
-  if (component.category === "Reservoirs") {
-    return <ellipse cx={component.x} cy={component.y} rx={width / 2} ry={height / 2} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 1.5} />;
-  }
-  if (component.category === "Lines") {
-    return <rect x={component.x - width / 2} y={component.y - height / 2} width={width} height={height} rx="18" fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 1.5} />;
-  }
-  return <rect x={component.x - width / 2} y={component.y - height / 2} width={width} height={height} rx="10" fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 1.5} />;
 }
 
 function ComponentPanel({ component, condition, notes, photos, saving, simulation, connectedLines, diagnosticResults, language, fileInputRef, onCondition, onNotes, onPhotos, onSave, onAddJob, onNearby }) {
@@ -996,31 +1073,6 @@ function InfoPill({ label, value }) {
       <p className="mt-1 break-words text-xs font-black text-slate-800">{value}</p>
     </div>
   );
-}
-
-function componentFill(component) {
-  if (component.category === "Reservoirs") return "#ecfeff";
-  if (component.category === "Brakes") return "#fef3c7";
-  if (component.category === "Lines") return "#f8fafc";
-  if (component.category === "Charging") return "#e5e7eb";
-  if (component.category === "Controls") return "#dbeafe";
-  return "#ffffff";
-}
-
-function wrapLabel(value) {
-  const words = String(value || "").split(" ");
-  const lines = [];
-  let current = "";
-  words.forEach((word) => {
-    if (`${current} ${word}`.trim().length > 18) {
-      if (current) lines.push(current);
-      current = word;
-    } else {
-      current = `${current} ${word}`.trim();
-    }
-  });
-  if (current) lines.push(current);
-  return lines.slice(0, 3);
 }
 
 function labelPoint(path) {
