@@ -1,25 +1,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
-  Camera,
-  CheckCircle2,
   ClipboardList,
+  Download,
   FileText,
   Gauge,
+  Languages,
   MapPin,
-  PackagePlus,
+  Maximize2,
+  Move,
   RefreshCw,
   Save,
   Search,
-  Truck,
   Wind,
   Wrench,
   X,
-  Maximize2,
   ZoomIn,
   ZoomOut,
-  Languages,
-  Route,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { logActivity } from "../activity";
@@ -35,174 +31,132 @@ const conditions = [
   "Replace Recommended",
 ];
 
-const componentFilters = ["All", "Truck", "Trailer", "ABS", "Air Supply", "Brakes"];
-const airSystemDiagramSrc = "/air-system-diagram.png";
-const diagramSections = [
-  { id: "Truck", label: "TRUCK / TRACTOR SYSTEM" },
-  { id: "Trailer", label: "TRAILER SYSTEM - 53 FT DRY VAN" },
-  { id: "Towing Trailer", label: "TOWING TRAILER" },
-  { id: "Converter Dolly", label: "CONVERTER DOLLY" },
-];
-const utilityTabs = ["Diagnostics", "Saved Inspections"];
-const traceCircuits = [
-  "All circuits",
-  "Charging circuit",
-  "Primary circuit",
-  "Secondary circuit",
-  "Parking circuit",
-  "Trailer supply circuit",
-  "Trailer service circuit",
-];
+const statusOptions = ["Passed", "Failed", "Not Tested", "Needs Technician Inspection"];
+const componentFilters = ["All", "Controls", "Valves", "Reservoirs", "Lines", "Brakes", "Charging"];
+
 const circuitStyles = {
-  "Charging circuit": { color: "#111827", label: "Black: Charging" },
-  "Primary circuit": { color: "#16a34a", label: "Green: Primary" },
-  "Secondary circuit": { color: "#f97316", label: "Orange: Secondary" },
-  "Parking circuit": { color: "#eab308", label: "Yellow: Parking / Control" },
-  "Park / Supply": { color: "#dc2626", label: "Red: Park / Supply" },
-  "Trailer supply circuit": { color: "#dc2626", label: "Red: Trailer Supply" },
-  "Trailer service circuit": { color: "#2563eb", label: "Blue: Trailer Control / Service" },
-  "Trailer parking circuit": { color: "#eab308", label: "Yellow: Trailer Parking" },
+  charging: { name: "Charging", label: "Black: Charging", color: "#111827" },
+  primary: { name: "Primary", label: "Green: Primary", color: "#16a34a" },
+  secondary: { name: "Secondary", label: "Orange: Secondary", color: "#f97316" },
+  parkSupply: { name: "Park / Supply", label: "Dark red: Park / Supply", color: "#991b1b" },
+  parkingControl: { name: "Parking / Control", label: "Yellow: Parking / Control", color: "#eab308" },
+  trailerSupply: { name: "Trailer Supply", label: "Red: Trailer Supply", color: "#dc2626" },
+  trailerControl: { name: "Trailer Control", label: "Blue: Trailer Control", color: "#2563eb" },
+  trailerParking: { name: "Trailer Parking", label: "Yellow: Trailer Parking", color: "#eab308" },
+  antiCompound: { name: "Anti-compounding", label: "Anti-compounding circuit", color: "#7c3aed" },
 };
-const truckAirLines = [
-  airLine("charging-1", "Compressor to air dryer", "Charging circuit", "air-compressor", "air-dryer", "M 120 180 C 180 120 240 122 300 170"),
-  airLine("charging-2", "Air dryer to supply reservoir", "Charging circuit", "air-dryer", "wet-tank", "M 300 170 C 370 190 405 225 450 245"),
-  airLine("primary-feed", "Supply to primary reservoir", "Primary circuit", "wet-tank", "primary-tank", "M 450 245 C 510 205 570 205 625 230"),
-  airLine("secondary-feed", "Supply to secondary reservoir", "Secondary circuit", "wet-tank", "secondary-tank", "M 450 245 C 500 300 560 305 625 275"),
-  airLine("primary-service", "Primary service delivery", "Primary circuit", "foot-brake-valve", "relay-valves", "M 365 320 C 475 380 590 390 690 365"),
-  airLine("secondary-service", "Secondary service delivery", "Secondary circuit", "foot-brake-valve", "quick-release-valves", "M 365 320 C 435 275 500 295 560 345"),
-  airLine("parking-control", "Parking control to spring brakes", "Parking circuit", "parking-brake-valve", "spring-brake-chambers", "M 465 315 C 555 315 670 415 835 405"),
-  airLine("tractor-protection", "Trailer supply through tractor protection", "Trailer supply circuit", "trailer-supply-valve", "red-glad-hand", "M 585 315 C 675 245 790 245 900 225"),
-  airLine("trailer-service", "Trailer service blue line", "Trailer service circuit", "foot-brake-valve", "blue-glad-hand", "M 365 320 C 550 460 760 375 900 275"),
-];
-const trailerAirLines = [
-  airLine("trailer-supply", "Trailer red supply line", "Trailer supply circuit", "trailer-red-glad-hand", "trailer-reservoir", "M 90 190 C 220 170 330 195 420 250"),
-  airLine("trailer-service", "Trailer blue service line", "Trailer service circuit", "trailer-blue-glad-hand", "relay-emergency-valve", "M 90 255 C 240 305 355 325 480 300"),
-  airLine("reservoir-relay", "Reservoir to relay emergency valve", "Trailer supply circuit", "trailer-reservoir", "relay-emergency-valve", "M 420 250 C 455 250 480 265 500 300"),
-  airLine("relay-service-chambers", "Relay to service brake chambers", "Trailer service circuit", "relay-emergency-valve", "trailer-brake-chambers", "M 500 300 C 615 365 700 335 780 335"),
-  airLine("parking-spring", "Trailer parking spring brake control", "Trailer parking circuit", "spring-brake-control-valve", "trailer-spring-brake-chambers", "M 600 285 C 670 250 740 300 800 390"),
-  airLine("abs-control", "ABS modulator control", "Trailer service circuit", "trailer-abs-ecu", "trailer-abs-modulators", "M 420 385 C 520 420 625 420 705 370"),
-  airLine("suspension-air", "Suspension air supply", "Trailer supply circuit", "trailer-reservoir", "air-suspension-bags", "M 420 250 C 530 160 620 150 700 170"),
-];
-const diagramHotspots = [
-  hotspot("air-compressor", "Air compressor", 7, 24, 8, 8, ["charging-1"]),
-  hotspot("governor", "Governor", 14, 17, 7, 7, ["charging-1"]),
-  hotspot("air-dryer", "Air dryer", 21, 30, 8, 8, ["charging-1", "charging-2"]),
-  hotspot("wet-tank", "Supply reservoir", 31, 38, 9, 8, ["charging-2", "primary-feed", "secondary-feed"]),
-  hotspot("secondary-tank", "Front axle service reservoir", 42, 34, 10, 8, ["secondary-feed", "secondary-service"]),
-  hotspot("primary-tank", "Rear axle service reservoir", 42, 47, 10, 8, ["primary-feed", "primary-service"]),
-  hotspot("foot-brake-valve", "Foot brake valve", 31, 61, 8, 8, ["primary-service", "secondary-service", "trailer-service"]),
-  hotspot("parking-brake-valve", "Parking control valve", 39, 61, 8, 8, ["parking-control"]),
-  hotspot("trailer-supply-valve", "Trailer supply control", 48, 61, 8, 8, ["tractor-protection"]),
-  hotspot("tractor-protection-valve", "Tractor protection valve", 59, 54, 9, 8, ["tractor-protection", "trailer-service"]),
-  hotspot("quick-release-valves", "Quick release valves", 55, 71, 9, 8, ["secondary-service"]),
-  hotspot("relay-valves", "Relay valves", 67, 70, 8, 8, ["primary-service"]),
-  hotspot("spring-brake-chambers", "Spring brake chambers", 78, 76, 10, 9, ["parking-control"]),
-  hotspot("red-glad-hand", "Red trailer supply line", 67, 38, 12, 7, ["tractor-protection", "trailer-supply"]),
-  hotspot("blue-glad-hand", "Blue trailer service line", 67, 48, 12, 7, ["trailer-service"]),
-  hotspot("trailer-reservoir", "Trailer reservoir", 78, 39, 10, 8, ["trailer-supply", "reservoir-relay"]),
-  hotspot("spring-brake-control-valve", "Trailer spring brake control valve", 83, 52, 10, 8, ["parking-spring"]),
-  hotspot("anti-compounding-valve", "Anti-compounding valve", 87, 61, 9, 8, ["parking-spring", "relay-service-chambers"]),
-  hotspot("relay-emergency-valve", "Trailer relay valve", 78, 58, 9, 8, ["reservoir-relay", "relay-service-chambers"]),
-  hotspot("trailer-brake-chambers", "Trailer brake chambers", 91, 72, 10, 10, ["relay-service-chambers", "parking-spring"]),
-];
-const diagramLineOverlays = [
-  lineOverlay("charging-1", "Compressor charging line", 12, 24, 18, 4, "Charging circuit"),
-  lineOverlay("charging-2", "Air dryer to supply reservoir", 27, 32, 18, 4, "Charging circuit"),
-  lineOverlay("primary-feed", "Supply to rear axle service reservoir", 38, 41, 16, 4, "Primary circuit"),
-  lineOverlay("secondary-feed", "Supply to front axle service reservoir", 38, 31, 16, 4, "Secondary circuit"),
-  lineOverlay("primary-service", "Primary service brake line", 35, 60, 34, 5, "Primary circuit"),
-  lineOverlay("secondary-service", "Secondary service brake line", 35, 67, 25, 5, "Secondary circuit"),
-  lineOverlay("parking-control", "Parking control line", 42, 73, 38, 5, "Parking circuit"),
-  lineOverlay("tractor-protection", "Red trailer supply line", 58, 38, 36, 5, "Trailer supply circuit"),
-  lineOverlay("trailer-service", "Blue trailer service line", 57, 49, 36, 5, "Trailer service circuit"),
-  lineOverlay("trailer-supply", "Trailer supply line", 70, 38, 20, 5, "Trailer supply circuit"),
-  lineOverlay("reservoir-relay", "Trailer reservoir feed to relay valve", 76, 49, 14, 5, "Trailer supply circuit"),
-  lineOverlay("relay-service-chambers", "Trailer relay to brake chambers", 79, 65, 16, 6, "Trailer service circuit"),
-  lineOverlay("parking-spring", "Trailer spring brake parking line", 82, 57, 16, 5, "Trailer parking circuit"),
+
+const components = [
+  c("mv3-control-module", "MV-3 Control Module", "Modulo de control MV-3", "Controls", "Truck cab dash", "parkSupply", "Coordinates tractor parking brake, trailer supply, and system parking controls.", "Control knobs respond smoothly, no air leakage at dash, correct supply and exhaust.", "Air leak at dash, trailer supply will not stay in, parking controls stuck.", "Verify supply air to module, listen for dash leaks, test push-pull controls.", "Internal seal leak, contaminated valve, cracked fitting, low supply pressure.", "Replace MV-3 module or repair supply/control lines.", ["system-parking-brake", "tractor-parking-brake", "trailer-air-supply-control"], 275, 112, "wide"),
+  c("system-parking-brake", "System Parking Brake", "Freno de parqueo del sistema", "Controls", "MV-3 control cluster", "parkSupply", "Applies system parking brakes by exhausting spring brake air.", "Applies and releases with correct push-pull action.", "Parking brake will not set, will not release, or leaks.", "Set and release control while checking spring brake delivery.", "MV-3 fault, spring brake valve leak, low air pressure.", "Repair control module or parking control circuit.", ["mv3-control-module", "spring-brake-valve"], 198, 68),
+  c("tractor-parking-brake", "Tractor Parking Brake", "Freno de parqueo del tractor", "Controls", "Dash parking control", "parkingControl", "Controls tractor spring brake application and release.", "Spring brakes release above normal pressure and apply when exhausted.", "Tractor brakes remain locked or apply unexpectedly.", "Check delivery to tractor spring brake chambers.", "Parking valve leak, spring brake valve fault, blocked line.", "Repair tractor parking circuit.", ["pp1-parking-control-valve", "spring-brake-chambers"], 280, 62),
+  c("trailer-air-supply-control", "Trailer Air Supply Control", "Control de suministro de aire al trailer", "Controls", "Dash trailer supply control", "parkSupply", "Sends supply air through the tractor protection valve to the trailer.", "Trailer supply charges and holds pressure.", "Trailer brakes locked, red line no air, control pops out.", "Check supply pressure and red glad hand delivery.", "Low air, TP-3 fault, red line leak, MV-3 fault.", "Repair supply control or tractor protection valve.", ["tp3-tractor-protection-valve", "supply-line"], 365, 70),
+  c("brake-chambers", "Brake Chambers", "Camaras de freno", "Brakes", "Tractor service brake wheel ends", "primary", "Convert service air pressure into pushrod braking force.", "No leaks, correct stroke, brakes apply evenly.", "Leak on apply, weak braking, excessive stroke.", "Apply service brake and measure pushrod stroke.", "Diaphragm leak, out-of-adjustment foundation brakes, damaged chamber.", "Replace leaking chambers and inspect slack adjusters.", ["relay-valve", "quick-release-valve"], 160, 420),
+  c("qr1-quick-release-valve", "QR-1 Quick Release Valve", "Valvula QR-1 escape rapido", "Valves", "Tractor spring/service release area", "parkingControl", "Exhausts air quickly to release brake chambers.", "Rapid exhaust on release, no constant leak.", "Slow release, dragging brakes, exhaust leak.", "Listen at exhaust while releasing brakes.", "Stuck diaphragm, dirt, blocked exhaust port.", "Replace QR-1 valve and clean lines.", ["spring-brake-chambers", "tractor-parking-brake"], 185, 235),
+  c("lq5-double-check-valve", "LQ-5 Double Check Valve", "Valvula doble check LQ-5", "Valves", "Parking/anti-compounding circuit", "antiCompound", "Selects the higher pressure signal and protects circuits from backfeed.", "No cross-leak, correct signal delivery.", "Air backfeed, park/service conflict, dragging brakes.", "Check both inputs and output pressure.", "Internal shuttle leak, contamination, wrong plumbing.", "Replace LQ-5 and verify plumbing.", ["anti-compounding-circuit", "pp1-parking-control-valve"], 282, 215),
+  c("pp1-parking-control-valve", "PP-1 Parking Control Valve", "Valvula PP-1 parqueo", "Valves", "Parking control line", "parkingControl", "Controls parking air delivery/exhaust.", "Holds pressure and exhausts correctly.", "Parking brakes will not release or set.", "Check valve inlet and delivery pressure.", "Internal seal failure, blocked exhaust, low supply.", "Replace PP-1 valve.", ["tractor-parking-brake", "spring-brake-valve"], 380, 220),
+  c("tp3-tractor-protection-valve", "TP-3 Tractor Protection Valve", "Valvula TP-3 proteccion del tractor", "Valves", "Back of cab trailer connection", "parkSupply", "Protects tractor air if trailer lines fail.", "Red and blue glad hands deliver correct pressure without tractor loss.", "Air loss when connected, trailer not charging.", "Disconnect trailer and verify isolation and delivery.", "Stuck TP-3, line leak, bad supply signal.", "Replace TP-3 or repair trailer line circuit.", ["trailer-air-supply-control", "service-line", "supply-line"], 510, 175),
+  c("service-line", "Service Line", "Linea de servicio", "Lines", "Blue tractor-to-trailer service circuit", "trailerControl", "Carries service brake control signal to trailer relay valve.", "Pressure rises when foot brake is applied.", "Trailer brakes not applying, leak on application.", "Apply foot brake and verify blue line pressure.", "Broken hose, blocked line, bad glad hand, foot valve fault.", "Repair service line or related control valve.", ["foot-brake-valve", "tp3-tractor-protection-valve", "trailer-control-service-line"], 555, 235, "wide"),
+  c("supply-line", "Supply Line", "Linea de suministro", "Lines", "Red tractor-to-trailer supply circuit", "trailerSupply", "Charges trailer reservoir and releases trailer spring brakes.", "Maintains trailer reservoir pressure.", "Trailer brakes locked, red line leak.", "Verify red glad hand pressure and trailer reservoir fill.", "Red line leak, TP-3 fault, trailer spring valve issue.", "Repair supply line and retest trailer charge.", ["tp3-tractor-protection-valve", "trailer-supply-line"], 555, 115, "wide"),
+  c("spring-brake-chambers", "Spring Brake Chambers", "Camaras spring brake", "Brakes", "Tractor spring brake wheel ends", "parkingControl", "Apply parking/emergency brakes by spring force when air is removed.", "Release with sufficient air and apply when exhausted.", "Locked brakes, air leak, sudden application.", "Verify release pressure and inspect chamber for leaks.", "Chamber leak, broken spring, parking control problem.", "Replace chamber assembly and verify release circuit.", ["qr1-quick-release-valve", "spring-brake-valve"], 405, 430),
+  c("bpr1-bobtail-relay-valve", "BP-R1 Bobtail Proportioning Relay Valve", "Valvula relay proporcionadora BP-R1", "Valves", "Tractor bobtail brake circuit", "primary", "Balances brake delivery when tractor operates without trailer.", "Smooth bobtail braking with no rear wheel lockup.", "Harsh bobtail braking, uneven brake delivery.", "Check delivery pressure bobtail vs coupled.", "Valve fault, control line issue, contamination.", "Replace BP-R1 valve and confirm brake balance.", ["relay-valve", "foot-brake-valve"], 455, 330, "wide"),
+  c("r14-relay-valve", "R-14 Relay Valve", "Valvula relay R-14", "Valves", "Tractor rear brake relay area", "primary", "Delivers high volume air to rear service chambers.", "Fast brake application and release.", "Brake delay, leak at exhaust, dragging brakes.", "Apply and release brakes while listening at exhaust.", "Internal relay leak, contamination, bad signal.", "Replace R-14 relay valve.", ["rear-axle-service-reservoir", "brake-chambers"], 535, 365),
+  c("anti-compounding-circuit", "Anti-compounding circuit", "Circuito anti-compounding", "Lines", "Between parking and service circuits", "antiCompound", "Prevents spring and service force stacking.", "No simultaneous compounding during park/service transition.", "Dragging brakes, overheated chambers.", "Apply parking and service controls while checking chamber delivery.", "Bad double-check valve, wrong plumbing, blocked line.", "Repair anti-compounding circuit and verify operation.", ["lq5-double-check-valve", "spring-brake-valve"], 338, 276, "wide"),
+  c("compressor", "Compressor", "Compresor", "Charging", "Engine accessory drive", "charging", "Builds compressed air for the air brake system.", "Builds pressure to governor cut-out in normal time.", "No pressure, slow build, oil in system.", "Measure build rate and inspect discharge line.", "Worn compressor, intake restriction, governor issue.", "Repair drive/intake or replace compressor.", ["d2-governor", "air-dryer"], 80, 115),
+  c("d2-governor", "D-2 Governor", "Gobernador D-2", "Charging", "Compressor control line", "charging", "Controls compressor cut-in and cut-out.", "Cut-in/cut-out occurs at correct PSI.", "Compressor pumps constantly or never loads.", "Check governor signal and cut-out pressure.", "Bad governor, blocked unloader line, misadjustment.", "Replace D-2 governor and verify pressures.", ["compressor", "air-dryer"], 158, 115),
+  c("air-dryer", "Air Dryer", "Secador de aire", "Charging", "After compressor discharge", "charging", "Removes moisture and oil vapor before reservoirs.", "Purges normally and keeps tanks dry.", "Continuous purge, wet tanks, frozen valves.", "Inspect purge cycle and drain reservoirs.", "Bad purge valve, saturated cartridge, heater issue.", "Service dryer cartridge/purge valve.", ["supply-reservoir", "safety-valve"], 245, 150),
+  c("safety-valve", "Safety Valve", "Valvula de seguridad", "Valves", "Supply reservoir/dryer area", "charging", "Protects system from overpressure.", "Closed below rated relief pressure.", "Popping off, constant air loss.", "Verify system pressure and relief rating.", "Overpressure from governor fault, weak valve.", "Correct pressure issue or replace valve.", ["air-dryer", "supply-reservoir"], 340, 142),
+  c("supply-reservoir", "Supply Reservoir", "Tanque de suministro", "Reservoirs", "First reservoir after dryer", "charging", "Stores charging air before primary/secondary reservoirs.", "Holds pressure with no leak.", "Low supply pressure, water contamination.", "Drain tank and pressure test fittings.", "Tank leak, drain leak, dryer failure.", "Repair leak and service dryer.", ["front-axle-service-reservoir", "rear-axle-service-reservoir"], 420, 145),
+  c("front-axle-service-reservoir", "Front Axle Service Reservoir", "Tanque servicio eje delantero", "Reservoirs", "Secondary/front service circuit", "secondary", "Stores air for front axle service brakes.", "Maintains secondary PSI.", "Low secondary pressure, front brake weakness.", "Pressure test front reservoir and check valve.", "Tank leak, check valve fault, line restriction.", "Repair leak or replace reservoir/check valve.", ["foot-brake-valve", "quick-release-valve"], 310, 470, "wide"),
+  c("rear-axle-service-reservoir", "Rear Axle Service Reservoir", "Tanque servicio eje trasero", "Reservoirs", "Primary/rear service circuit", "primary", "Stores air for rear axle service brakes.", "Maintains primary PSI.", "Low primary pressure, rear brake weakness.", "Pressure test rear reservoir and relay supply.", "Tank leak, check valve fault, relay leak.", "Repair leak or replace reservoir/check valve.", ["r14-relay-valve", "relay-valve"], 508, 472, "wide"),
+  c("low-pressure-indicator", "Low Pressure Indicator", "Indicador de baja presion", "Controls", "Cab warning circuit", "secondary", "Warns driver when air pressure is below safe range.", "Activates below threshold and clears above normal pressure.", "No warning, false warning, warning stays on.", "Lower pressure safely and verify warning operation.", "Bad switch, wiring fault, low air.", "Repair switch/wiring and confirm pressure.", ["air-pressure-gauge", "front-axle-service-reservoir"], 190, 520),
+  c("air-pressure-gauge", "Air Pressure Gauge", "Manometro de aire", "Controls", "Cab instrument panel", "primary", "Displays primary and secondary system pressure.", "Accurate readings matching test gauge.", "Incorrect PSI, stuck gauge, no movement.", "Compare to calibrated shop gauge.", "Gauge fault, sender/line restriction.", "Replace gauge/sender and verify readings.", ["low-pressure-indicator"], 90, 520),
+  c("check-valve", "Check Valve", "Valvula check", "Valves", "Reservoir feed circuits", "charging", "Prevents air backflow between reservoirs.", "Holds downstream pressure when upstream drops.", "Backfeed, pressure loss across tanks.", "Leak test valve by isolating circuits.", "Worn seat, contamination.", "Replace check valve.", ["supply-reservoir"], 438, 240),
+  c("foot-brake-valve", "Foot Brake Valve", "Valvula de pedal", "Controls", "Driver foot pedal", "primary", "Meters service brake pressure to tractor and trailer service circuits.", "Smooth proportional delivery.", "No service signal, leak on apply, uneven braking.", "Measure delivery pressure while applying pedal.", "Internal leak, blocked delivery, bad linkage.", "Replace valve and verify delivery.", ["service-line", "relay-valve", "quick-release-valve"], 170, 365),
+  c("double-check-valve", "Double Check Valve", "Valvula doble check", "Valves", "Service signal selection circuit", "primary", "Selects higher of two service signals.", "No cross leak and correct output.", "Backfeed, uneven application.", "Check both inputs and output.", "Internal shuttle leak or contamination.", "Replace double-check valve.", ["foot-brake-valve", "relay-valve"], 312, 350),
+  c("quick-release-valve", "Quick Release Valve", "Valvula escape rapido", "Valves", "Front axle service circuit", "secondary", "Exhausts front brake chamber air quickly.", "Fast release without constant exhaust leak.", "Slow front brake release, dragging.", "Release service brakes and listen at exhaust.", "Blocked exhaust, failed diaphragm.", "Replace quick release valve.", ["front-axle-service-reservoir", "brake-chambers"], 240, 420),
+  c("relay-valve", "Relay Valve", "Valvula relay", "Valves", "Rear service brake circuit", "primary", "Uses reservoir air to quickly apply rear brake chambers.", "Fast rear brake application.", "Leak at exhaust, brake delay.", "Apply/release brakes and check exhaust.", "Internal relay fault, contamination.", "Replace relay valve.", ["rear-axle-service-reservoir", "brake-chambers"], 590, 420),
+  c("spring-brake-valve", "Spring Brake Valve", "Valvula spring brake", "Valves", "Tractor spring brake control", "parkingControl", "Controls spring brake release/application.", "Releases above normal pressure and exhausts when parking.", "Spring brakes will not release or apply.", "Check delivery pressure to spring brake chambers.", "Valve leak, low supply, blocked line.", "Replace valve or repair delivery circuit.", ["spring-brake-chambers", "pp1-parking-control-valve"], 470, 265),
+  c("tractor-brake-chamber-front-left", "Visible tractor brake chamber", "Camara visible tractor", "Brakes", "Front tractor axle", "secondary", "Visible tractor service chamber from reference diagram.", "No leak and correct stroke.", "Leak, excessive stroke.", "Inspect chamber and stroke.", "Diaphragm or foundation brake fault.", "Repair chamber/foundation brake.", ["quick-release-valve"], 75, 395),
+  c("tractor-brake-chamber-rear-left", "Visible tractor brake chamber", "Camara visible tractor", "Brakes", "Rear tractor axle", "primary", "Visible tractor service/spring chamber from reference diagram.", "No leak and correct stroke.", "Leak, excessive stroke.", "Inspect chamber and stroke.", "Diaphragm or foundation brake fault.", "Repair chamber/foundation brake.", ["relay-valve"], 654, 505),
+  c("tractor-brake-chamber-rear-right", "Visible tractor brake chamber", "Camara visible tractor", "Brakes", "Rear tractor axle", "primary", "Visible tractor service/spring chamber from reference diagram.", "No leak and correct stroke.", "Leak, excessive stroke.", "Inspect chamber and stroke.", "Diaphragm or foundation brake fault.", "Repair chamber/foundation brake.", ["relay-valve"], 705, 445),
+  c("trailer-supply-line", "Trailer Supply Line", "Linea de suministro trailer", "Lines", "Red trailer supply circuit", "trailerSupply", "Charges trailer reservoir and releases trailer spring brakes.", "Trailer reservoir fills and holds pressure.", "Red line leak, trailer locked.", "Verify red line pressure into trailer.", "Bad glad hand, broken line, SR-5 issue.", "Repair red supply circuit.", ["trailer-reservoir", "sr5-trailer-spring-brake-valve"], 815, 116, "wide"),
+  c("trailer-control-service-line", "Trailer Control / Service Line", "Linea control/servicio trailer", "Lines", "Blue trailer service circuit", "trailerControl", "Carries service brake control pressure to trailer relay valve.", "Pressure rises with foot brake.", "Trailer brakes not applying.", "Verify blue line pressure at trailer relay.", "Bad service line, TP-3/foot valve issue.", "Repair blue control circuit.", ["r12-relay-valve", "service-line"], 810, 210, "wide"),
+  c("trailer-reservoir", "Trailer Reservoir", "Tanque del trailer", "Reservoirs", "Trailer frame", "trailerSupply", "Stores air for trailer brake system.", "Charges and holds normal trailer PSI.", "Low trailer pressure, spring brakes apply.", "Pressure test reservoir and drains.", "Tank leak, drain leak, supply restriction.", "Repair reservoir/fittings.", ["sr5-trailer-spring-brake-valve", "r12-relay-valve"], 928, 168),
+  c("anti-compound-line", "Anti-Compound Line", "Linea anti-compound", "Lines", "Trailer service/parking interface", "antiCompound", "Prevents service and parking brake force compounding.", "No dragging during park/service transitions.", "Dragging brakes, overheated chambers.", "Check line pressure during service and parking.", "Wrong plumbing, stuck valve, restricted line.", "Repair anti-compound line.", ["sr5-trailer-spring-brake-valve"], 935, 270, "wide"),
+  c("sr5-trailer-spring-brake-valve", "SR-5 Trailer Spring Brake Valve", "Valvula SR-5 spring brake trailer", "Valves", "Trailer spring brake control", "trailerParking", "Controls trailer spring brake release and emergency application.", "Releases spring brakes when trailer reservoir is charged.", "Trailer locked, not releasing, exhaust leak.", "Check reservoir supply and spring delivery.", "SR-5 fault, reservoir low, red line leak.", "Replace SR-5 valve or repair supply.", ["trailer-reservoir", "trailer-spring-brake-chambers"], 1042, 235, "wide"),
+  c("r12-relay-valve", "R-12 Relay Valve", "Valvula relay R-12", "Valves", "Trailer service brake relay", "trailerControl", "Delivers trailer reservoir air to service chambers on blue signal.", "Fast trailer brake application.", "Service delay, leak, no delivery.", "Apply service signal and check relay delivery/exhaust.", "Internal valve leak, no signal, contamination.", "Replace R-12 valve.", ["trailer-control-service-line", "trailer-brake-chambers"], 1070, 360),
+  c("trailer-spring-brake-chambers", "Spring Brake Chambers", "Camaras spring brake trailer", "Brakes", "Trailer axle spring brake chambers", "trailerParking", "Apply trailer parking/emergency brakes when air is removed.", "Release with charged trailer reservoir.", "Trailer locked, chamber leak.", "Check release pressure and listen for leaks.", "Spring chamber leak, SR-5 issue, low supply.", "Replace chamber or repair spring circuit.", ["sr5-trailer-spring-brake-valve"], 1210, 235, "wide"),
+  c("trailer-brake-chambers", "Visible trailer brake chambers", "Camaras visibles trailer", "Brakes", "Trailer service brake chambers", "trailerControl", "Convert trailer service air into braking force.", "Apply evenly with correct stroke.", "Leak, no application, excessive stroke.", "Apply service brakes and measure stroke.", "Diaphragm leak, relay fault, foundation brake issue.", "Repair chambers/foundation brakes.", ["r12-relay-valve"], 1220, 405, "wide"),
 ];
 
-function hotspot(componentKey, label, x, y, width, height, lineIds = []) {
-  return { componentKey, label, x, y, width, height, lineIds };
+const lines = [
+  l("line-compressor-dryer", "Compressor to air dryer", "charging", "compressor", "air-dryer", "M 95 135 C 150 130 195 138 245 150", 115),
+  l("line-governor-compressor", "D-2 governor control", "charging", "d2-governor", "compressor", "M 158 115 C 140 85 105 88 80 115", 115),
+  l("line-dryer-supply", "Air dryer to supply reservoir", "charging", "air-dryer", "supply-reservoir", "M 290 155 C 335 150 375 145 420 145", 125),
+  l("line-supply-front", "Supply to front axle service reservoir", "secondary", "supply-reservoir", "front-axle-service-reservoir", "M 420 170 C 385 260 330 365 310 470", 120),
+  l("line-supply-rear", "Supply to rear axle service reservoir", "primary", "supply-reservoir", "rear-axle-service-reservoir", "M 445 170 C 480 255 512 360 508 472", 120),
+  l("line-front-foot", "Front reservoir to foot brake valve", "secondary", "front-axle-service-reservoir", "foot-brake-valve", "M 310 470 C 250 450 195 415 170 365", 115),
+  l("line-rear-relay", "Rear reservoir to R-14 relay valve", "primary", "rear-axle-service-reservoir", "r14-relay-valve", "M 508 472 C 520 430 525 392 535 365", 115),
+  l("line-foot-quick", "Foot brake to quick release valve", "secondary", "foot-brake-valve", "quick-release-valve", "M 170 365 C 190 385 215 405 240 420", 85),
+  l("line-foot-relay", "Foot brake to relay valves", "primary", "foot-brake-valve", "relay-valve", "M 170 365 C 310 375 460 398 590 420", 85),
+  l("line-foot-service", "Foot brake to trailer service line", "trailerControl", "foot-brake-valve", "service-line", "M 170 365 C 330 295 445 260 555 235", 85),
+  l("line-mv3-tp3", "Trailer supply control to TP-3", "parkSupply", "trailer-air-supply-control", "tp3-tractor-protection-valve", "M 365 70 C 430 92 480 130 510 175", 115),
+  l("line-tp3-supply", "TP-3 to red trailer supply line", "trailerSupply", "tp3-tractor-protection-valve", "trailer-supply-line", "M 510 175 C 620 125 720 105 815 116", 110),
+  l("line-tp3-service", "TP-3 to blue trailer service line", "trailerControl", "tp3-tractor-protection-valve", "trailer-control-service-line", "M 510 205 C 615 225 710 218 810 210", 80),
+  l("line-pp1-spring", "Parking control to spring brake valve", "parkingControl", "pp1-parking-control-valve", "spring-brake-valve", "M 380 220 C 405 232 440 250 470 265", 110),
+  l("line-spring-chambers", "Spring brake valve to spring chambers", "parkingControl", "spring-brake-valve", "spring-brake-chambers", "M 470 265 C 465 330 445 382 405 430", 95),
+  l("line-anticompound", "Anti-compounding circuit", "antiCompound", "lq5-double-check-valve", "anti-compounding-circuit", "M 282 215 C 305 235 322 252 338 276", 95),
+  l("line-trailer-supply-reservoir", "Trailer supply line to reservoir", "trailerSupply", "trailer-supply-line", "trailer-reservoir", "M 815 116 C 850 128 890 150 928 168", 108),
+  l("line-trailer-reservoir-sr5", "Trailer reservoir to SR-5", "trailerSupply", "trailer-reservoir", "sr5-trailer-spring-brake-valve", "M 928 168 C 970 180 1010 205 1042 235", 105),
+  l("line-service-r12", "Trailer control line to R-12", "trailerControl", "trailer-control-service-line", "r12-relay-valve", "M 810 210 C 910 270 1000 315 1070 360", 75),
+  l("line-r12-chambers", "R-12 to trailer brake chambers", "trailerControl", "r12-relay-valve", "trailer-brake-chambers", "M 1070 360 C 1115 380 1168 395 1220 405", 80),
+  l("line-sr5-spring-chambers", "SR-5 to trailer spring brake chambers", "trailerParking", "sr5-trailer-spring-brake-valve", "trailer-spring-brake-chambers", "M 1042 235 C 1095 230 1155 232 1210 235", 95),
+  l("line-trailer-anti", "Trailer anti-compound line", "antiCompound", "anti-compound-line", "sr5-trailer-spring-brake-valve", "M 935 270 C 970 270 1008 258 1042 235", 85),
+];
+
+function c(id, name, nameEs, category, location, circuit, fn, normal, symptoms, inspect, causes, repair, related, x, y, size = "normal") {
+  return { id, key: id, name, nameEs, category, location, circuit, function: fn, normal, symptoms, inspect, causes, repair, related, x, y, size };
 }
 
-function lineOverlay(id, label, x, y, width, height, circuit) {
-  return { id, label, x, y, width, height, circuit };
+function l(id, name, circuit, source, target, path, normalPsi) {
+  return { id, name, circuit, source, target, path, normalPsi };
 }
 
-function airLine(id, name, circuit, source, target, path) {
-  return { id, name, circuit, source, target, path };
-}
-
-const truckComponents = [
-  component("air-compressor", "Air compressor", "Compresor de aire", "Truck", "Air Supply", "Engine accessory drive", "Builds compressed air for the brake system.", "Slow air build, oil in air system, no pressure.", "Worn compressor, intake restriction, governor issue.", "Check build rate, leaks, discharge line, and oil contamination.", "Inspect drive, governor signal, and replace compressor if output is low.", ["Governor", "Air dryer", "Wet tank"], 16, 34),
-  component("governor", "Governor", "Gobernador", "Truck", "Air Supply", "Compressor control line", "Controls compressor cut-in and cut-out pressure.", "Pressure too high, pressure too low, constant pumping.", "Bad governor, blocked control line, incorrect adjustment.", "Verify cut-in/cut-out pressure and control line air.", "Replace governor and clean control line if out of range.", ["Air compressor", "Air dryer"], 23, 28),
-  component("air-dryer", "Air dryer", "Secador de aire", "Truck", "Air Supply", "Frame rail after compressor", "Removes water and oil vapor before storage tanks.", "Continuous purging, moisture in tanks, frozen valves.", "Bad purge valve, saturated cartridge, heater failure.", "Drain tanks, inspect purge cycle, check heater power.", "Replace cartridge or purge valve; service heater circuit.", ["Wet tank", "Safety valve"], 31, 38),
-  component("wet-tank", "Wet tank", "Tanque humedo", "Truck", "Air Supply", "First reservoir after dryer", "Collects moisture and protects downstream tanks.", "Water discharge, low pressure, safety valve opening.", "Moisture buildup, bad drain, dryer problem.", "Drain tank and inspect for contamination.", "Repair drain and service dryer before returning to service.", ["Air dryer", "Primary air tank"], 42, 45),
-  component("primary-tank", "Primary air tank", "Tanque primario", "Truck", "Air Supply", "Frame rail primary circuit", "Stores air for rear/primary brake circuit.", "Low primary PSI, warning buzzer, weak brakes.", "Leak, check valve issue, damaged tank.", "Pressure test tank and fittings.", "Repair leaks or replace damaged tank.", ["Relay valves", "Brake chambers"], 52, 40),
-  component("secondary-tank", "Secondary air tank", "Tanque secundario", "Truck", "Air Supply", "Frame rail secondary circuit", "Stores air for front/secondary brake circuit.", "Low secondary PSI, front brake issue.", "Leak, valve failure, tank damage.", "Pressure test secondary circuit.", "Repair leaks and verify dual-circuit protection.", ["Foot brake valve", "Quick-release valves"], 61, 40),
-  component("safety-valve", "Safety valve", "Valvula de seguridad", "Truck", "Air Supply", "Reservoir or dryer area", "Protects system from overpressure.", "Valve popping, air loss.", "Overpressure, weak valve spring.", "Verify system pressure and valve rating.", "Correct overpressure cause or replace valve.", ["Governor", "Wet tank"], 47, 31),
-  component("foot-brake-valve", "Foot brake valve", "Valvula de pedal", "Truck", "Brakes", "Cab floor brake pedal", "Meters service brake air pressure.", "Uneven braking, brakes drag, no service signal.", "Internal leak, contamination, linkage issue.", "Check delivery pressure while applying pedal.", "Replace valve if leaking or delivery is incorrect.", ["Service line", "Relay valves"], 36, 58),
-  component("parking-brake-valve", "Parking brake valve", "Valvula de parqueo", "Truck", "Brakes", "Dash yellow control", "Controls spring brake release/application.", "Parking brakes will not release or set.", "Dash valve leak, supply issue, line blockage.", "Check supply and delivery at valve.", "Replace valve or repair supply circuit.", ["Spring brake chambers", "Trailer supply valve"], 46, 58),
-  component("trailer-supply-valve", "Trailer supply valve", "Valvula de suministro al trailer", "Truck", "Air Supply", "Dash red control", "Supplies emergency air to trailer.", "Trailer brakes locked, red line no air.", "Valve leak, tractor protection valve fault.", "Check red line pressure with valve pushed in.", "Repair supply valve or tractor protection valve.", ["Tractor protection valve", "Red glad hand"], 58, 58),
-  component("tractor-protection-valve", "Tractor protection valve", "Valvula de proteccion del tractor", "Truck", "Air Supply", "Back of cab", "Protects tractor air if trailer line fails.", "Trailer not supplied, air loss when connected.", "Internal leak, stuck valve, bad control signal.", "Check red and blue glad hand delivery.", "Replace valve if it fails pressure isolation.", ["Trailer supply valve", "Glad hands"], 70, 52),
-  component("relay-valves", "Relay valves", "Valvulas relay", "Truck", "Brakes", "Near drive axles", "Deliver high-volume air to brake chambers.", "Brake delay, dragging, air leak.", "Leaking exhaust, contamination, bad signal.", "Apply brakes and listen at relay exhaust.", "Replace leaking relay valve and clean lines.", ["Foot brake valve", "Brake chambers"], 68, 70),
-  component("quick-release-valves", "Quick-release valves", "Valvulas de escape rapido", "Truck", "Brakes", "Near brake chambers", "Exhaust air quickly to release brakes.", "Slow release, dragging brakes.", "Blocked exhaust, contamination, failed diaphragm.", "Release brakes and verify fast exhaust.", "Replace valve and inspect downstream lines.", ["Brake chambers", "Service line"], 55, 72),
-  component("abs-ecu", "ABS ECU", "Modulo ABS", "Truck", "ABS", "Cab/frame electronics", "Monitors wheel speed and controls ABS events.", "ABS warning light, fault codes.", "Sensor fault, power issue, ECU fault.", "Scan ABS codes and verify power/ground.", "Repair circuit or replace failed ECU.", ["ABS modulator", "Wheel-speed sensors"], 44, 78),
-  component("abs-modulator", "ABS modulator", "Modulador ABS", "Truck", "ABS", "Near axle brake circuits", "Modulates brake pressure during wheel lock.", "ABS event fault, uneven braking.", "Valve failure, wiring issue, contamination.", "Command modulator with diagnostic tool.", "Repair wiring or replace modulator.", ["ABS ECU", "Brake chambers"], 76, 78),
-  component("brake-chambers", "Brake chambers", "Camaras de freno", "Truck", "Brakes", "At wheel ends", "Convert air pressure into pushrod force.", "Air leak, low stroke, weak braking.", "Diaphragm leak, loose clamp, damaged chamber.", "Listen for leaks and measure pushrod stroke.", "Replace leaking chamber and adjust brakes properly.", ["Slack adjusters", "S-cams"], 84, 67),
-  component("spring-brake-chambers", "Spring brake chambers", "Camaras spring brake", "Truck", "Brakes", "Drive axle wheel ends", "Apply parking/emergency brakes by spring force.", "Will not release, air leak, sudden application.", "Spring side failure, parking circuit leak.", "Cage only if trained; verify release pressure.", "Replace chamber assembly if leaking or damaged.", ["Parking brake valve", "Relay valves"], 85, 76),
-  component("slack-adjusters", "Slack adjusters", "Ajustadores de freno", "Truck", "Brakes", "Brake camshaft", "Maintain correct brake stroke.", "Excessive stroke, uneven braking.", "Failed auto adjuster, worn clevis, poor lubrication.", "Measure chamber stroke and inspect adjuster.", "Replace failed adjuster and verify foundation brakes.", ["S-cams", "Brake chambers"], 88, 84),
-  component("s-cams", "S-cams", "Levas S", "Truck", "Brakes", "Drum brake spider", "Spread brake shoes against drum.", "Brake bind, uneven shoe wear.", "Worn bushings, dry cam, seized camshaft.", "Inspect free movement and bushing play.", "Lubricate or replace cam/bushings as needed.", ["Slack adjusters", "Brake shoes"], 91, 88),
-  component("brake-drums", "Brake drums", "Tambores de freno", "Truck", "Brakes", "Wheel ends", "Friction surface for brake shoes.", "Cracks, heat checks, vibration.", "Overheating, wear, out-of-round drum.", "Inspect diameter, cracks, and heat damage.", "Replace drum if beyond service limits.", ["Brake shoes", "S-cams"], 94, 83),
-  component("brake-shoes", "Brake shoes", "Zapatas de freno", "Truck", "Brakes", "Inside drum assemblies", "Create friction to stop vehicle.", "Thin lining, contamination, pulling.", "Worn lining, oil/grease, hardware failure.", "Inspect lining thickness and hardware.", "Replace shoes/kit in axle sets when needed.", ["Brake drums", "Slack adjusters"], 94, 91),
-  component("air-disc-brakes", "Air disc brakes", "Frenos de disco de aire", "Truck", "Brakes", "Disc brake wheel ends", "Use air actuator and caliper to clamp rotor.", "Dragging, pad wear, rotor damage.", "Caliper slide issue, actuator fault.", "Inspect pads, rotor, caliper travel.", "Service caliper or replace pads/rotor by spec.", ["ABS modulator", "Brake chambers"], 80, 88),
-  component("red-glad-hand", "Red glad hand", "Mano de aire roja", "Truck", "Air Supply", "Back of cab", "Connects emergency/supply air to trailer.", "Red line leak, trailer brakes locked.", "Bad seal, cracked glad hand, damaged hose.", "Inspect seal and pressure with trailer supplied.", "Replace seal, glad hand, or hose.", ["Trailer supply valve", "Tractor protection valve"], 92, 47),
-  component("blue-glad-hand", "Blue glad hand", "Mano de aire azul", "Truck", "Brakes", "Back of cab", "Connects service brake signal to trailer.", "Trailer brakes not applying or leak on brake apply.", "Bad seal, blocked hose, protection valve issue.", "Apply service brakes and inspect blue line.", "Replace seal/hose or repair signal circuit.", ["Foot brake valve", "Trailer service line"], 92, 54),
-];
-
-const trailerComponents = [
-  component("trailer-red-line", "Red emergency/supply line", "Linea roja emergencia/suministro", "Trailer", "Air Supply", "Front trailer to reservoir", "Supplies air to charge trailer reservoir and release spring brakes.", "Trailer brakes locked, red line leaking.", "Disconnected red line, bad glad hand, leak.", "Verify red line pressure at trailer connection.", "Repair hose/glad hand and check emergency valve.", ["Red glad hand", "Relay emergency valve"], 10, 38),
-  component("trailer-blue-line", "Blue service line", "Linea azul de servicio", "Trailer", "Brakes", "Front trailer to relay valve", "Carries brake application signal from tractor.", "Trailer brakes not applying.", "Disconnected blue line, blockage, relay fault.", "Apply brake and verify signal at relay valve.", "Repair line or relay signal circuit.", ["Blue glad hand", "Relay emergency valve"], 10, 51),
-  component("trailer-red-glad-hand", "Red glad hand", "Mano roja del trailer", "Trailer", "Air Supply", "Front trailer", "Connects trailer emergency/supply line.", "Air leak at front trailer, locked brakes.", "Bad seal, cracked coupling, damaged hose.", "Inspect seal and coupling face.", "Replace glad hand seal or assembly.", ["Red emergency/supply line"], 5, 38),
-  component("trailer-blue-glad-hand", "Blue glad hand", "Mano azul del trailer", "Trailer", "Brakes", "Front trailer", "Connects trailer service line.", "No trailer brake response, service leak.", "Bad seal, cracked coupling, damaged hose.", "Inspect during service brake apply.", "Replace seal or glad hand.", ["Blue service line"], 5, 51),
-  component("trailer-reservoir", "Trailer air reservoir", "Tanque de aire del trailer", "Trailer", "Air Supply", "Under trailer frame", "Stores air for trailer brakes and suspension controls.", "Low trailer PSI, spring brakes apply.", "Tank leak, drain leak, supply restriction.", "Drain and pressure test reservoir.", "Repair fittings or replace damaged tank.", ["Relay emergency valve", "Spring brake control valve"], 38, 45),
-  component("relay-emergency-valve", "Relay emergency valve", "Valvula relay de emergencia", "Trailer", "Brakes", "Near trailer reservoir", "Controls service and emergency brake application.", "Brakes locked, not applying, leaking exhaust.", "Internal leak, contamination, control failure.", "Check supply, service signal, and exhaust leaks.", "Replace valve if leakage or delivery is incorrect.", ["Trailer reservoir", "Brake chambers"], 48, 55),
-  component("spring-brake-control-valve", "Spring brake control valve", "Valvula control spring brake", "Trailer", "Brakes", "Near spring brake circuit", "Controls trailer parking brake release/application.", "Spring brakes not releasing or applying unexpectedly.", "Valve leak, low supply, blocked line.", "Verify supply and delivery to spring chambers.", "Replace valve or repair air supply.", ["Spring brake chambers", "Red emergency/supply line"], 59, 55),
-  component("anti-compounding-valve", "Anti-compounding valve", "Valvula anti-compounding", "Trailer", "Brakes", "Trailer spring/service brake control area", "Prevents service and spring brake forces from stacking at the same time.", "Dragging brakes, overheated brakes, harsh application.", "Incorrect plumbing, stuck valve, blocked control line.", "Verify service and parking circuits do not apply together.", "Replace valve or correct air line routing.", ["Relay emergency valve", "Spring brake chambers"], 64, 62),
-  component("trailer-abs-ecu", "ABS ECU", "Modulo ABS del trailer", "Trailer", "ABS", "Trailer frame electrical box", "Monitors trailer ABS and fault codes.", "ABS warning lamp, stored fault.", "Sensor, power, ground, ECU issue.", "Scan ABS and verify power/ground.", "Repair circuit or replace ECU.", ["ABS modulator valves", "Wheel-speed sensors"], 42, 72),
-  component("trailer-abs-modulators", "ABS modulator valves", "Valvulas moduladoras ABS", "Trailer", "ABS", "Near axle brake circuits", "Modulate trailer brake pressure during ABS event.", "ABS code, uneven braking.", "Valve failure, wiring, contamination.", "Command ABS valve and inspect wiring.", "Replace modulator or repair wiring.", ["ABS ECU", "Brake chambers"], 70, 72),
-  component("wheel-speed-sensors", "Wheel-speed sensors", "Sensores de velocidad", "Trailer", "ABS", "At wheel hubs", "Report wheel speed to ABS ECU.", "ABS light, intermittent faults.", "Sensor gap, damaged cable, bad sensor.", "Inspect sensor gap and harness.", "Adjust/replace sensor and secure harness.", ["ABS ECU", "Tandem axles"], 80, 83),
-  component("trailer-brake-chambers", "Brake chambers", "Camaras de freno", "Trailer", "Brakes", "At trailer axles", "Convert service air into brake force.", "Leak on apply, weak braking.", "Diaphragm leak, damaged chamber.", "Listen for leaks and measure stroke.", "Replace leaking chambers.", ["Slack adjusters", "Relay emergency valve"], 76, 58),
-  component("trailer-spring-brake-chambers", "Spring brake chambers", "Camaras spring brake", "Trailer", "Brakes", "Trailer axle wheel ends", "Apply emergency/parking brakes by spring force.", "Trailer locked, leak, will not release.", "Low supply, chamber leak, control valve fault.", "Verify release pressure and leaks.", "Replace chamber or repair supply/control valve.", ["Spring brake control valve"], 78, 65),
-  component("trailer-slack-adjusters", "Slack adjusters", "Ajustadores de freno", "Trailer", "Brakes", "Brake camshafts", "Maintain correct trailer brake stroke.", "Out of adjustment, weak braking.", "Failed adjuster, worn clevis, poor lube.", "Measure pushrod stroke.", "Replace adjuster and inspect foundation brakes.", ["S-cams", "Brake chambers"], 82, 72),
-  component("trailer-s-cams", "S-cams", "Levas S", "Trailer", "Brakes", "Drum brake spider", "Spread shoes against drum.", "Dragging, uneven braking.", "Worn bushings, seized cam.", "Check cam movement and bushing play.", "Lubricate or replace cam/bushings.", ["Slack adjusters", "Brake shoes"], 86, 76),
-  component("trailer-brake-drums", "Brake drums", "Tambores de freno", "Trailer", "Brakes", "Trailer wheel ends", "Friction surface for brake shoes.", "Heat damage, cracks, vibration.", "Overheat, worn drum.", "Inspect drum condition and diameter.", "Replace drums beyond limits.", ["Brake shoes"], 90, 72),
-  component("trailer-brake-shoes", "Brake shoes", "Zapatas de freno", "Trailer", "Brakes", "Inside trailer drums", "Create braking friction.", "Thin lining, contamination.", "Worn or oil-soaked lining.", "Inspect lining and hardware.", "Replace shoes and hardware as needed.", ["Brake drums", "S-cams"], 90, 80),
-  component("trailer-air-disc-brakes", "Air disc brakes", "Frenos de disco de aire", "Trailer", "Brakes", "Disc brake wheel ends", "Clamp rotor with air-actuated caliper.", "Dragging, pad wear, rotor damage.", "Caliper issue, actuator fault.", "Inspect pad/rotor/caliper travel.", "Service caliper or replace pads/rotor.", ["ABS modulator valves"], 72, 83),
-  component("tandem-axles", "Tandem axles", "Ejes tandem", "Trailer", "Brakes", "Rear trailer axle group", "Support wheel ends, brakes, and suspension.", "Uneven braking, tire wear.", "Alignment, bearing, brake imbalance.", "Inspect axle group and wheel ends.", "Repair axle/brake issue as required.", ["Tandem slider", "Brake chambers"], 78, 90),
-  component("tandem-slider", "Tandem slider", "Corredera tandem", "Trailer", "Air Supply", "Sliding axle rail", "Positions tandem axle group.", "Will not slide, air pin issue.", "Pin valve leak, stuck pins, air supply issue.", "Check slider pin air operation.", "Repair slider valve or pins.", ["Air suspension bags"], 66, 91),
-  component("air-suspension-bags", "Air suspension bags", "Bolsas de suspension de aire", "Trailer", "Air Supply", "Suspension at axles", "Support trailer ride height with air pressure.", "Sagging, leak, uneven height.", "Bag leak, line leak, height valve issue.", "Inspect bags and spray for leaks.", "Replace leaking bags or repair lines.", ["Height control valve"], 70, 36),
-  component("height-control-valve", "Height control valve", "Valvula niveladora", "Trailer", "Air Supply", "Suspension linkage", "Maintains trailer ride height.", "Overinflated bags, low ride height.", "Bad linkage, valve leak, blockage.", "Move linkage and verify fill/exhaust.", "Repair linkage or replace height valve.", ["Air suspension bags", "Trailer reservoir"], 61, 35),
-];
-
-const towingTrailerComponents = trailerComponents.map((item) => ({
-  ...item,
-  key: `towing-${item.key}`,
-  section: "Towing Trailer",
-  location: item.location.replace("trailer", "towing trailer"),
-}));
-
-const converterDollyComponents = [
-  component("dolly-red-glad-hand", "Red supply glad hand", "Mano roja del dolly", "Converter Dolly", "Air Supply", "Dolly front air connection", "Receives supply air for dolly and rear trailer.", "Leak at connection, rear trailer brakes locked.", "Bad seal, cracked glad hand, damaged hose.", "Inspect seal, connection face, and supply pressure.", "Replace seal or glad hand assembly.", ["Dolly relay emergency valve", "Dolly reservoir"], 14, 42),
-  component("dolly-blue-glad-hand", "Blue service glad hand", "Mano azul del dolly", "Converter Dolly", "Brakes", "Dolly front service connection", "Receives service signal from lead trailer/tractor.", "Rear trailer brakes not applying.", "Bad seal, blocked line, control loss.", "Apply service brakes and verify blue line signal.", "Repair coupling or service hose.", ["Dolly relay valve"], 14, 54),
-  component("dolly-reservoir", "Dolly air reservoir", "Tanque de aire del dolly", "Converter Dolly", "Air Supply", "Dolly frame", "Stores air for dolly brake circuit.", "Low dolly pressure, spring brakes apply.", "Tank or fitting leak, supply restriction.", "Drain and pressure test dolly reservoir.", "Repair leaks or replace tank.", ["Dolly relay valve"], 42, 44),
-  component("dolly-relay-valve", "Dolly relay emergency valve", "Valvula relay de emergencia del dolly", "Converter Dolly", "Brakes", "Dolly axle frame", "Delivers brake air to dolly chambers.", "Dolly brakes dragging or not applying.", "Relay valve leak, bad service signal.", "Check supply, service signal, and exhaust.", "Replace relay valve if leaking or stuck.", ["Dolly brake chambers"], 55, 58),
-  component("dolly-spring-control", "Spring brake control valve", "Valvula spring brake del dolly", "Converter Dolly", "Brakes", "Dolly spring brake circuit", "Controls parking/emergency release.", "Dolly brakes locked, not releasing.", "Low supply, valve leak, chamber issue.", "Verify release pressure at spring chambers.", "Repair valve or spring brake circuit.", ["Dolly spring brake chambers"], 65, 48),
-  component("dolly-abs-ecu", "ABS ECU", "Modulo ABS del dolly", "Converter Dolly", "ABS", "Dolly electrical box", "Monitors dolly wheel speed and ABS faults.", "ABS warning, intermittent fault.", "Power, ground, sensor, ECU fault.", "Scan ABS and verify sensor circuits.", "Repair wiring or replace failed component.", ["Wheel-speed sensors"], 48, 76),
-  component("dolly-brake-chambers", "Service brake chambers", "Camaras de servicio del dolly", "Converter Dolly", "Brakes", "Dolly axle wheel ends", "Convert air into brake force.", "Air leak on apply, weak braking.", "Diaphragm leak, loose clamp.", "Listen for leaks and measure stroke.", "Replace chamber and verify stroke.", ["Slack adjusters", "S-cams"], 78, 60),
-  component("dolly-spring-brakes", "Spring brake chambers", "Camaras spring brake del dolly", "Converter Dolly", "Brakes", "Dolly axle wheel ends", "Apply emergency/parking brake by spring.", "Locked dolly brakes, air leak.", "Low air, chamber leak, control valve fault.", "Check release pressure and leaks.", "Replace chamber or repair release circuit.", ["Spring brake control valve"], 80, 72),
-  component("dolly-slack-adjusters", "Slack adjusters", "Ajustadores del dolly", "Converter Dolly", "Brakes", "Dolly brake camshafts", "Maintain dolly brake stroke.", "Excess stroke, uneven braking.", "Failed adjuster, worn clevis.", "Measure pushrod stroke.", "Replace adjuster and inspect foundation brakes.", ["S-cams"], 86, 80),
-  component("dolly-drums", "Brake drums and shoes", "Tambores y zapatas del dolly", "Converter Dolly", "Brakes", "Dolly wheel ends", "Friction braking components.", "Heat damage, worn linings.", "Worn, contaminated, cracked components.", "Inspect drum, shoes, rollers, and springs.", "Replace in axle sets as needed.", ["Slack adjusters"], 90, 88),
+const diagnosticProblems = [
+  {
+    label: "Trailer brakes will not release",
+    steps: [
+      "Verify tractor air pressure.",
+      "Verify red trailer supply line pressure.",
+      "Inspect glad hand seals and supply hose.",
+      "Check trailer reservoir pressure.",
+      "Check SR-5 trailer spring brake valve.",
+      "Check trailer spring brake chambers.",
+      "Record findings.",
+    ],
+  },
+  {
+    label: "Trailer brakes not applying",
+    steps: [
+      "Verify primary and secondary pressure.",
+      "Apply foot brake and confirm blue service line pressure.",
+      "Inspect TP-3 tractor protection valve.",
+      "Check R-12 relay valve delivery.",
+      "Measure trailer brake chamber stroke.",
+      "Record findings.",
+    ],
+  },
+  {
+    label: "Low-air warning",
+    steps: [
+      "Start compressor and verify build rate.",
+      "Check D-2 governor cut-in and cut-out.",
+      "Inspect air dryer and safety valve.",
+      "Pressure test supply, front axle, and rear axle reservoirs.",
+      "Record findings.",
+    ],
+  },
 ];
 
 const faultSimulations = [
@@ -210,72 +164,37 @@ const faultSimulations = [
   "Governor failure",
   "Air dryer restriction",
   "Supply reservoir leak",
-  "Primary tank leak",
-  "Secondary tank leak",
+  "Front axle service reservoir leak",
+  "Rear axle service reservoir leak",
   "Foot valve leak",
-  "Tractor protection valve failure",
-  "Red glad hand leak",
-  "Blue glad hand leak",
+  "TP-3 tractor protection valve failure",
+  "Red trailer supply line leak",
+  "Blue trailer service line leak",
   "Broken air line",
   "Restricted air line",
-  "Relay valve leaking",
-  "Relay valve not delivering air",
+  "R-12 relay valve leaking",
+  "R-14 relay valve not delivering air",
   "Brake chamber diaphragm leak",
   "Spring brake not releasing",
   "Trailer brakes locked",
   "Trailer brakes not applying",
-  "ABS sensor failure",
-  "ABS modulator failure",
   "Uneven braking",
   "Low-air warning",
 ];
 
-const diagnosticProblems = [
-  {
-    label: "Trailer brakes will not release",
-    steps: [
-      "Verify tractor air pressure.",
-      "Verify red supply line pressure.",
-      "Inspect glad hand seals.",
-      "Check trailer reservoir pressure.",
-      "Check relay emergency valve.",
-      "Check spring brake control valve.",
-      "Check spring brake chambers.",
-      "Record findings.",
-    ],
-  },
-  {
-    label: "Trailer brakes not applying",
-    steps: [
-      "Verify tractor primary and secondary pressure.",
-      "Apply foot brake and verify blue service signal.",
-      "Inspect blue glad hand and service hose.",
-      "Check relay emergency valve delivery.",
-      "Inspect ABS modulator valves.",
-      "Measure service brake chamber stroke.",
-      "Record findings.",
-    ],
-  },
-  {
-    label: "Low-air warning",
-    steps: [
-      "Start engine and measure compressor build rate.",
-      "Check governor cut-in/cut-out.",
-      "Inspect dryer purge and restrictions.",
-      "Drain and inspect reservoirs.",
-      "Listen for leaks in primary and secondary circuits.",
-      "Record findings.",
-    ],
-  },
-];
-
-const allComponents = [...truckComponents, ...trailerComponents, ...towingTrailerComponents, ...converterDollyComponents];
+const allComponents = components;
 
 export default function AirSystemModule({ currentUser }) {
-  const [activeTab, setActiveTab] = useState("Truck");
-  const [selectedKey, setSelectedKey] = useState(truckComponents[0].key);
+  const diagramRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const [selectedKey, setSelectedKey] = useState("compressor");
+  const [selectedLineId, setSelectedLineId] = useState("");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("All");
+  const [zoom, setZoom] = useState(1);
+  const [fullScreen, setFullScreen] = useState(false);
+  const [panMode, setPanMode] = useState(false);
+  const [language, setLanguage] = useState("en");
   const [condition, setCondition] = useState("Needs Inspection");
   const [notes, setNotes] = useState("");
   const [photos, setPhotos] = useState([]);
@@ -286,16 +205,8 @@ export default function AirSystemModule({ currentUser }) {
   const [jobSearch, setJobSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [traceMode, setTraceMode] = useState(false);
-  const [traceCircuit, setTraceCircuit] = useState("All circuits");
-  const [selectedLineId, setSelectedLineId] = useState("");
-  const [zoom, setZoom] = useState(1);
-  const [fullScreen, setFullScreen] = useState(false);
-  const [language, setLanguage] = useState("en");
   const [diagnosticProblem, setDiagnosticProblem] = useState(diagnosticProblems[0].label);
-  const [diagnosticResults, setDiagnosticResults] = useState(
-    Object.fromEntries(diagnosticProblems[0].steps.map((step) => [step, "Not Tested"]))
-  );
+  const [diagnosticResults, setDiagnosticResults] = useState(Object.fromEntries(diagnosticProblems[0].steps.map((step) => [step, "Not Tested"])));
   const [simulation, setSimulation] = useState({
     supply: 0,
     primary: 0,
@@ -306,34 +217,27 @@ export default function AirSystemModule({ currentUser }) {
     serviceApplied: false,
     parkingSet: true,
     trailerSupplied: false,
+    compressorRunning: false,
   });
-  const fileInputRef = useRef(null);
 
-  const selectedComponent = allComponents.find((item) => item.key === selectedKey) || truckComponents[0];
-  const selectedLines = useMemo(() => activeAirLines(activeTab).filter((line) => line.source === selectedComponent.key || line.target === selectedComponent.key), [activeTab, selectedComponent.key]);
+  const selectedComponent = allComponents.find((item) => item.key === selectedKey) || allComponents[0];
+  const connectedLines = useMemo(() => lines.filter((line) => line.source === selectedComponent.key || line.target === selectedComponent.key), [selectedComponent.key]);
+  const activeProblem = diagnosticProblems.find((item) => item.label === diagnosticProblem) || diagnosticProblems[0];
   const visibleComponents = useMemo(() => {
-    const base = componentsForSection(activeTab);
-    return base.filter((item) => {
-      const text = `${item.name} ${item.nameEs} ${item.category} ${item.section}`.toLowerCase();
+    return allComponents.filter((component) => {
+      const text = `${component.name} ${component.nameEs} ${component.category} ${component.location}`.toLowerCase();
       const matchesSearch = !search || text.includes(search.toLowerCase());
-      const matchesFilter = filter === "All" || item.section === filter || item.category === filter;
+      const matchesFilter = filter === "All" || component.category === filter;
       return matchesSearch && matchesFilter;
     });
-  }, [activeTab, filter, search]);
-
-  const activeProblem = diagnosticProblems.find((item) => item.label === diagnosticProblem) || diagnosticProblems[0];
-
+  }, [filter, search]);
   const filteredJobs = useMemo(() => {
     const term = jobSearch.trim().toLowerCase();
     return jobs
       .filter((job) => ["new", "pending", "assigned", "en route", "on site", "in progress", "waiting parts", "working"].includes(String(job.status || "").toLowerCase()))
       .filter((job) => {
         if (!term) return true;
-        return [job.invoice_number, job.reference, job.company, job.location, job.tech, job.dispatch]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase()
-          .includes(term);
+        return [job.invoice_number, job.company, job.location, job.tech, job.dispatch].filter(Boolean).join(" ").toLowerCase().includes(term);
       });
   }, [jobSearch, jobs]);
 
@@ -343,23 +247,9 @@ export default function AirSystemModule({ currentUser }) {
   }, []);
 
   useEffect(() => {
-    setCondition("Needs Inspection");
-    setNotes("");
-    setPhotos([]);
-  }, [selectedKey]);
-
-  useEffect(() => {
     const problem = diagnosticProblems.find((item) => item.label === diagnosticProblem) || diagnosticProblems[0];
     setDiagnosticResults(Object.fromEntries(problem.steps.map((step) => [step, "Not Tested"])));
   }, [diagnosticProblem]);
-
-  useEffect(() => {
-    const first = componentsForSection(activeTab)[0];
-    if (first && !componentsForSection(activeTab).some((item) => item.key === selectedKey)) {
-      setSelectedKey(first.key);
-      setSelectedLineId("");
-    }
-  }, [activeTab, selectedKey]);
 
   async function loadJobs() {
     const { data } = await supabase
@@ -375,8 +265,28 @@ export default function AirSystemModule({ currentUser }) {
       .from("air_system_inspections")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(50);
+      .limit(60);
     setInspections(data || []);
+  }
+
+  function selectComponent(componentKey) {
+    setSelectedKey(componentKey);
+    setSelectedLineId("");
+    const component = allComponents.find((item) => item.key === componentKey);
+    if (component && diagramRef.current) {
+      setZoom((current) => Math.max(current, 2));
+      window.setTimeout(() => {
+        document.getElementById(`svg-${componentKey}`)?.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+      }, 80);
+    }
+  }
+
+  function handleSearch(value) {
+    setSearch(value);
+    const term = value.trim().toLowerCase();
+    if (!term) return;
+    const match = allComponents.find((component) => `${component.name} ${component.nameEs}`.toLowerCase().includes(term));
+    if (match) selectComponent(match.key);
   }
 
   function runSimulation(action) {
@@ -385,16 +295,16 @@ export default function AirSystemModule({ currentUser }) {
 
   function selectFault(fault) {
     const target = faultTarget(fault);
-    if (target.componentKey) setSelectedKey(target.componentKey);
+    if (target.componentKey) selectComponent(target.componentKey);
     if (target.lineId) setSelectedLineId(target.lineId);
     setSimulation((current) => ({
       ...current,
       fault,
       state: fault,
       supply: target.pressure?.supply ?? current.supply,
-      primary: target.pressure?.primary ?? (fault.includes("Primary") || fault.includes("Low") ? 55 : current.primary || 95),
-      secondary: target.pressure?.secondary ?? (fault.includes("Secondary") || fault.includes("Low") ? 55 : current.secondary || 95),
-      trailer: target.pressure?.trailer ?? (fault.includes("Trailer") || fault.includes("glad hand") ? 35 : current.trailer || 90),
+      primary: target.pressure?.primary ?? current.primary,
+      secondary: target.pressure?.secondary ?? current.secondary,
+      trailer: target.pressure?.trailer ?? current.trailer,
     }));
   }
 
@@ -408,23 +318,17 @@ export default function AirSystemModule({ currentUser }) {
       simulation,
       job,
       currentUser,
-      failure: simulation.fault,
       diagnosticResults,
+      connectedLines,
     });
-
     const { data, error } = await supabase.from("air_system_inspections").insert(payload).select().single();
     if (error) {
       setSaving(false);
       setMessage(`Unable to save inspection: ${error.message}`);
       return null;
     }
-
     await uploadInspectionPhotos(data.id);
-
-    if (job?.id) {
-      await appendInspectionToJob(job, data);
-    }
-
+    if (job?.id) await appendInspectionToJob(job, data);
     await logActivity({
       entityType: "air_system_inspection",
       entityId: data.id,
@@ -433,12 +337,12 @@ export default function AirSystemModule({ currentUser }) {
       createdBy: currentUser?.name || currentUser?.username || "Dispatcher",
       metadata: {
         job_id: job?.id || null,
+        svg_component_id: selectedComponent.key,
         component: selectedComponent.name,
+        related_lines: connectedLines.map((line) => line.id),
         condition,
-        vehicle_section: selectedComponent.section,
       },
     });
-
     setSaving(false);
     setJobModalOpen(false);
     setPhotos([]);
@@ -455,11 +359,7 @@ export default function AirSystemModule({ currentUser }) {
       const path = `${inspectionId}/${Date.now()}-${safeName}`;
       const { error } = await supabase.storage.from("air-system-photos").upload(path, file);
       if (!error) {
-        records.push({
-          inspection_id: inspectionId,
-          storage_path: path,
-          uploaded_by: currentUser?.id || currentUser?.authUserId || null,
-        });
+        records.push({ inspection_id: inspectionId, storage_path: path, uploaded_by: currentUser?.id || currentUser?.authUserId || null });
       }
     }
     if (records.length) await supabase.from("air_system_inspection_photos").insert(records);
@@ -469,12 +369,12 @@ export default function AirSystemModule({ currentUser }) {
     const block = [
       "",
       "Air System Inspection",
+      `SVG Component ID: ${selectedComponent.key}`,
       `Component: ${selectedComponent.name} / ${selectedComponent.nameEs}`,
+      `Circuit: ${circuitStyles[selectedComponent.circuit]?.name || selectedComponent.circuit}`,
       `Condition: ${condition}`,
-      `Symptoms: ${selectedComponent.symptoms}`,
-      `Possible causes: ${selectedComponent.causes}`,
-      `Recommendation: ${selectedComponent.repair}`,
       `Failure: ${simulation.fault || "None"}`,
+      `Related lines: ${connectedLines.map((line) => line.name).join(", ") || "None"}`,
       `Diagnostic results: ${diagnosticSummary(diagnosticResults) || "No guided diagnostic completed"}`,
       `Required parts: ${selectedComponent.related.join(", ")}`,
       `Notes: ${notes || "None"}`,
@@ -483,47 +383,59 @@ export default function AirSystemModule({ currentUser }) {
       `Dispatcher: ${currentUser?.name || currentUser?.username || "Dispatcher"}`,
       `Date: ${new Date().toLocaleString()}`,
     ].join("\n");
-    const nextUpdates = `${job.updates || ""}${block}`;
-    await supabase.from("jobs").update({ updates: nextUpdates }).eq("id", job.id);
+    await supabase.from("jobs").update({ updates: `${job.updates || ""}${block}` }).eq("id", job.id);
   }
 
-  function generateReport() {
-    const html = [
-      "<html><head><title>Air System Diagnostic Report</title>",
-      "<style>body{font-family:Arial;padding:24px;color:#0f172a}h1{margin:0 0 8px}.box{border:1px solid #cbd5e1;border-radius:12px;padding:14px;margin:12px 0}.label{font-size:12px;text-transform:uppercase;color:#64748b;font-weight:700}</style>",
-      "</head><body>",
-      "<h1>Truck & Trailer Air System Diagnostic Report</h1>",
-      `<p>${new Date().toLocaleString()}</p>`,
-      `<div class='box'><div class='label'>Component</div><h2>${selectedComponent.name}</h2><p>${selectedComponent.nameEs}</p></div>`,
-      `<div class='box'><div class='label'>Condition</div><p>${condition}</p></div>`,
-      `<div class='box'><div class='label'>Symptoms</div><p>${selectedComponent.symptoms}</p></div>`,
-      `<div class='box'><div class='label'>Possible causes</div><p>${selectedComponent.causes}</p></div>`,
-      `<div class='box'><div class='label'>Recommendation</div><p>${selectedComponent.repair}</p></div>`,
-      `<div class='box'><div class='label'>Failure</div><p>${simulation.fault || "None"}</p></div>`,
-      `<div class='box'><div class='label'>Diagnostic results</div><p>${diagnosticSummary(diagnosticResults) || "No guided diagnostic completed"}</p></div>`,
-      `<div class='box'><div class='label'>Required parts</div><p>${selectedComponent.related.join(", ")}</p></div>`,
-      `<div class='box'><div class='label'>Notes</div><p>${notes || "None"}</p></div>`,
-      `<div class='box'><div class='label'>Simulation</div><p>${simulation.state}. Supply ${simulation.supply} PSI, Primary ${simulation.primary} PSI, Secondary ${simulation.secondary} PSI, Trailer ${simulation.trailer} PSI.</p></div>`,
-      "<p><strong>Training and diagnostic reference only. Air-brake inspections and repairs must be performed by qualified personnel.</strong></p>",
-      "<script>window.print()</script></body></html>",
-    ].join("");
-    const report = window.open("", "_blank", "noopener,noreferrer");
-    if (report) {
-      report.document.write(html);
-      report.document.close();
-    }
+  function exportSvg() {
+    const svg = document.getElementById("air-system-svg");
+    if (!svg) return;
+    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "air-system-diagram.svg";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportPng() {
+    const svg = document.getElementById("air-system-svg");
+    if (!svg) return;
+    const serialized = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([serialized], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 2700;
+      canvas.height = 1240;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = "air-system-diagram.png";
+      link.click();
+    };
+    image.src = url;
+  }
+
+  function printPdf() {
+    window.print();
   }
 
   return (
     <div className="min-h-screen bg-slate-100 p-4 text-slate-950 md:p-6 xl:p-8">
-      <div className="mx-auto max-w-[1800px] space-y-5">
+      <div className="mx-auto max-w-[1900px] space-y-5">
         <header className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">Diagnostics</p>
               <h1 className="mt-1 text-3xl font-black">Truck & Trailer Air System</h1>
               <p className="mt-2 max-w-3xl text-sm font-semibold text-slate-500">
-                Inspect air-brake components, simulate common faults, and attach diagnostic notes to active jobs.
+                High-resolution SVG schematic rebuilt from the uploaded truck/tractor and trailer air-brake reference.
               </p>
             </div>
             <div className="grid grid-cols-4 gap-2 rounded-2xl bg-slate-50 p-2 text-center text-xs font-black text-slate-600">
@@ -541,114 +453,66 @@ export default function AirSystemModule({ currentUser }) {
           </div>
         )}
 
-        <nav className="flex flex-wrap gap-2">
-          {[...diagramSections, ...utilityTabs.map((tab) => ({ id: tab, label: tab }))].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-xl px-4 py-2 text-sm font-black transition ${activeTab === tab.id ? "bg-blue-600 text-white" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+        <div className={`grid gap-5 ${fullScreen ? "" : "xl:grid-cols-[minmax(0,1fr)_420px]"}`}>
+          <main className="space-y-4">
+            <Toolbar
+              search={search}
+              filter={filter}
+              zoom={zoom}
+              panMode={panMode}
+              language={language}
+              onSearch={handleSearch}
+              onFilter={setFilter}
+              onZoom={setZoom}
+              onPanMode={setPanMode}
+              onLanguage={setLanguage}
+              onFull={() => setFullScreen((value) => !value)}
+              onFit={() => setZoom(0.85)}
+              onExportSvg={exportSvg}
+              onExportPng={exportPng}
+              onPrintPdf={printPdf}
+              fullScreen={fullScreen}
+            />
 
-        {activeTab === "Saved Inspections" ? (
-          <SavedInspections inspections={inspections} jobs={jobs} onRefresh={loadInspections} />
-        ) : (
-          <div className={`grid gap-5 ${fullScreen ? "" : "xl:grid-cols-[minmax(0,1fr)_390px]"}`}>
-            <main className="space-y-5">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="grid gap-3 xl:grid-cols-[1fr_auto] xl:items-center">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                    <input
-                      value={search}
-                      onChange={(event) => setSearch(event.target.value)}
-                      placeholder="Search components..."
-                      className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm font-semibold outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {componentFilters.map((item) => (
-                      <button
-                        key={item}
-                        type="button"
-                        onClick={() => setFilter(item)}
-                        className={`h-10 rounded-xl px-3 text-xs font-black ${filter === item ? "bg-slate-950 text-white" : "border border-slate-200 bg-white text-slate-600"}`}
-                      >
-                        {item}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_auto] xl:items-center">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => setTraceMode((value) => !value)} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-black ${traceMode ? "bg-emerald-600 text-white" : "border border-slate-200 bg-white text-slate-600"}`}>
-                      <Route className="h-4 w-4" />
-                      Trace Air Flow
-                    </button>
-                    <select value={traceCircuit} onChange={(event) => setTraceCircuit(event.target.value)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700 outline-none focus:border-blue-500">
-                      {traceCircuits.map((item) => <option key={item}>{item}</option>)}
-                    </select>
-                    <button type="button" onClick={() => setLanguage((value) => (value === "en" ? "es" : "en"))} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700">
-                      <Languages className="h-4 w-4" />
-                      {language === "en" ? "English" : "Español"}
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" onClick={() => setZoom((value) => Math.max(0.75, Number((value - 0.1).toFixed(2))))} className="rounded-xl border border-slate-200 p-2 text-slate-600"><ZoomOut className="h-4 w-4" /></button>
-                    <span className="flex h-9 items-center rounded-xl bg-slate-100 px-3 text-xs font-black text-slate-600">{Math.round(zoom * 100)}%</span>
-                    <button type="button" onClick={() => setZoom((value) => Math.min(1.8, Number((value + 0.1).toFixed(2))))} className="rounded-xl border border-slate-200 p-2 text-slate-600"><ZoomIn className="h-4 w-4" /></button>
-                    <button type="button" onClick={() => setZoom(1)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700">Reset Zoom</button>
-                    <button type="button" onClick={() => setFullScreen((value) => !value)} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><Maximize2 className="h-4 w-4" />{fullScreen ? "Exit Full" : "Full Screen"}</button>
-                  </div>
-                </div>
-              </div>
+            <AirBrakeSvg
+              diagramRef={diagramRef}
+              components={visibleComponents}
+              selectedKey={selectedKey}
+              selectedLineId={selectedLineId}
+              connectedLines={connectedLines}
+              simulation={simulation}
+              zoom={zoom}
+              panMode={panMode}
+              language={language}
+              onSelect={selectComponent}
+              onLineSelect={setSelectedLineId}
+            />
 
-              <AirDiagram
-                section={diagramSections.some((item) => item.id === activeTab) ? activeTab : "Truck"}
-                components={visibleComponents}
-                lines={activeAirLines(activeTab)}
-                selectedKey={selectedKey}
-                selectedLineId={selectedLineId}
-                selectedLines={selectedLines}
-                simulation={simulation}
-                traceMode={traceMode}
-                traceCircuit={traceCircuit}
-                zoom={zoom}
-                language={language}
-                onSelect={setSelectedKey}
-                onLineSelect={setSelectedLineId}
-              />
+            <ColorLegend />
 
-              <ColorLegend />
+            <DiagnosticsPanel
+              simulation={simulation}
+              problem={activeProblem}
+              selectedProblem={diagnosticProblem}
+              results={diagnosticResults}
+              onProblem={setDiagnosticProblem}
+              onResult={(step, result) => setDiagnosticResults((current) => ({ ...current, [step]: result }))}
+              onAction={runSimulation}
+              onFault={selectFault}
+            />
 
-              <ComponentGrid components={visibleComponents} selectedKey={selectedKey} onSelect={setSelectedKey} />
+            <SavedInspections inspections={inspections} jobs={jobs} onRefresh={loadInspections} onOpen={(componentId) => componentId && selectComponent(componentId)} />
+          </main>
 
-              {activeTab === "Diagnostics" && (
-                <DiagnosticsPanel
-                  simulation={simulation}
-                  problem={activeProblem}
-                  selectedProblem={diagnosticProblem}
-                  results={diagnosticResults}
-                  onProblem={setDiagnosticProblem}
-                  onResult={(step, result) => setDiagnosticResults((current) => ({ ...current, [step]: result }))}
-                  onAction={runSimulation}
-                  onFault={selectFault}
-                />
-              )}
-            </main>
-
-            {!fullScreen && <ComponentPanel
+          {!fullScreen && (
+            <ComponentPanel
               component={selectedComponent}
               condition={condition}
               notes={notes}
               photos={photos}
               saving={saving}
               simulation={simulation}
-              connectedLines={selectedLines}
+              connectedLines={connectedLines}
               diagnosticResults={diagnosticResults}
               language={language}
               fileInputRef={fileInputRef}
@@ -658,10 +522,9 @@ export default function AirSystemModule({ currentUser }) {
               onSave={() => saveInspection()}
               onAddJob={() => setJobModalOpen(true)}
               onNearby={() => setNearbyModalOpen(true)}
-              onReport={generateReport}
-            />}
-          </div>
-        )}
+            />
+          )}
+        </div>
 
         <footer className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-900">
           Training and diagnostic reference only. Air-brake inspections and repairs must be performed by qualified personnel.
@@ -688,7 +551,7 @@ export default function AirSystemModule({ currentUser }) {
           onClose={() => setNearbyModalOpen(false)}
           onAttach={async (job) => {
             const query = `${selectedComponent.name} near ${job.location || job.company || ""}`;
-            const line = `\nAir System Nearby Parts Search\nComponent: ${selectedComponent.name}\nSearch: ${query}\nDate: ${new Date().toLocaleString()}\n`;
+            const line = `\nAir System Nearby Parts Search\nSVG Component ID: ${selectedComponent.key}\nComponent: ${selectedComponent.name}\nSearch: ${query}\nDate: ${new Date().toLocaleString()}\n`;
             await supabase.from("jobs").update({ updates: `${job.updates || ""}${line}` }).eq("id", job.id);
             window.open(googleMapsNearbyLink(selectedComponent.name, job.location || job.company || ""), "_blank", "noopener,noreferrer");
             setNearbyModalOpen(false);
@@ -699,331 +562,152 @@ export default function AirSystemModule({ currentUser }) {
   );
 }
 
-function component(key, name, nameEs, section, category, location, fn, symptoms, causes, inspect, repair, related, x, y) {
-  return { key, name, nameEs, section, category, location, function: fn, symptoms, causes, inspect, repair, related, x, y };
-}
-
-function applySimulation(current, action) {
-  if (action === "Reset System" || action === "Reset Simulation") return { supply: 0, primary: 0, secondary: 0, trailer: 0, state: "System inactive", fault: "", serviceApplied: false, parkingSet: true, trailerSupplied: false, compressorRunning: false };
-  if (action === "Start Engine / Compressor") return { ...current, compressorRunning: true, supply: Math.max(current.supply, 35), state: "Compressor running" };
-  if (action === "Stop Compressor") return { ...current, compressorRunning: false, state: "Compressor stopped" };
-  if (action === "Build Air Pressure") return { ...current, supply: 125, primary: 120, secondary: 120, trailer: current.trailerSupplied ? 110 : current.trailer, state: "Normal air pressure", fault: "" };
-  if (action === "Apply Foot Brake" || action === "Apply Service Brakes") return { ...current, primary: Math.max(0, current.primary - 8), secondary: Math.max(0, current.secondary - 8), trailer: current.trailerSupplied ? Math.max(0, current.trailer - 6) : current.trailer, serviceApplied: true, state: "Service brakes applied" };
-  if (action === "Release Foot Brake" || action === "Release Service Brakes") return { ...current, serviceApplied: false, state: "Service brakes released" };
-  if (action === "Set Tractor Parking Brakes" || action === "Set Parking Brakes") return { ...current, parkingSet: true, state: "Parking brakes set" };
-  if (action === "Release Tractor Parking Brakes" || action === "Release Parking Brakes") return { ...current, parkingSet: false, state: "Parking brakes released" };
-  if (action === "Supply Air to Trailer") return { ...current, trailerSupplied: true, trailer: current.primary > 80 ? 105 : 55, state: "Trailer supplied" };
-  if (action === "Pull Trailer Supply Valve" || action === "Disconnect Red Glad Hand" || action === "Disconnect Red Line") return { ...current, trailerSupplied: false, trailer: 0, parkingSet: true, fault: action, state: "Trailer emergency brakes applied" };
-  if (action === "Disconnect Blue Glad Hand" || action === "Disconnect Blue Line") return { ...current, serviceApplied: false, fault: action, state: "Trailer service signal lost" };
-  if (action === "Drain Supply Tank") return { ...current, supply: 0, primary: Math.min(current.primary, 40), secondary: Math.min(current.secondary, 40), state: "Supply tank drained", fault: "Supply reservoir leak" };
-  if (action === "Drain Primary Tank") return { ...current, primary: 0, state: "Primary tank drained", fault: "Primary tank leak" };
-  if (action === "Drain Secondary Tank") return { ...current, secondary: 0, state: "Secondary tank drained", fault: "Secondary tank leak" };
-  if (action === "Simulate Air Leak") return { ...current, primary: Math.max(0, current.primary - 35), secondary: Math.max(0, current.secondary - 30), trailer: Math.max(0, current.trailer - 40), fault: "System air leak", state: "Air pressure dropping" };
-  return current;
-}
-
-function buildInspectionPayload({ component, condition, notes, simulation, job, currentUser, failure, diagnosticResults }) {
-  return {
-    job_id: job?.id || null,
-    created_by: currentUser?.id || currentUser?.authUserId || null,
-    assigned_technician_id: job?.technician_id || null,
-    vehicle_section: component.section,
-    component_key: component.key,
-    component_name: component.name,
-    component_name_es: component.nameEs,
-    condition,
-    failure_type: failure || "",
-    symptoms: component.symptoms,
-    possible_causes: component.causes,
-    recommendation: component.repair,
-    dispatcher_notes: notes,
-    diagnostic_results: Object.entries(diagnosticResults || {}).map(([step, result]) => ({ step, result })),
-    required_parts: component.related.join(", "),
-    primary_psi: simulation.primary,
-    secondary_psi: simulation.secondary,
-    trailer_psi: simulation.trailer,
-    simulation_type: simulation.fault || simulation.state,
-  };
-}
-
-function componentsForSection(section) {
-  if (section === "Trailer") return trailerComponents;
-  if (section === "Towing Trailer") return towingTrailerComponents;
-  if (section === "Converter Dolly") return converterDollyComponents;
-  if (section === "Truck") return truckComponents;
-  return allComponents;
-}
-
-function activeAirLines(section) {
-  if (section === "Truck") return truckAirLines;
-  if (section === "Trailer") return trailerAirLines;
-  if (section === "Towing Trailer") return trailerAirLines.map((line) => ({
-    ...line,
-    id: `towing-${line.id}`,
-    source: `towing-${line.source}`,
-    target: `towing-${line.target}`,
-    name: line.name.replace("Trailer", "Towing trailer"),
-  }));
-  if (section === "Converter Dolly") return [
-    airLine("dolly-supply", "Dolly red supply line", "Trailer supply circuit", "dolly-red-glad-hand", "dolly-reservoir", "M 100 210 C 245 180 335 205 420 230"),
-    airLine("dolly-service", "Dolly blue service line", "Trailer service circuit", "dolly-blue-glad-hand", "dolly-relay-valve", "M 100 280 C 250 330 385 340 550 300"),
-    airLine("dolly-reservoir-relay", "Dolly reservoir to relay valve", "Trailer supply circuit", "dolly-reservoir", "dolly-relay-valve", "M 420 230 C 470 245 520 265 550 300"),
-    airLine("dolly-parking", "Dolly spring brake control", "Trailer parking circuit", "dolly-spring-control", "dolly-spring-brakes", "M 650 250 C 710 305 770 330 800 370"),
-    airLine("dolly-service-chambers", "Dolly relay to service chambers", "Trailer service circuit", "dolly-relay-valve", "dolly-brake-chambers", "M 550 300 C 635 340 710 325 780 312"),
-  ];
-  return [...truckAirLines, ...trailerAirLines];
-}
-
-function linePressure(line, simulation) {
-  if (line.circuit === "Charging circuit") return simulation.supply || 0;
-  if (line.circuit === "Primary circuit") return simulation.primary || 0;
-  if (line.circuit === "Secondary circuit") return simulation.secondary || 0;
-  if (line.circuit === "Trailer supply circuit") return simulation.trailerSupplied ? simulation.trailer || 0 : 0;
-  if (line.circuit === "Trailer service circuit") return simulation.serviceApplied ? Math.max(0, simulation.trailer - 8) : 0;
-  if (line.circuit === "Parking circuit" || line.circuit === "Trailer parking circuit") return simulation.parkingSet ? 0 : simulation.primary || 0;
-  return 0;
-}
-
-function componentCircuit(component) {
-  if (component.key.includes("abs") || component.category === "ABS") return "ABS electronic control";
-  if (component.key.includes("primary")) return "Primary circuit";
-  if (component.key.includes("secondary")) return "Secondary circuit";
-  if (component.key.includes("parking") || component.key.includes("spring")) return "Parking circuit";
-  if (component.key.includes("red") || component.key.includes("supply")) return component.section === "Truck" ? "Park / Supply" : "Trailer supply circuit";
-  if (component.key.includes("blue") || component.key.includes("service")) return component.section === "Truck" ? "Secondary circuit" : "Trailer service circuit";
-  if (component.category === "Air Supply") return "Charging circuit";
-  if (component.category === "Brakes") return "Primary circuit / Service circuit";
-  return component.category;
-}
-
-function componentPsi(component, simulation) {
-  const circuit = componentCircuit(component);
-  if (circuit.includes("Primary")) return simulation.primary;
-  if (circuit.includes("Secondary")) return simulation.secondary;
-  if (circuit.includes("Trailer")) return simulation.trailer;
-  if (circuit.includes("Charging") || circuit.includes("Supply")) return simulation.supply;
-  if (circuit.includes("Parking")) return simulation.parkingSet ? 0 : simulation.primary;
-  return Math.max(simulation.primary, simulation.secondary, simulation.trailer);
-}
-
-function faultTarget(fault) {
-  const normalized = String(fault || "").toLowerCase();
-  if (normalized.includes("compressor")) return { componentKey: "air-compressor", lineId: "charging-1", pressure: { supply: 20, primary: 0, secondary: 0, trailer: 0 } };
-  if (normalized.includes("governor")) return { componentKey: "governor", lineId: "charging-1", pressure: { supply: 150, primary: 95, secondary: 95 } };
-  if (normalized.includes("dryer")) return { componentKey: "air-dryer", lineId: "charging-2", pressure: { supply: 45, primary: 25, secondary: 25 } };
-  if (normalized.includes("supply reservoir")) return { componentKey: "wet-tank", lineId: "charging-2", pressure: { supply: 30, primary: 35, secondary: 35 } };
-  if (normalized.includes("primary")) return { componentKey: "primary-tank", lineId: "primary-feed", pressure: { primary: 25 } };
-  if (normalized.includes("secondary")) return { componentKey: "secondary-tank", lineId: "secondary-feed", pressure: { secondary: 25 } };
-  if (normalized.includes("foot")) return { componentKey: "foot-brake-valve", lineId: "primary-service", pressure: { primary: 70, secondary: 70 } };
-  if (normalized.includes("tractor protection")) return { componentKey: "tractor-protection-valve", lineId: "tractor-protection", pressure: { trailer: 0 } };
-  if (normalized.includes("red")) return { componentKey: "red-glad-hand", lineId: "tractor-protection", pressure: { trailer: 0 } };
-  if (normalized.includes("blue")) return { componentKey: "blue-glad-hand", lineId: "trailer-service", pressure: { trailer: 90 } };
-  if (normalized.includes("relay")) return { componentKey: "relay-valves", lineId: "primary-service", pressure: { primary: 75, trailer: 55 } };
-  if (normalized.includes("abs sensor")) return { componentKey: "wheel-speed-sensors", lineId: "abs-control" };
-  if (normalized.includes("abs modulator")) return { componentKey: "abs-modulator", lineId: "abs-control" };
-  if (normalized.includes("brake chamber") || normalized.includes("spring brake")) return { componentKey: "spring-brake-chambers", lineId: "parking-control", pressure: { primary: 80, trailer: 45 } };
-  if (normalized.includes("trailer brakes")) return { componentKey: "relay-emergency-valve", lineId: "trailer-supply", pressure: { trailer: 30 } };
-  return { componentKey: selectedDefaultComponentForFault(), lineId: "", pressure: { supply: 75, primary: 65, secondary: 65, trailer: 45 } };
-}
-
-function selectedDefaultComponentForFault() {
-  return "air-compressor";
-}
-
-function diagnosticSummary(results) {
-  return Object.entries(results || {})
-    .map(([step, result]) => `${step}: ${result}`)
-    .join("; ");
-}
-
-function PsiBadge({ label, value }) {
-  const tone = value >= 90 ? "text-emerald-700" : value >= 60 ? "text-amber-700" : "text-red-700";
-  return (
-    <div className="rounded-xl bg-white px-3 py-2 shadow-sm">
-      <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`text-xl font-black ${tone}`}>{value}</p>
-    </div>
-  );
-}
-
-function ColorLegend() {
-  const items = [
-    "Charging circuit",
-    "Primary circuit",
-    "Secondary circuit",
-    "Park / Supply",
-    "Parking circuit",
-    "Trailer supply circuit",
-    "Trailer service circuit",
-    "Trailer parking circuit",
-  ];
-  return (
-    <div className="sticky bottom-0 z-10 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
-      <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Color legend</p>
-      <div className="flex flex-wrap gap-2">
-        {items.map((item) => (
-          <span key={item} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700">
-            <span className="h-2.5 w-8 rounded-full" style={{ backgroundColor: circuitStyles[item]?.color || "#64748b" }} />
-            {circuitStyles[item]?.label || item}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function WheelSvg({ x, y }) {
-  return (
-    <g>
-      <circle cx={x} cy={y} r="38" fill="#1f2937" />
-      <circle cx={x} cy={y} r="22" fill="#cbd5e1" />
-      <circle cx={x} cy={y} r="8" fill="#64748b" />
-    </g>
-  );
-}
-
-function sectionTitle(section) {
-  if (section === "Trailer") return "Trailer System - 53 ft Dry Van";
-  if (section === "Towing Trailer") return "Towing Trailer Air System";
-  if (section === "Converter Dolly") return "Converter Dolly Air System";
-  return "Truck / Tractor Air System";
-}
-
-function lineLabelX(path) {
-  const numbers = path.match(/-?\d+(\.\d+)?/g)?.map(Number) || [120];
-  return numbers[Math.max(0, Math.floor(numbers.length / 2) - 1)] || 120;
-}
-
-function lineLabelY(path) {
-  const numbers = path.match(/-?\d+(\.\d+)?/g)?.map(Number) || [0, 120];
-  return (numbers[Math.max(1, Math.floor(numbers.length / 2))] || 120) - 10;
-}
-
-function componentFill(component) {
-  if (component.category === "ABS") return "#dbeafe";
-  if (component.category === "Air Supply") return "#ecfdf5";
-  if (component.key.includes("spring") || component.key.includes("parking")) return "#fef3c7";
-  return "#ffffff";
-}
-
-function shortLabel(value) {
-  const text = String(value || "");
-  return text.length > 18 ? `${text.slice(0, 17)}...` : text;
-}
-
-function AirDiagram({ section, components, lines, selectedKey, selectedLineId, selectedLines, simulation, traceMode, traceCircuit, zoom, language, onSelect, onLineSelect }) {
-  const activeHotspot = diagramHotspots.find((item) => item.componentKey === selectedKey);
-  const activeLineIds = new Set([...(activeHotspot?.lineIds || []), selectedLineId, ...selectedLines.map((line) => line.id)].filter(Boolean));
+function Toolbar({ search, filter, zoom, panMode, language, fullScreen, onSearch, onFilter, onZoom, onPanMode, onLanguage, onFull, onFit, onExportSvg, onExportPng, onPrintPdf }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-black">Truck / Tractor System and Trailer System Reference</h2>
-          <p className="text-xs font-semibold text-slate-500">Primary visual uses the uploaded air-brake diagram with aligned transparent hotspots.</p>
-        </div>
-        <Truck className="h-6 w-6 text-blue-600" />
-      </div>
-      <div className="max-h-[70vh] overflow-auto rounded-2xl border border-slate-200 bg-white">
-        <div
-          className="relative mx-auto w-full min-w-[980px] max-w-[1600px] origin-top-left"
-          style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
-        >
-          <img
-            src={airSystemDiagramSrc}
-            alt="Truck/Tractor System and Trailer System air-brake diagram"
-            className="block h-auto w-full select-none bg-white object-contain"
-            draggable="false"
+      <div className="grid gap-3 xl:grid-cols-[1fr_auto] xl:items-center">
+        <div className="relative">
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+          <input
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+            placeholder="Search exact diagram component..."
+            className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm font-semibold outline-none focus:border-blue-500"
           />
-          <div className="pointer-events-none absolute inset-0">
-            {diagramLineOverlays.map((line) => {
-              const pressure = linePressure(line, simulation);
-              const isActive = activeLineIds.has(line.id) || (traceMode && traceCircuit === line.circuit);
-              const faded = traceMode && traceCircuit !== "All circuits" && traceCircuit !== line.circuit;
-              const faulted = simulation.fault && faultTarget(simulation.fault).lineId === line.id;
-              return (
-                <button
-                  key={line.id}
-                  type="button"
-                  title={`${line.label} - ${line.circuit} - ${pressure} PSI`}
-                  onClick={() => onLineSelect(line.id)}
-                  className={`pointer-events-auto absolute rounded-full border transition ${
-                    isActive ? "border-blue-700 bg-blue-500/25 shadow-[0_0_0_2px_rgba(37,99,235,0.2)]" : "border-transparent bg-transparent hover:border-blue-400 hover:bg-blue-400/15"
-                  } ${faded ? "opacity-15" : "opacity-100"} ${faulted ? "animate-pulse bg-red-500/35" : ""}`}
-                  style={{
-                    left: `${line.x}%`,
-                    top: `${line.y}%`,
-                    width: `${line.width}%`,
-                    height: `${line.height}%`,
-                  }}
-                >
-                  <span className="sr-only">{line.label}</span>
-                </button>
-              );
-            })}
-            {diagramHotspots.map((spot) => {
-              const component = allComponents.find((item) => item.key === spot.componentKey);
-              const isSelected = selectedKey === spot.componentKey;
-              const faulted = simulation.fault && faultTarget(simulation.fault).componentKey === spot.componentKey;
-              const relatedActive = spot.lineIds.some((id) => activeLineIds.has(id));
-              const label = component ? (language === "es" ? component.nameEs : component.name) : spot.label;
-              return (
-                <button
-                  key={spot.componentKey}
-                  type="button"
-                  title={spot.label}
-                  onClick={() => {
-                    onSelect(spot.componentKey);
-                    if (spot.lineIds[0]) onLineSelect(spot.lineIds[0]);
-                  }}
-                  className={`pointer-events-auto absolute rounded-xl border-2 transition ${
-                    isSelected
-                      ? "border-blue-700 bg-blue-500/25 shadow-[0_0_0_3px_rgba(37,99,235,0.25)]"
-                      : relatedActive
-                        ? "border-emerald-500 bg-emerald-400/20"
-                        : "border-transparent bg-transparent hover:border-blue-500 hover:bg-blue-500/15"
-                  } ${faulted ? "animate-pulse border-red-600 bg-red-500/30" : ""}`}
-                  style={{
-                    left: `${spot.x}%`,
-                    top: `${spot.y}%`,
-                    width: `${spot.width}%`,
-                    height: `${spot.height}%`,
-                  }}
-                >
-                  <span className="sr-only">{label}</span>
-                </button>
-              );
-            })}
-          </div>
         </div>
+        <div className="flex flex-wrap gap-2">
+          {componentFilters.map((item) => (
+            <button key={item} type="button" onClick={() => onFilter(item)} className={`h-10 rounded-xl px-3 text-xs font-black ${filter === item ? "bg-slate-950 text-white" : "border border-slate-200 bg-white text-slate-600"}`}>
+              {item}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <IconButton title="Zoom out" onClick={() => onZoom((value) => Math.max(0.5, Number((value - 0.25).toFixed(2))))}><ZoomOut className="h-4 w-4" /></IconButton>
+        <span className="flex h-9 items-center rounded-xl bg-slate-100 px-3 text-xs font-black text-slate-600">{Math.round(zoom * 100)}%</span>
+        <IconButton title="Zoom in" onClick={() => onZoom((value) => Math.min(5, Number((value + 0.25).toFixed(2))))}><ZoomIn className="h-4 w-4" /></IconButton>
+        <button type="button" onClick={() => onZoom(1)} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700">Reset View</button>
+        <button type="button" onClick={onFit} className="h-9 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700">Fit Diagram</button>
+        <button type="button" onClick={onFull} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><Maximize2 className="h-4 w-4" />{fullScreen ? "Exit Full" : "Full Screen"}</button>
+        <button type="button" onClick={() => onPanMode((value) => !value)} className={`inline-flex h-9 items-center gap-2 rounded-xl px-3 text-xs font-black ${panMode ? "bg-blue-600 text-white" : "border border-slate-200 text-slate-700"}`}><Move className="h-4 w-4" />Pan Mode</button>
+        <button type="button" onClick={() => onLanguage(language === "en" ? "es" : "en")} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><Languages className="h-4 w-4" />{language === "en" ? "English" : "Espanol"}</button>
+        <button type="button" onClick={onExportSvg} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><Download className="h-4 w-4" />SVG</button>
+        <button type="button" onClick={onExportPng} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><Download className="h-4 w-4" />PNG</button>
+        <button type="button" onClick={onPrintPdf} className="inline-flex h-9 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-black text-slate-700"><FileText className="h-4 w-4" />PDF</button>
       </div>
     </section>
   );
 }
 
-function ComponentGrid({ components, selectedKey, onSelect }) {
+function AirBrakeSvg({ diagramRef, components, selectedKey, selectedLineId, connectedLines, simulation, zoom, panMode, language, onSelect, onLineSelect }) {
+  const visibleIds = new Set(components.map((component) => component.key));
+  const connectedIds = new Set(connectedLines.map((line) => line.id));
+  const selectedComponent = allComponents.find((item) => item.key === selectedKey);
   return (
-    <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-      {components.map((item) => (
-        <button
-          key={item.key}
-          type="button"
-          onClick={() => onSelect(item.key)}
-          className={`rounded-2xl border p-4 text-left transition ${selectedKey === item.key ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:border-blue-200"}`}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-black text-slate-950">{item.name}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-500">{item.nameEs}</p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">{item.category}</span>
-          </div>
-        </button>
-      ))}
+    <section ref={diagramRef} className={`max-h-[78vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm ${panMode ? "cursor-grab" : ""}`}>
+      <svg
+        id="air-system-svg"
+        viewBox="0 0 1350 620"
+        role="img"
+        aria-label="High-resolution interactive truck tractor and trailer air brake system schematic"
+        className="block min-h-[720px] min-w-[1500px] origin-top-left"
+        style={{ transform: `scale(${zoom})`, transformOrigin: "top left" }}
+      >
+        <defs>
+          <marker id="air-arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+            <path d="M 0 0 L 9 4.5 L 0 9 z" fill="#0f172a" />
+          </marker>
+          <style>{`
+            .air-flow { stroke-dasharray: 12 10; animation: airFlow 1.05s linear infinite; }
+            .air-fault { animation: airFault 0.8s ease-in-out infinite; }
+            @keyframes airFlow { to { stroke-dashoffset: -44; } }
+            @keyframes airFault { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+          `}</style>
+        </defs>
+        <rect x="0" y="0" width="1350" height="620" fill="#ffffff" />
+        <text x="44" y="42" className="fill-slate-900 text-2xl font-black">TRUCK / TRACTOR SYSTEM</text>
+        <text x="780" y="42" className="fill-slate-900 text-2xl font-black">TRAILER SYSTEM</text>
+        <line x1="735" y1="20" x2="735" y2="590" stroke="#cbd5e1" strokeWidth="2" strokeDasharray="8 8" />
+        <rect x="36" y="58" width="660" height="514" rx="18" fill="#f8fafc" stroke="#cbd5e1" />
+        <rect x="765" y="58" width="540" height="514" rx="18" fill="#f8fafc" stroke="#cbd5e1" />
+
+        {lines.map((line) => {
+          const isSelected = selectedLineId === line.id || connectedIds.has(line.id);
+          const isFaulted = simulation.fault && faultTarget(simulation.fault).lineId === line.id;
+          const active = linePressure(line, simulation) > 15;
+          return (
+            <g key={line.id} className={!isSelected && selectedComponent ? "opacity-30" : "opacity-100"}>
+              <path
+                id={`svg-line-${line.id}`}
+                d={line.path}
+                fill="none"
+                stroke={circuitStyles[line.circuit]?.color || "#64748b"}
+                strokeWidth={isSelected ? 8 : 5}
+                strokeLinecap="round"
+                markerEnd={active ? "url(#air-arrow)" : ""}
+                className={`${active ? "air-flow" : ""} ${isFaulted ? "air-fault" : ""} cursor-pointer transition-all hover:stroke-[9px]`}
+                onClick={() => onLineSelect(line.id)}
+              >
+                <title>{`${line.name} - ${circuitStyles[line.circuit]?.name || line.circuit} - ${linePressure(line, simulation)} PSI`}</title>
+              </path>
+              <text x={labelPoint(line.path).x} y={labelPoint(line.path).y} className="pointer-events-none fill-slate-700 text-[13px] font-black">
+                {line.name} - {linePressure(line, simulation)} PSI
+              </text>
+            </g>
+          );
+        })}
+
+        {allComponents.map((component) => {
+          const isVisible = visibleIds.has(component.key);
+          const isSelected = selectedKey === component.key;
+          const related = connectedLines.some((line) => line.source === component.key || line.target === component.key);
+          const faded = selectedComponent && !isSelected && !related;
+          const isFaulted = simulation.fault && faultTarget(simulation.fault).componentKey === component.key;
+          const label = language === "es" ? component.nameEs : component.name;
+          return (
+            <g
+              key={component.key}
+              id={`svg-${component.key}`}
+              data-component-key={component.key}
+              tabIndex="0"
+              role="button"
+              onClick={() => onSelect(component.key)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") onSelect(component.key);
+              }}
+              className={`cursor-pointer transition-opacity ${!isVisible || faded ? "opacity-25" : "opacity-100"} ${isFaulted ? "air-fault" : ""}`}
+            >
+              <ComponentShape component={component} selected={isSelected} related={related} />
+              <text x={component.x} y={component.y + 5} textAnchor="middle" className={`pointer-events-none text-[12px] font-black ${isSelected ? "fill-white" : "fill-slate-900"}`}>
+                {wrapLabel(label).map((line, index) => (
+                  <tspan key={line} x={component.x} dy={index === 0 ? 0 : 14}>{line}</tspan>
+                ))}
+              </text>
+              <title>{`${component.name} / ${component.nameEs}. ${circuitStyles[component.circuit]?.name || component.circuit}. ${componentPsi(component, simulation)} PSI`}</title>
+            </g>
+          );
+        })}
+      </svg>
     </section>
   );
 }
 
-function ComponentPanel({ component, condition, notes, photos, saving, simulation, connectedLines, diagnosticResults, language, fileInputRef, onCondition, onNotes, onPhotos, onSave, onAddJob, onNearby, onReport }) {
+function ComponentShape({ component, selected, related }) {
+  const width = component.size === "wide" ? 128 : 92;
+  const height = component.size === "wide" ? 42 : 38;
+  const fill = selected ? "#2563eb" : related ? "#dbeafe" : componentFill(component);
+  const stroke = selected ? "#1d4ed8" : related ? "#2563eb" : "#64748b";
+  if (component.category === "Reservoirs") {
+    return <ellipse cx={component.x} cy={component.y} rx={width / 2} ry={height / 2} fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 1.5} />;
+  }
+  if (component.category === "Lines") {
+    return <rect x={component.x - width / 2} y={component.y - height / 2} width={width} height={height} rx="18" fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 1.5} />;
+  }
+  return <rect x={component.x - width / 2} y={component.y - height / 2} width={width} height={height} rx="10" fill={fill} stroke={stroke} strokeWidth={selected ? 3 : 1.5} />;
+}
+
+function ComponentPanel({ component, condition, notes, photos, saving, simulation, connectedLines, diagnosticResults, language, fileInputRef, onCondition, onNotes, onPhotos, onSave, onAddJob, onNearby }) {
   const displayName = language === "es" ? component.nameEs : component.name;
   const secondaryName = language === "es" ? component.name : component.nameEs;
   const inputs = connectedLines.filter((line) => line.target === component.key).map((line) => line.name).join(", ") || "Manual/linked circuit";
@@ -1032,26 +716,28 @@ function ComponentPanel({ component, condition, notes, photos, saving, simulatio
     <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:sticky xl:top-4 xl:self-start">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-600">{component.section} / {component.category}</p>
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-600">{component.category}</p>
           <h2 className="mt-1 text-2xl font-black">{displayName}</h2>
           <p className="text-sm font-bold text-slate-500">{secondaryName}</p>
         </div>
         <Wind className="h-6 w-6 text-blue-600" />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <InfoPill label="Circuit" value={componentCircuit(component)} />
+        <InfoPill label="SVG ID" value={component.key} />
         <InfoPill label="Current PSI" value={`${componentPsi(component, simulation)} PSI`} />
       </div>
-      <InfoBlock label="Location" value={component.location} />
+      <InfoBlock label="Exact system location" value={component.location} />
+      <InfoBlock label="Circuit" value={circuitStyles[component.circuit]?.name || component.circuit} />
       <InfoBlock label="Function" value={component.function} />
-      <InfoBlock label="Normal operating condition" value="90-125 PSI available, no audible leak, correct delivery and release response." />
-      <InfoBlock label="Input source" value={inputs} />
-      <InfoBlock label="Output destination" value={outputs} />
-      <InfoBlock label="Common symptoms" value={component.symptoms} />
+      <InfoBlock label="Air input source" value={inputs} />
+      <InfoBlock label="Air output destination" value={outputs} />
+      <InfoBlock label="Normal condition" value={component.normal} />
+      <InfoBlock label="Common failure symptoms" value={component.symptoms} />
+      <InfoBlock label="Inspection steps" value={component.inspect} />
       <InfoBlock label="Possible causes" value={component.causes} />
-      <InfoBlock label="Basic inspection" value={component.inspect} />
       <InfoBlock label="Recommended repair" value={component.repair} />
       <InfoBlock label="Related components" value={component.related.join(", ")} />
+      <InfoBlock label="Related lines" value={connectedLines.map((line) => line.name).join(", ") || "None"} />
       <InfoBlock label="Diagnostic results" value={diagnosticSummary(diagnosticResults) || "No guided diagnostic steps marked yet."} />
 
       <label className="mt-4 block text-xs font-black uppercase tracking-wide text-slate-500">
@@ -1066,60 +752,17 @@ function ComponentPanel({ component, condition, notes, photos, saving, simulatio
         <textarea value={notes} onChange={(event) => onNotes(event.target.value)} className="mt-1 min-h-24 w-full rounded-xl border border-slate-200 p-3 text-sm font-semibold outline-none focus:border-blue-500" placeholder="Add inspection notes..." />
       </label>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        accept="image/*"
-        className="hidden"
-        onChange={(event) => onPhotos(Array.from(event.target.files || []))}
-      />
+      <input ref={fileInputRef} type="file" multiple accept="image/*" className="hidden" onChange={(event) => onPhotos(Array.from(event.target.files || []))} />
       <button type="button" onClick={() => fileInputRef.current?.click()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50">
-        <Camera className="h-4 w-4" />
         Upload Photo {photos.length ? `(${photos.length})` : ""}
       </button>
-
       <div className="mt-4 grid gap-2">
-        <button type="button" onClick={onAddJob} className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-black text-white hover:bg-blue-700">
-          <ClipboardList className="h-4 w-4" />
-          Add Diagnosis to Job
-        </button>
-        <button type="button" onClick={onAddJob} className="flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-black text-blue-700 hover:bg-blue-100">
-          <PackagePlus className="h-4 w-4" />
-          Add Component to Job
-        </button>
-        <button type="button" onClick={onNearby} className="flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-black text-amber-700 hover:bg-amber-100">
-          <MapPin className="h-4 w-4" />
-          Add to Nearby Parts
-        </button>
-        <button type="button" onClick={onSave} disabled={saving} className="flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
-          <Save className="h-4 w-4" />
-          Save Inspection
-        </button>
-        <button type="button" onClick={onReport} className="flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-black text-slate-700 hover:bg-slate-50">
-          <FileText className="h-4 w-4" />
-          Generate Diagnostic Report
-        </button>
+        <PrimaryAction onClick={onAddJob} icon={<ClipboardList className="h-4 w-4" />} label="Add to Job" />
+        <PrimaryAction onClick={onAddJob} icon={<Wrench className="h-4 w-4" />} label="Add Diagnosis" />
+        <PrimaryAction onClick={onNearby} icon={<MapPin className="h-4 w-4" />} label="Add to Nearby Parts" tone="amber" />
+        <PrimaryAction onClick={onSave} icon={<Save className="h-4 w-4" />} label={saving ? "Saving..." : "Save Inspection"} tone="green" disabled={saving} />
       </div>
     </aside>
-  );
-}
-
-function InfoBlock({ label, value }) {
-  return (
-    <div className="mt-4">
-      <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">{value}</p>
-    </div>
-  );
-}
-
-function InfoPill({ label, value }) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-3">
-      <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-1 text-xs font-black text-slate-800">{value}</p>
-    </div>
   );
 }
 
@@ -1134,8 +777,6 @@ function DiagnosticsPanel({ simulation, problem, selectedProblem, results, onPro
     "Release Tractor Parking Brakes",
     "Supply Air to Trailer",
     "Pull Trailer Supply Valve",
-    "Disconnect Red Glad Hand",
-    "Disconnect Blue Glad Hand",
     "Drain Supply Tank",
     "Drain Primary Tank",
     "Drain Secondary Tank",
@@ -1146,19 +787,19 @@ function DiagnosticsPanel({ simulation, problem, selectedProblem, results, onPro
       <div className="flex items-center gap-3">
         <Gauge className="h-5 w-5 text-blue-600" />
         <div>
-          <h2 className="text-lg font-black">Simulation Controls</h2>
+          <h2 className="text-lg font-black">Pressure Simulation and Diagnostic Mode</h2>
           <p className="text-sm font-semibold text-slate-500">{simulation.state}</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-6">
         {actions.map((action) => (
           <button key={action} type="button" onClick={() => onAction(action)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700 hover:border-blue-300 hover:bg-blue-50">
             {action}
           </button>
         ))}
       </div>
-      <h3 className="mt-5 text-sm font-black uppercase tracking-wide text-slate-500">Fault simulations</h3>
-      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+      <h3 className="mt-5 text-sm font-black uppercase tracking-wide text-slate-500">Failure simulations</h3>
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
         {faultSimulations.map((fault) => (
           <button key={fault} type="button" onClick={() => onFault(fault)} className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-black text-red-700 hover:bg-red-100">
             {fault}
@@ -1175,10 +816,10 @@ function DiagnosticsPanel({ simulation, problem, selectedProblem, results, onPro
           </label>
           <div className="grid gap-2">
             {problem.steps.map((step, index) => (
-              <div key={step} className="grid gap-2 rounded-xl bg-white p-3 md:grid-cols-[1fr_180px] md:items-center">
+              <div key={step} className="grid gap-2 rounded-xl bg-white p-3 md:grid-cols-[1fr_190px] md:items-center">
                 <p className="text-sm font-bold text-slate-700">{index + 1}. {step}</p>
                 <select value={results[step] || "Not Tested"} onChange={(event) => onResult(step, event.target.value)} className="h-9 rounded-xl border border-slate-200 px-2 text-xs font-black text-slate-700">
-                  {["Passed", "Failed", "Not Tested", "Needs Technician Inspection"].map((item) => <option key={item}>{item}</option>)}
+                  {statusOptions.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </div>
             ))}
@@ -1189,9 +830,46 @@ function DiagnosticsPanel({ simulation, problem, selectedProblem, results, onPro
   );
 }
 
+function SavedInspections({ inspections, jobs, onRefresh, onOpen }) {
+  const jobById = new Map(jobs.map((job) => [job.id, job]));
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black">Saved Inspections</h2>
+          <p className="text-sm font-semibold text-slate-500">Recent air system diagnostics saved in Supabase.</p>
+        </div>
+        <button type="button" onClick={onRefresh} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Refresh">
+          <RefreshCw className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        {inspections.map((item) => {
+          const job = jobById.get(item.job_id);
+          return (
+            <button key={item.id} type="button" onClick={() => onOpen(item.svg_component_id || item.component_key)} className="rounded-2xl border border-slate-200 p-4 text-left hover:bg-blue-50">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-black">{item.component_name}</p>
+                  <p className="text-sm font-semibold text-slate-500">{item.component_name_es || item.vehicle_section}</p>
+                </div>
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">{item.condition}</span>
+              </div>
+              <p className="mt-2 text-xs font-bold text-blue-700">{item.svg_component_id || item.component_key}</p>
+              <p className="mt-3 text-sm font-semibold text-slate-600">{item.recommendation}</p>
+              <p className="mt-3 text-xs font-bold text-slate-400">{job ? `${job.invoice_number || job.id} - ${job.company || ""}` : "No job attached"} - {formatDate(item.created_at)}</p>
+            </button>
+          );
+        })}
+        {!inspections.length && <p className="rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-500">No saved inspections yet.</p>}
+      </div>
+    </section>
+  );
+}
+
 function JobSelectorModal({ jobs, search, saving, onSearch, onSelect, onClose }) {
   return (
-    <Modal title="Add Diagnosis to Job" onClose={onClose}>
+    <Modal title="Attach Air System Diagnosis to Job" onClose={onClose}>
       <div className="relative">
         <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
         <input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Invoice, customer, location, technician..." className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-sm font-semibold outline-none focus:border-blue-500" />
@@ -1199,8 +877,8 @@ function JobSelectorModal({ jobs, search, saving, onSearch, onSelect, onClose })
       <div className="mt-4 max-h-[55vh] space-y-2 overflow-auto">
         {jobs.map((job) => (
           <button key={job.id} type="button" onClick={() => onSelect(job)} disabled={saving} className="w-full rounded-xl border border-slate-200 p-3 text-left hover:bg-blue-50 disabled:opacity-60">
-            <p className="font-black">{job.invoice_number || job.id} · {job.company || "No company"}</p>
-            <p className="mt-1 text-sm font-semibold text-slate-500">{job.location || "No location"} · {job.tech || "No tech"} · {job.status || "No status"}</p>
+            <p className="font-black">{job.invoice_number || job.id} - {job.company || "No company"}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">{job.location || "No location"} - {job.tech || "No tech"} - {job.status || "No status"}</p>
           </button>
         ))}
         {!jobs.length && <p className="rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-500">No active or pending jobs found.</p>}
@@ -1232,51 +910,13 @@ function NearbyComponentModal({ component, jobs, search, onSearch, onAttach, onC
         <div className="mt-3 max-h-64 space-y-2 overflow-auto">
           {jobs.map((job) => (
             <button key={job.id} type="button" onClick={() => onAttach({ ...job, location: queryLocation || job.location })} className="w-full rounded-xl border border-slate-200 p-3 text-left hover:bg-amber-50">
-              <p className="font-black">{job.invoice_number || job.id} · {job.company || "No company"}</p>
+              <p className="font-black">{job.invoice_number || job.id} - {job.company || "No company"}</p>
               <p className="text-sm font-semibold text-slate-500">{job.location || "No location"}</p>
             </button>
           ))}
         </div>
       </div>
     </Modal>
-  );
-}
-
-function SavedInspections({ inspections, jobs, onRefresh }) {
-  const jobById = new Map(jobs.map((job) => [job.id, job]));
-  return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-black">Saved Inspections</h2>
-          <p className="text-sm font-semibold text-slate-500">Recent air system diagnostics saved in Supabase.</p>
-        </div>
-        <button type="button" onClick={onRefresh} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50" title="Refresh">
-          <RefreshCw className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {inspections.map((item) => {
-          const job = jobById.get(item.job_id);
-          return (
-            <article key={item.id} className="rounded-2xl border border-slate-200 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-black">{item.component_name}</p>
-                  <p className="text-sm font-semibold text-slate-500">{item.component_name_es || item.vehicle_section}</p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black text-slate-600">{item.condition}</span>
-              </div>
-              <p className="mt-3 text-sm font-semibold text-slate-600">{item.recommendation}</p>
-              <p className="mt-3 text-xs font-bold text-slate-400">
-                {job ? `${job.invoice_number || job.id} · ${job.company || ""}` : "No job attached"} · {formatDate(item.created_at)}
-              </p>
-            </article>
-          );
-        })}
-        {!inspections.length && <p className="rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-500">No saved inspections yet.</p>}
-      </div>
-    </section>
   );
 }
 
@@ -1294,6 +934,188 @@ function Modal({ title, children, onClose }) {
       </div>
     </div>
   );
+}
+
+function PsiBadge({ label, value }) {
+  const tone = value >= 90 ? "text-emerald-700" : value >= 60 ? "text-amber-700" : "text-red-700";
+  return (
+    <div className="rounded-xl bg-white px-3 py-2 shadow-sm">
+      <p className="text-[10px] uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`text-xl font-black ${tone}`}>{value}</p>
+    </div>
+  );
+}
+
+function ColorLegend() {
+  return (
+    <div className="sticky bottom-0 z-10 rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-sm backdrop-blur">
+      <p className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">Color legend</p>
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(circuitStyles).map(([key, item]) => (
+          <span key={key} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-700">
+            <span className="h-2.5 w-8 rounded-full" style={{ backgroundColor: item.color }} />
+            {item.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function IconButton({ title, onClick, children }) {
+  return <button type="button" title={title} onClick={onClick} className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-50">{children}</button>;
+}
+
+function PrimaryAction({ onClick, icon, label, tone = "blue", disabled = false }) {
+  const styles = {
+    blue: "bg-blue-600 text-white hover:bg-blue-700",
+    amber: "border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100",
+    green: "border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
+  };
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-black disabled:opacity-60 ${styles[tone] || styles.blue}`}>
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function InfoBlock({ label, value }) {
+  return (
+    <div className="mt-4">
+      <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">{value}</p>
+    </div>
+  );
+}
+
+function InfoPill({ label, value }) {
+  return (
+    <div className="rounded-xl bg-slate-50 p-3">
+      <p className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</p>
+      <p className="mt-1 break-words text-xs font-black text-slate-800">{value}</p>
+    </div>
+  );
+}
+
+function componentFill(component) {
+  if (component.category === "Reservoirs") return "#ecfeff";
+  if (component.category === "Brakes") return "#fef3c7";
+  if (component.category === "Lines") return "#f8fafc";
+  if (component.category === "Charging") return "#e5e7eb";
+  if (component.category === "Controls") return "#dbeafe";
+  return "#ffffff";
+}
+
+function wrapLabel(value) {
+  const words = String(value || "").split(" ");
+  const lines = [];
+  let current = "";
+  words.forEach((word) => {
+    if (`${current} ${word}`.trim().length > 18) {
+      if (current) lines.push(current);
+      current = word;
+    } else {
+      current = `${current} ${word}`.trim();
+    }
+  });
+  if (current) lines.push(current);
+  return lines.slice(0, 3);
+}
+
+function labelPoint(path) {
+  const numbers = path.match(/-?\d+(\.\d+)?/g)?.map(Number) || [100, 100];
+  const middle = Math.max(0, Math.floor(numbers.length / 2) - 1);
+  return { x: numbers[middle] || 100, y: (numbers[middle + 1] || 100) - 10 };
+}
+
+function linePressure(line, simulation) {
+  if (line.circuit === "charging") return simulation.supply || 0;
+  if (line.circuit === "primary") return simulation.primary || 0;
+  if (line.circuit === "secondary") return simulation.secondary || 0;
+  if (line.circuit === "trailerSupply") return simulation.trailerSupplied ? simulation.trailer || 0 : 0;
+  if (line.circuit === "trailerControl") return simulation.serviceApplied ? Math.max(0, simulation.trailer - 8) : 0;
+  if (line.circuit === "parkingControl" || line.circuit === "trailerParking") return simulation.parkingSet ? 0 : simulation.primary || 0;
+  if (line.circuit === "parkSupply") return simulation.supply || 0;
+  if (line.circuit === "antiCompound") return simulation.serviceApplied ? simulation.primary || 0 : 0;
+  return 0;
+}
+
+function componentPsi(component, simulation) {
+  if (component.circuit === "charging" || component.circuit === "parkSupply") return simulation.supply;
+  if (component.circuit === "primary" || component.circuit === "antiCompound") return simulation.primary;
+  if (component.circuit === "secondary") return simulation.secondary;
+  if (component.circuit === "trailerSupply" || component.circuit === "trailerControl" || component.circuit === "trailerParking") return simulation.trailer;
+  if (component.circuit === "parkingControl") return simulation.parkingSet ? 0 : simulation.primary;
+  return Math.max(simulation.supply, simulation.primary, simulation.secondary, simulation.trailer);
+}
+
+function applySimulation(current, action) {
+  if (action === "Reset System") return { supply: 0, primary: 0, secondary: 0, trailer: 0, state: "System inactive", fault: "", serviceApplied: false, parkingSet: true, trailerSupplied: false, compressorRunning: false };
+  if (action === "Start Engine / Compressor") return { ...current, compressorRunning: true, supply: Math.max(current.supply, 35), state: "Compressor running" };
+  if (action === "Stop Compressor") return { ...current, compressorRunning: false, state: "Compressor stopped" };
+  if (action === "Build Air Pressure") return { ...current, supply: 125, primary: 120, secondary: 120, trailer: current.trailerSupplied ? 110 : current.trailer, state: "Normal air pressure", fault: "" };
+  if (action === "Apply Foot Brake") return { ...current, primary: Math.max(0, current.primary - 8), secondary: Math.max(0, current.secondary - 8), trailer: current.trailerSupplied ? Math.max(0, current.trailer - 6) : current.trailer, serviceApplied: true, state: "Service brakes applied" };
+  if (action === "Release Foot Brake") return { ...current, serviceApplied: false, state: "Service brakes released" };
+  if (action === "Set Tractor Parking Brakes") return { ...current, parkingSet: true, state: "Parking brakes set" };
+  if (action === "Release Tractor Parking Brakes") return { ...current, parkingSet: false, state: "Parking brakes released" };
+  if (action === "Supply Air to Trailer") return { ...current, trailerSupplied: true, trailer: current.primary > 80 ? 105 : 55, state: "Trailer supplied" };
+  if (action === "Pull Trailer Supply Valve") return { ...current, trailerSupplied: false, trailer: 0, parkingSet: true, fault: action, state: "Trailer emergency brakes applied" };
+  if (action === "Drain Supply Tank") return { ...current, supply: 0, primary: Math.min(current.primary, 40), secondary: Math.min(current.secondary, 40), state: "Supply tank drained", fault: "Supply reservoir leak" };
+  if (action === "Drain Primary Tank") return { ...current, primary: 0, state: "Primary tank drained", fault: "Rear axle service reservoir leak" };
+  if (action === "Drain Secondary Tank") return { ...current, secondary: 0, state: "Secondary tank drained", fault: "Front axle service reservoir leak" };
+  return current;
+}
+
+function faultTarget(fault) {
+  const normalized = String(fault || "").toLowerCase();
+  if (normalized.includes("compressor")) return { componentKey: "compressor", lineId: "line-compressor-dryer", pressure: { supply: 20, primary: 0, secondary: 0, trailer: 0 } };
+  if (normalized.includes("governor")) return { componentKey: "d2-governor", lineId: "line-governor-compressor", pressure: { supply: 150, primary: 95, secondary: 95 } };
+  if (normalized.includes("dryer")) return { componentKey: "air-dryer", lineId: "line-dryer-supply", pressure: { supply: 45, primary: 25, secondary: 25 } };
+  if (normalized.includes("supply reservoir")) return { componentKey: "supply-reservoir", lineId: "line-dryer-supply", pressure: { supply: 30, primary: 35, secondary: 35 } };
+  if (normalized.includes("front axle")) return { componentKey: "front-axle-service-reservoir", lineId: "line-supply-front", pressure: { secondary: 25 } };
+  if (normalized.includes("rear axle")) return { componentKey: "rear-axle-service-reservoir", lineId: "line-supply-rear", pressure: { primary: 25 } };
+  if (normalized.includes("foot")) return { componentKey: "foot-brake-valve", lineId: "line-foot-service", pressure: { primary: 70, secondary: 70 } };
+  if (normalized.includes("tp-3") || normalized.includes("tractor protection")) return { componentKey: "tp3-tractor-protection-valve", lineId: "line-tp3-supply", pressure: { trailer: 0 } };
+  if (normalized.includes("red")) return { componentKey: "trailer-supply-line", lineId: "line-tp3-supply", pressure: { trailer: 0 } };
+  if (normalized.includes("blue")) return { componentKey: "trailer-control-service-line", lineId: "line-service-r12", pressure: { trailer: 90 } };
+  if (normalized.includes("r-12")) return { componentKey: "r12-relay-valve", lineId: "line-r12-chambers", pressure: { trailer: 55 } };
+  if (normalized.includes("r-14")) return { componentKey: "r14-relay-valve", lineId: "line-rear-relay", pressure: { primary: 60 } };
+  if (normalized.includes("brake chamber")) return { componentKey: "trailer-brake-chambers", lineId: "line-r12-chambers", pressure: { trailer: 45 } };
+  if (normalized.includes("spring brake")) return { componentKey: "sr5-trailer-spring-brake-valve", lineId: "line-sr5-spring-chambers", pressure: { trailer: 35 } };
+  if (normalized.includes("trailer brakes locked")) return { componentKey: "sr5-trailer-spring-brake-valve", lineId: "line-trailer-reservoir-sr5", pressure: { trailer: 20 } };
+  if (normalized.includes("trailer brakes not applying")) return { componentKey: "r12-relay-valve", lineId: "line-service-r12", pressure: { trailer: 75 } };
+  return { componentKey: "low-pressure-indicator", lineId: "line-dryer-supply", pressure: { supply: 65, primary: 60, secondary: 60, trailer: 35 } };
+}
+
+function buildInspectionPayload({ component, condition, notes, simulation, job, currentUser, diagnosticResults, connectedLines }) {
+  return {
+    job_id: job?.id || null,
+    created_by: currentUser?.id || currentUser?.authUserId || null,
+    assigned_technician_id: job?.technician_id || null,
+    vehicle_section: component.location.includes("Trailer") ? "Trailer" : "Truck",
+    component_key: component.key,
+    svg_component_id: component.key,
+    component_name: component.name,
+    component_name_es: component.nameEs,
+    condition,
+    failure_type: simulation.fault || "",
+    symptoms: component.symptoms,
+    possible_causes: component.causes,
+    recommendation: component.repair,
+    dispatcher_notes: notes,
+    diagnostic_results: Object.entries(diagnosticResults || {}).map(([step, result]) => ({ step, result })),
+    required_parts: component.related.join(", "),
+    related_line_ids: connectedLines.map((line) => line.id),
+    primary_psi: simulation.primary,
+    secondary_psi: simulation.secondary,
+    trailer_psi: simulation.trailer,
+    simulation_type: simulation.fault || simulation.state,
+  };
+}
+
+function diagnosticSummary(results) {
+  return Object.entries(results || {}).map(([step, result]) => `${step}: ${result}`).join("; ");
 }
 
 function googleMapsNearbyLink(term, location) {
