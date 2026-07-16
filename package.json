@@ -11,16 +11,17 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "framer-motion": "latest",
+    "lucide-react": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest",
-    "framer-motion": "latest",
-    "recharts": "latest"
+    "read-excel-file": "^9.3.1",
+    "recharts": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
-    "tailwindcss": "^3.4.17",
+    "autoprefixer": "latest",
     "postcss": "latest",
-    "autoprefixer": "latest"
- }
+    "tailwindcss": "^3.4.17"
+  }
 }
