@@ -30,6 +30,7 @@ import {
   FileText,
   Bell,
   BellRing,
+  Wrench,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
@@ -385,7 +386,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser }) {
+export default function DispatchLiveUpdatesPage({ currentUser, onOpenFlatRate }) {
   const formRef = useRef(null);
   const searchInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
@@ -450,6 +451,14 @@ export default function DispatchLiveUpdatesPage({ currentUser }) {
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
+
+  useEffect(() => {
+    if (localStorage.getItem("flat-rate-create-job") === "1") {
+      localStorage.removeItem("flat-rate-create-job");
+      setForm(emptyForm());
+      setShowAddJobModal(true);
+    }
+  }, []);
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -1790,6 +1799,9 @@ await logActivity({
               )}
 
               <div className="rounded-xl border border-white/10 bg-white/5 p-3 md:col-span-2 xl:col-span-4">
+                <button type="button" onClick={onOpenFlatRate} className="mb-3 flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-500">
+                  <Wrench className="h-4 w-4" /> Add Flat Rate Labor
+                </button>
                 <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
                   Filter by period / date range
                 </div>

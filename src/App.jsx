@@ -9,6 +9,7 @@ import {
   CreditCard,
   Building2,
   FileText,
+  BookOpen,
   HelpCircle,
   LayoutDashboard,
   LogOut,
@@ -28,6 +29,7 @@ import { CustomerCRM } from "./modules/customers";
 import { ExecutiveDashboard } from "./modules/executive";
 import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
 import { UserManagement } from "./modules/users";
+import { FlatRateGuide } from "./modules/flat-rate";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 import { supabase } from "./lib/supabase";
 import {
@@ -67,6 +69,7 @@ const sidebarSections = [
     items: [
       { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
       { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
+      { id: "flat-rate", label: "Flat Rate Guide", icon: BookOpen, roles: ["admin", "dispatcher"] },
       { id: "invoices", label: "Invoices", icon: FileText, target: "billing", adminOnly: true },
     ],
   },
@@ -346,13 +349,14 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} onOpenFlatRate={() => setActiveView("flat-rate")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
         {canAccessActiveView && activeView === "activity" && <ActivityLogPage role={role} />}
+        {canAccessActiveView && activeView === "flat-rate" && <FlatRateGuide session={session} role={role} onCreateJob={() => { localStorage.setItem("flat-rate-create-job", "1"); setActiveView("dispatch"); }} />}
       </main>
     </div>
   );
@@ -371,6 +375,7 @@ function canAccessView(view, role, permissions) {
   if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
   if (view === "activity") return role === "admin" || role === "dispatcher";
   if (view === "customers") return role === "admin" || role === "dispatcher";
+  if (view === "flat-rate") return role === "admin" || role === "dispatcher";
   if (["billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";
   }
@@ -399,6 +404,7 @@ function viewTitle(view) {
     administration: "Administration",
     users: "Users",
     activity: "Activity Log",
+    "flat-rate": "Flat Rate Guide",
   };
 
   return titles[view] || "Dispatch Center";
