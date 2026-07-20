@@ -2099,7 +2099,7 @@ await logActivity({
                     <tr
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
-                    className={`align-middle text-slate-200 transition hover:bg-blue-500/10 ${
+                    className={`h-11 align-middle text-slate-200 transition hover:bg-blue-500/10 ${
                       job.rowFlag === "Problem" || job.status === "Dry Run"
                           ? "border-l-4 border-red-500 bg-red-500/10"
                           : "border-l-4 border-transparent odd:bg-white/[0.03] even:bg-white/[0.06]"
@@ -2134,20 +2134,26 @@ await logActivity({
                         />
                       </Td>
 
-                      <Td>
-                        <select
-                          className={`${darkSelectClass} h-8 rounded-full px-3 text-xs font-bold`}
-                          style={jobStatusControlStyle(job.status)}
-                          value={job.status}
-                          onChange={(e) => updateJob(job.id, "status", e.target.value)}
-                        >
-                          {jobStatusOptions.map((s) => (
-                            <option key={s} value={s} style={darkOptionStyle}>
-                              {jobStatusLabel(s)}
-                            </option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-xs font-semibold text-slate-400">ETA: {job.manualEta || extractEta(job.updates) || "Not set"}</p>
+                      <Td className="text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <select
+                            className={`${darkSelectClass} h-8 rounded-full px-3 text-xs font-bold`}
+                            style={jobStatusControlStyle(job.status)}
+                            value={job.status}
+                            onChange={(e) => updateJob(job.id, "status", e.target.value)}
+                          >
+                            {jobStatusOptions.map((s) => (
+                              <option key={s} value={s} style={darkOptionStyle}>
+                                {jobStatusLabel(s)}
+                              </option>
+                            ))}
+                          </select>
+                          {(job.manualEta || extractEta(job.updates)) && (
+                            <span className="text-xs font-semibold text-slate-400">
+                              ETA: {job.manualEta || extractEta(job.updates)}
+                            </span>
+                          )}
+                        </div>
                       </Td>
 
                       <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
@@ -2260,7 +2266,7 @@ await logActivity({
                       )}
 
                       <Td>
-                        <div className="flex min-h-10 items-center justify-center">
+                        <div className="flex items-center justify-center">
                           <select
                             className={`${darkSelectClass} h-9 w-36 rounded-xl px-2 text-center text-xs font-bold`}
                             value={job.techPaymentStatus || "Pending"}
@@ -3842,7 +3848,7 @@ function Th({ children }) {
 }
 
 function Td({ children, className = "" }) {
-  return <td className={`border-b border-white/10 px-4 py-2 align-middle ${className}`}>{children}</td>;
+  return <td className={`border-b border-white/10 px-4 py-1.5 align-middle ${className}`}>{children}</td>;
 }
 
 function IconAction({ title, onClick, className = "", children }) {
