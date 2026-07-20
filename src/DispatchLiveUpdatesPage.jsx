@@ -82,12 +82,14 @@ const rowStyles = {
 };
 
 const invoiceStyles = {
-  Pending: "bg-slate-100 text-slate-700",
+  Pending: "bg-yellow-100 text-yellow-800 border-yellow-300",
   Sent: "bg-blue-100 text-blue-700",
-  Paid: "bg-emerald-100 text-emerald-700",
+  Paid: "bg-green-100 text-green-800 border-green-300",
+  Cancelled: "bg-red-100 text-red-800 border-red-300",
   "Need Review": "bg-orange-100 text-orange-700",
 };
 
+const invoiceStatusOptions = ["Pending", "Sent", "Paid", "Need Review", "Cancelled"];
 const paymentMethods = ["EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire", "Pending"];
 const techPaymentMethods = ["Zelle", "ACH", "Check", "Cash", "Card", "Other"];
 const paymentReceivers = ["A", "B"];
@@ -835,7 +837,7 @@ return (
   monthlyJobs: filteredJobs.length,
      
     pendingInvoices: filteredJobs.filter(
-  (j) => j.invoice !== "Paid"
+  (j) => !["Paid", "Cancelled"].includes(j.invoice)
 ).length,
 
 revenue: filteredJobs.reduce(
@@ -1646,13 +1648,23 @@ await logActivity({
     </h2>
   </div>
 
-  <div className="grid gap-4 md:grid-cols-4">
+  <div className="grid gap-4 md:grid-cols-5">
    <StatCard
   icon={<Clock />}
   label="Pending"
   value={jobs.filter(j => j.invoice === "Pending").length}
   onClick={() => {
     setInvoiceFilter("Pending");
+    setPeriodFilter("All");
+    setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" }), 0);
+  }}
+/>
+   <StatCard
+  icon={<AlertTriangle />}
+  label="Cancelled"
+  value={jobs.filter(j => j.invoice === "Cancelled").length}
+  onClick={() => {
+    setInvoiceFilter("Cancelled");
     setPeriodFilter("All");
     setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" }), 0);
   }}
@@ -1773,7 +1785,7 @@ await logActivity({
               <Input label="Location" list="location-suggestions" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
               <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
               <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={jobStatusOptions} />
-              <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={["Pending", "Sent", "Paid", "Need Review"]} />
+              <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={invoiceStatusOptions} />
               <Select label="Payment Method" value={form.paymentMethod} onChange={(v) => setForm({ ...form, paymentMethod: v })} options={paymentMethods} />
               <Select label="Received" value={form.paymentReceiver} onChange={(v) => setForm({ ...form, paymentReceiver: v })} options={paymentReceivers} />
               <Input label="Reference #" value={form.jobReference || ""} onChange={(v) => setForm({ ...form, jobReference: v })} />
@@ -2015,7 +2027,7 @@ await logActivity({
                   onChange={(e) => setInvoiceFilter(e.target.value)}
                 >
                   <option style={darkOptionStyle}>All</option>
-                  {["Pending", "Sent", "Paid", "Need Review"].map((status) => (
+                  {invoiceStatusOptions.map((status) => (
                     <option style={darkOptionStyle} key={status}>{status}</option>
                   ))}
                 </select>
@@ -2169,12 +2181,12 @@ await logActivity({
 
                       <Td>
                         <select
-                          className={`${darkSelectClass} rounded-full px-3 py-1 text-xs font-bold`}
+                          className={`rounded-full border px-3 py-1 text-xs font-bold ${invoiceStyles[job.invoice] || invoiceStyles.Pending}`}
                           value={job.invoice}
                           onChange={(e) => updateJob(job.id, "invoice", e.target.value)}
                         >
-                          {["Pending", "Sent", "Paid", "Need Review"].map((s) => (
-                            <option key={s} style={darkOptionStyle}>{s}</option>
+                          {invoiceStatusOptions.map((s) => (
+                            <option key={s} value={s}>{s}</option>
                           ))}
                         </select>
                       </Td>

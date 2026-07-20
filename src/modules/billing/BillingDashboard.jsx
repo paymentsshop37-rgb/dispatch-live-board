@@ -73,13 +73,15 @@ export default function BillingDashboard() {
     const partsCost = filteredJobs.reduce((sum, job) => sum + job.parts, 0);
     const techLabor = filteredJobs.reduce((sum, job) => sum + job.techLabor, 0);
     const paidInvoices = filteredJobs.filter((job) => isPaid(job.status)).length;
-    const pendingInvoices = filteredJobs.filter((job) => !isPaid(job.status)).length;
-    const outstandingBalance = filteredJobs.filter((job) => !isPaid(job.status)).reduce((sum, job) => sum + job.totalBill, 0);
+    const cancelledInvoices = filteredJobs.filter((job) => isCancelled(job.status)).length;
+    const pendingInvoices = filteredJobs.filter((job) => !isPaid(job.status) && !isCancelled(job.status)).length;
+    const outstandingBalance = filteredJobs.filter((job) => !isPaid(job.status) && !isCancelled(job.status)).reduce((sum, job) => sum + job.totalBill, 0);
 
     return {
       totalRevenue,
       pendingInvoices,
       paidInvoices,
+      cancelledInvoices,
       outstandingBalance,
       partsCost,
       techLabor,
@@ -144,10 +146,11 @@ export default function BillingDashboard() {
           </div>
         ))}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
           <BillingCard label="Total Revenue" value={money(totals.totalRevenue)} />
           <BillingCard label="Pending Invoices" value={totals.pendingInvoices} />
           <BillingCard label="Paid Invoices" value={totals.paidInvoices} />
+          <BillingCard label="Cancelled Invoices" value={totals.cancelledInvoices} />
           <BillingCard label="Outstanding Balance" value={money(totals.outstandingBalance)} />
           <BillingCard label="Parts Cost" value={money(totals.partsCost)} />
           <BillingCard label="Tech Labor" value={money(totals.techLabor)} />
@@ -252,6 +255,10 @@ function isPaid(status) {
   return String(status || "").toLowerCase() === "paid";
 }
 
+function isCancelled(status) {
+  return ["cancelled", "canceled", "void"].includes(String(status || "").trim().toLowerCase());
+}
+
 const jobStatusVisuals = {
   Completed: { background: "#DCFCE7", border: "#22C55E", text: "#166534", dot: "🟢" },
   Cancelled: { background: "#FEE2E2", border: "#EF4444", text: "#991B1B", dot: "🔴" },
@@ -323,7 +330,7 @@ function FilterSelect({ label, value, options, onChange }) {
 }
 
 function StatusBadge({ status }) {
-  const visual = jobStatusVisual(status);
+  const visual = invoiceStatusVisual(status);
   return (
     <span
       className="inline-flex rounded-full border px-3 py-1 text-xs font-bold"
@@ -337,4 +344,12 @@ function StatusBadge({ status }) {
       {visual.dot} {status || "Pending"}
     </span>
   );
+}
+
+function invoiceStatusVisual(status) {
+  const value = String(status || "Pending").trim().toLowerCase();
+  if (value === "paid") return { background: "#DCFCE7", border: "#22C55E", text: "#166534", dot: "🟢" };
+  if (["cancelled", "canceled", "void"].includes(value)) return { background: "#FEE2E2", border: "#EF4444", text: "#991B1B", dot: "🔴" };
+  if (value === "pending") return { background: "#FEF9C3", border: "#EAB308", text: "#854D0E", dot: "🟡" };
+  return jobStatusVisual(status);
 }

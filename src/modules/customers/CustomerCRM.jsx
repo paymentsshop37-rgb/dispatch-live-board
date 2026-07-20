@@ -380,7 +380,7 @@ function JobsTable({ jobs, invoiceMode = false }) {
                   <td className="px-4 py-3 font-bold">{job.invoiceNumber || "No invoice"}</td>
                   <td className="px-4 py-3">{job.date || "No date"}</td>
                   <td className="px-4 py-3">{job.location || "No location"}</td>
-                  <td className="px-4 py-3">{job.invoiceStatus || "Pending"}</td>
+                  <td className="px-4 py-3"><InvoiceStatusBadge status={job.invoiceStatus} /></td>
                   <td className="px-4 py-3">{job.paymentMethod || "Pending"}</td>
                   <td className="px-4 py-3 font-bold">{money(job.totalBill)}</td>
                   <td className="px-4 py-3">{money(job.profit)}</td>
@@ -452,7 +452,7 @@ function buildCustomers(jobs, customerRows, contactRows, locationRows) {
     const contacts = customerRow?.id ? mergeContacts(contactRows.filter((row) => String(row.customer_id || "") === String(customerRow.id)).map(contactFromRow)) : defaultContacts();
     const primaryContact = contacts[0] || { role: "Fleet Manager", name: "", phone: "", email: "" };
     const totalRevenue = companyJobs.reduce((sum, job) => sum + job.totalBill, 0);
-    const outstandingBalance = companyJobs.filter((job) => !isPaid(job.invoiceStatus)).reduce((sum, job) => sum + job.totalBill, 0);
+    const outstandingBalance = companyJobs.filter((job) => !isPaid(job.invoiceStatus) && !isCancelled(job.invoiceStatus)).reduce((sum, job) => sum + job.totalBill, 0);
     const jobsThisMonth = companyJobs.filter((job) => String(job.date || "").startsWith(new Date().toISOString().slice(0, 7))).length;
 
     return {
@@ -744,6 +744,10 @@ function isPaid(status) {
   return String(status || "").toLowerCase() === "paid";
 }
 
+function isCancelled(status) {
+  return ["cancelled", "canceled", "void"].includes(String(status || "").trim().toLowerCase());
+}
+
 function money(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
 }
@@ -759,6 +763,19 @@ function CrmCard({ label, value }) {
 
 function StatusBadge({ status }) {
   return <span className={`rounded-full px-3 py-1 text-xs font-bold ${status === "Active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>{status || "Inactive"}</span>;
+}
+
+function InvoiceStatusBadge({ status }) {
+  const value = String(status || "Pending").trim();
+  const tone =
+    value.toLowerCase() === "paid"
+      ? "bg-green-100 text-green-800"
+      : ["cancelled", "canceled", "void"].includes(value.toLowerCase())
+        ? "bg-red-100 text-red-800"
+        : value.toLowerCase() === "pending"
+          ? "bg-yellow-100 text-yellow-800"
+          : "bg-slate-100 text-slate-700";
+  return <span className={`rounded-full px-3 py-1 text-xs font-bold ${tone}`}>{value}</span>;
 }
 
 const jobStatusVisuals = {
