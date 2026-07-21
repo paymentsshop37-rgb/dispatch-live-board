@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   Activity,
@@ -42,14 +42,14 @@ import {
 } from "./modules/alerts";
 
 const sidebarItems = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher", "supervisor"] },
   { id: "dispatch", label: "Dispatch Center", icon: ClipboardList },
   { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
-  { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher"] },
+  { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher", "supervisor"] },
   { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "users", label: "Users", icon: Users, adminOnly: true },
-  { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher"] },
+  { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher", "supervisor"] },
   { id: "reports", label: "Reports", icon: BarChart3, adminOnly: true },
   { id: "settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
@@ -58,11 +58,11 @@ const sidebarSections = [
   {
     label: "Dispatch",
     items: [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher"] },
+      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher", "supervisor"] },
       { id: "dispatch", label: "Dispatch Board", icon: ClipboardList },
       { id: "technicians-quick", label: "Technicians", icon: Users, target: "technicians", requires: "canViewTechnicianCenter" },
-      { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher"] },
-      { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher"] },
+      { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher", "supervisor"] },
+      { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher", "supervisor"] },
       { id: "reports", label: "Reports", icon: BarChart3, target: "dashboard", adminOnly: true },
     ],
   },
@@ -71,8 +71,8 @@ const sidebarSections = [
     items: [
       { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
       { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
-      { id: "flat-rate", label: "Flat Rate Guide", icon: BookOpen, roles: ["admin", "dispatcher"] },
-      { id: "parts-intelligence", label: "Parts Intelligence", icon: PackageSearch, roles: ["admin", "dispatcher"] },
+      { id: "flat-rate", label: "Flat Rate Guide", icon: BookOpen, roles: ["admin", "dispatcher", "supervisor"] },
+      { id: "parts-intelligence", label: "Parts Intelligence", icon: PackageSearch, roles: ["admin", "dispatcher", "supervisor"] },
       { id: "invoices", label: "Invoices", icon: FileText, target: "billing", adminOnly: true },
     ],
   },
@@ -93,42 +93,88 @@ export default function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [alertJobs, setAlertJobs] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const authValidationId = useRef(0);
+  const manualLogout = useRef(false);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isAuthenticated = Boolean(session.isAuthenticated);
+
+  const resetApplicationState = useCallback(() => {
+    authValidationId.current += 1;
+    setSession(emptySession());
+    setActiveView("dispatch");
+    setAlertJobs([]);
+    setAlertsOpen(false);
+    setAuthLoading(false);
+  }, []);
+
+  const redirectToLogin = useCallback(() => {
+    if (window.location.pathname !== "/login") {
+      window.history.replaceState({}, "", "/login");
+    }
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    manualLogout.current = true;
+    resetApplicationState();
+    redirectToLogin();
+    try {
+      await clearAuthSession();
+    } catch {
+      // Local state and storage are already cleared; remain safely signed out.
+    }
+  }, [redirectToLogin, resetApplicationState]);
+
+  const beginLogin = useCallback(() => {
+    manualLogout.current = false;
+  }, []);
 
   useEffect(() => {
     let mounted = true;
     async function validate(authSession) {
+      const validationId = ++authValidationId.current;
       if (!authSession?.user) {
-        if (mounted) { setSession(emptySession()); setAuthLoading(false); }
+        if (mounted) {
+          resetApplicationState();
+          redirectToLogin();
+        }
         return;
       }
       try {
         const profile = await loadCurrentProfile(authSession.user.id);
         if (profile.status !== "Active") {
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: "local" });
           if (mounted) setAuthMessage("Your account is inactive. Contact an administrator.");
           return;
         }
-        if (!['admin', 'dispatcher'].includes(String(profile.role).toLowerCase())) {
-          await supabase.auth.signOut();
+        if (!["admin", "dispatcher", "supervisor"].includes(String(profile.role).toLowerCase())) {
+          await supabase.auth.signOut({ scope: "local" });
           if (mounted) setAuthMessage("You do not have permission to access this application.");
           return;
         }
-        if (mounted) setSession(profileToSession(profile, authSession));
+        if (mounted && !manualLogout.current && validationId === authValidationId.current) {
+          setSession(profileToSession(profile, authSession));
+          if (window.location.pathname === "/login") window.history.replaceState({}, "", "/");
+        }
       } catch {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: "local" });
         if (mounted) setAuthMessage("Unable to verify your account profile.");
       } finally {
-        if (mounted) setAuthLoading(false);
+        if (mounted && validationId === authValidationId.current) setAuthLoading(false);
       }
     }
     supabase.auth.getSession().then(({ data }) => validate(data?.session));
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "SIGNED_OUT") {
+        manualLogout.current = true;
+        resetApplicationState();
+        redirectToLogin();
+        return;
+      }
+      if (nextSession?.user) setAuthLoading(true);
       window.setTimeout(() => validate(nextSession), 0);
     });
     return () => { mounted = false; data?.subscription?.unsubscribe(); };
-  }, []);
+  }, [redirectToLogin, resetApplicationState]);
 
   useEffect(() => {
     const authUserId = session.authUserId || session.id;
@@ -139,9 +185,11 @@ export default function App() {
       async ({ new: profile }) => {
         if (profile?.status !== "Active") {
           setAuthMessage("Your account is inactive. Contact an administrator.");
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: "local" });
         } else {
-          setSession((current) => ({ ...current, ...profileToSession(profile, { user: { id: current.id } }) }));
+          setSession((current) => current.isAuthenticated
+            ? { ...current, ...profileToSession(profile, { user: { id: current.id } }) }
+            : current);
         }
       }
     ).subscribe();
@@ -149,12 +197,10 @@ export default function App() {
   }, [session.authUserId, session.id]);
 
   useEffect(() => {
-    if (!isAuthenticated && !isPublicRegistration && window.location.pathname !== "/") {
-      window.history.replaceState({}, "", "/");
-    }
-  }, [isAuthenticated, isPublicRegistration]);
+    if (!authLoading && !isAuthenticated && !isPublicRegistration) redirectToLogin();
+  }, [authLoading, isAuthenticated, isPublicRegistration, redirectToLogin]);
 
-  const role = normalizeRole(session.role) || "dispatcher";
+  const role = normalizeRole(session.role);
   const permissions = useMemo(() => getPermissions(role), [role]);
   const isAdmin = role === "admin";
   const visibleSidebarSections = useMemo(
@@ -239,7 +285,7 @@ export default function App() {
   }
 
   if (!isAuthenticated) {
-    return <LoginScreen message={authMessage} onMessage={setAuthMessage} />;
+    return <LoginScreen message={authMessage} onMessage={setAuthMessage} onLoginStarted={beginLogin} />;
   }
 
   return (
@@ -317,7 +363,7 @@ export default function App() {
               <HelpCircle className="h-4 w-4" />
               Help Center
             </button>
-            <button type="button" onClick={clearAuthSession} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white">
+            <button type="button" onClick={handleLogout} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white">
               <LogOut className="h-4 w-4" />
               Logout
             </button>
@@ -352,7 +398,7 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} onLogout={handleLogout} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
@@ -375,12 +421,12 @@ function canShowSidebarItem(item, role, permissions) {
 
 function canAccessView(view, role, permissions) {
   if (view === "dispatch") return true;
-  if (view === "dashboard") return role === "admin" || role === "dispatcher";
+  if (view === "dashboard") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
-  if (view === "activity") return role === "admin" || role === "dispatcher";
-  if (view === "customers") return role === "admin" || role === "dispatcher";
-  if (view === "flat-rate") return role === "admin" || role === "dispatcher";
-  if (view === "parts-intelligence") return role === "admin" || role === "dispatcher";
+  if (view === "activity") return ["admin", "dispatcher", "supervisor"].includes(role);
+  if (view === "customers") return ["admin", "dispatcher", "supervisor"].includes(role);
+  if (view === "flat-rate") return ["admin", "dispatcher", "supervisor"].includes(role);
+  if (view === "parts-intelligence") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (["billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";
   }
@@ -390,6 +436,7 @@ function canAccessView(view, role, permissions) {
 function roleLabel(role) {
   if (role === "admin") return "Administrator";
   if (role === "dispatcher") return "Dispatcher";
+  if (role === "supervisor") return "Supervisor";
   return "Access required";
 }
 
@@ -416,7 +463,7 @@ function viewTitle(view) {
   return titles[view] || "Dispatch Center";
 }
 
-function LoginScreen({ message, onMessage }) {
+function LoginScreen({ message, onMessage, onLoginStarted }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -436,6 +483,7 @@ function LoginScreen({ message, onMessage }) {
       return onMessage(message);
     }
 
+    onLoginStarted();
     const { error: sessionError } = await supabase.auth.setSession({
       access_token: data.session.access_token,
       refresh_token: data.session.refresh_token,

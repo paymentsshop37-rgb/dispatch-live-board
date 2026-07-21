@@ -34,7 +34,6 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
-import { clearAuthSession } from "./authUsers";
 import { logActivity } from "./modules/activity";
 import { loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
@@ -388,7 +387,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser, onOpenFlatRate, onOpenParts }) {
+export default function DispatchLiveUpdatesPage({ currentUser, onLogout, onOpenFlatRate, onOpenParts }) {
   const formRef = useRef(null);
   const searchInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
@@ -1556,13 +1555,7 @@ await logActivity({
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               type="button"
-              onClick={() => {
-                setAccessGranted(false);
-                setAccessCode("");
-                setCurrentUserRole(null);
-                setCurrentUserName("");
-                clearAuthSession();
-              }}
+              onClick={onLogout}
               className="rounded-xl bg-red-50 px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-100"
             >
               Logout

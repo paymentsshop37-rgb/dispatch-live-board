@@ -21,7 +21,7 @@ export function getPermissions(role) {
     return Object.fromEntries(Object.keys(permissions).map((key) => [key, true]));
   }
 
-  if (normalizedRole === "dispatcher") {
+  if (["dispatcher", "supervisor"].includes(normalizedRole)) {
     return {
       ...permissions,
       canViewTechnicianCenter: true,

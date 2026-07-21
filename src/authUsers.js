@@ -26,9 +26,20 @@ export function profileToSession(profile, authSession) {
 }
 
 export async function clearAuthSession() {
-  await supabase.auth.signOut();
-  localStorage.removeItem("currentUser");
-  localStorage.removeItem("currentUserName");
-  localStorage.removeItem("currentUserRole");
+  const { error } = await supabase.auth.signOut({ scope: "local" });
+  clearCustomAuthStorage();
   window.dispatchEvent(new Event("nttr-auth-changed"));
+  if (error) throw error;
+}
+
+export function clearCustomAuthStorage() {
+  const isCustomAuthKey = (key) =>
+    ["currentUser", "currentUserName", "currentUserRole"].includes(key) ||
+    /^(nttr-(auth|session|user|role|access)|auth-|user-session)/i.test(key);
+
+  [localStorage, sessionStorage].forEach((storage) => {
+    Object.keys(storage).forEach((key) => {
+      if (isCustomAuthKey(key)) storage.removeItem(key);
+    });
+  });
 }
