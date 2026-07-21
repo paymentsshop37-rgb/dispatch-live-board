@@ -112,10 +112,13 @@ function arrayBackedField(field) {
 }
 
 export async function loadTechnicians({ includeInactive = false } = {}) {
-  const { data, error } = await supabase
+  let query = supabase
     .from("technicians")
-    .select("*")
-    .order("created_at", { ascending: false });
+    .select("*");
+
+  if (!includeInactive) query = query.eq("is_active", true);
+
+  const { data, error } = await query.order("created_at", { ascending: false });
 
   if (error) {
     throw error;
@@ -179,19 +182,93 @@ export async function updateTechnician(id, technician, knownColumns = DEFAULT_CO
   return normalizeTechnician(data);
 }
 
-export async function deactivateTechnician(id) {
-  const { error } = await supabase.rpc("deactivate_technician", { p_technician_id: id });
+export async function deleteOrDeactivateTechnician(technician, userId) {
+  if (!technician?.id) throw new Error("Technician ID is required.");
+  if (!userId) throw new Error("The authenticated Admin user could not be identified.");
+
+  const { data: linkedById, error: linkedByIdError } = await supabase
+    .from("jobs")
+    .select("id")
+    .eq("technician_id", technician.id)
+    .limit(1);
+
+  if (linkedByIdError) throw linkedByIdError;
+
+  let linkedToJobs = Boolean(linkedById?.length);
+  if (!linkedToJobs && technician.full_name) {
+    const { data: linkedByName, error: linkedByNameError } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("tech", technician.full_name)
+      .limit(1);
+    if (linkedByNameError) throw linkedByNameError;
+    linkedToJobs = Boolean(linkedByName?.length);
+  }
+
+  if (linkedToJobs) {
+    const { data, error } = await supabase
+      .from("technicians")
+      .update({
+        is_active: false,
+        deleted_at: new Date().toISOString(),
+        deleted_by: userId,
+      })
+      .eq("id", technician.id)
+      .select("id")
+      .single();
+    if (error) throw error;
+    if (!data?.id) throw new Error("Supabase did not deactivate the technician.");
+    return { action: "deactivated", linkedToJobs: true };
+  }
+
+  const { data, error } = await supabase
+    .from("technicians")
+    .delete()
+    .eq("id", technician.id)
+    .select("id")
+    .single();
   if (error) throw error;
+  if (!data?.id) throw new Error("Supabase did not delete the technician.");
+  return { action: "permanently deleted", linkedToJobs: false };
 }
 
 export async function restoreTechnician(id) {
-  const { error } = await supabase.rpc("restore_technician", { p_technician_id: id });
+  const { error } = await supabase
+    .from("technicians")
+    .update({ is_active: true, deleted_at: null, deleted_by: null, status: "Approved", availability: "Available" })
+    .eq("id", id);
   if (error) throw error;
 }
 
-export async function permanentlyDeleteUnusedTechnician(id) {
-  const { error } = await supabase.rpc("permanently_delete_unused_technician", { p_technician_id: id });
+export async function permanentlyDeleteUnusedTechnician(technician) {
+  if (!technician?.id) throw new Error("Technician ID is required.");
+  const { data: linkedById, error: linkedByIdError } = await supabase
+    .from("jobs")
+    .select("id")
+    .eq("technician_id", technician.id)
+    .limit(1);
+  if (linkedByIdError) throw linkedByIdError;
+  if (linkedById?.length) throw new Error("Permanent deletion blocked: technician is linked to existing jobs.");
+
+  if (technician.full_name) {
+    const { data: linkedByName, error: linkedByNameError } = await supabase
+      .from("jobs")
+      .select("id")
+      .eq("tech", technician.full_name)
+      .limit(1);
+    if (linkedByNameError) throw linkedByNameError;
+    if (linkedByName?.length) throw new Error("Permanent deletion blocked: technician is linked to existing jobs.");
+  }
+
+  const { data, error } = await supabase
+    .from("technicians")
+    .delete()
+    .eq("id", technician.id)
+    .select("id")
+    .single();
   if (error) throw error;
+  if (!data?.id) throw new Error("Supabase did not delete the technician.");
+  return { action: "permanently deleted", linkedToJobs: false };
 }
 
 export async function markTechnicianInvitationsDeleted(technicianId) {

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import {
   createTechnician,
-  deactivateTechnician,
+  deleteOrDeactivateTechnician,
   getKnownColumns,
   loadTechnicianColumnSupport,
   loadTechnicians,
@@ -151,6 +151,7 @@ export default function TechnicianCenter({ currentUser }) {
 
   const currentUserRole = String(currentUser?.role || "").toLowerCase();
   const currentAdminName = currentUser?.name || currentUser?.username || "Admin";
+  const currentUserId = currentUser?.authUserId || currentUser?.id || "";
   const permissions = getPermissions(currentUserRole);
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
@@ -372,7 +373,8 @@ export default function TechnicianCenter({ currentUser }) {
       return;
     }
 
-    setTechnicianToDelete({ technician, mode: "deactivate" });
+    setError("");
+    setTechnicianToDelete({ technician, mode: "auto" });
   }
 
   function requestPermanentDeleteTechnician(technician) {
@@ -380,6 +382,7 @@ export default function TechnicianCenter({ currentUser }) {
       setError("Only administrators can permanently delete technicians.");
       return;
     }
+    setError("");
     setTechnicianToDelete({ technician, mode: "permanent" });
   }
 
@@ -422,35 +425,39 @@ export default function TechnicianCenter({ currentUser }) {
     const { technician, mode } = technicianToDelete;
     setSaving(true);
     try {
+      let completedMode = mode;
       if (mode === "permanent") {
-        await permanentlyDeleteUnusedTechnician(technician.id);
+        await permanentlyDeleteUnusedTechnician(technician);
       } else {
-        await deactivateTechnician(technician.id);
+        const result = await deleteOrDeactivateTechnician(technician, currentUserId);
+        completedMode = result.action === "deactivated" ? "deactivate" : "permanent";
       }
 
       setTechnicians((current) => current.filter((item) => item.id !== technician.id));
       setSelectedTechnician(null);
       setEditingTechnician(null);
       setTechnicianToDelete(null);
-      setCopyMessage(mode === "permanent" ? "Unused technician permanently deleted." : "Technician removed from the active directory.");
+      setCopyMessage(completedMode === "permanent" ? "Unused technician permanently deleted." : "Technician removed from the active directory.");
       setError("");
       await logActivity({
         entityType: "technician",
         entityId: technician.id,
-        action: mode === "permanent" ? "Technician Permanently Deleted" : "Technician Deactivated",
-        description: `${technician.full_name || "Technician"} ${mode === "permanent" ? "permanently deleted" : "deactivated"} by ${currentAdminName}`,
+        action: completedMode === "permanent" ? "Technician Permanently Deleted" : "Technician Deactivated",
+        description: `${technician.full_name || "Technician"} ${completedMode === "permanent" ? "permanently deleted" : "deactivated"} by ${currentAdminName}`,
         createdBy: currentAdminName,
         metadata: {
           technicianId: technician.id,
           technicianName: technician.full_name,
-          action: mode === "permanent" ? "permanently deleted" : "deactivated",
+          action: completedMode === "permanent" ? "permanently deleted" : "deactivated",
           previousValues: technician.raw,
         },
       });
       await refreshTechnicians();
     } catch (deleteError) {
       console.error("Delete technician failed:", deleteError);
-      setError(deleteError.message || JSON.stringify(deleteError) || "Unable to remove technician.");
+      const message = deleteError.message || JSON.stringify(deleteError) || "Unable to remove technician.";
+      setError(message);
+      setCopyMessage(`Unable to remove technician: ${message}`);
     } finally {
       setSaving(false);
     }
@@ -572,7 +579,7 @@ export default function TechnicianCenter({ currentUser }) {
           </div>
 
           {copyMessage && (
-            <p className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            <p className={`mt-3 rounded-2xl px-4 py-3 text-sm font-semibold ${copyMessage.startsWith("Unable") ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
               {copyMessage}
             </p>
           )}
@@ -896,6 +903,7 @@ export default function TechnicianCenter({ currentUser }) {
           technician={technicianToDelete.technician}
           mode={technicianToDelete.mode}
           saving={saving}
+          error={error}
           onCancel={() => setTechnicianToDelete(null)}
           onConfirm={confirmDeleteTechnician}
         />
@@ -1932,7 +1940,7 @@ function AdminActions({ technician, onStatus, onDelete, onRestore, onPermanentDe
   );
 }
 
-function DeleteTechnicianModal({ technician, mode, saving, onCancel, onConfirm }) {
+function DeleteTechnicianModal({ technician, mode, saving, error, onCancel, onConfirm }) {
   const permanent = mode === "permanent";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
@@ -1951,6 +1959,12 @@ function DeleteTechnicianModal({ technician, mode, saving, onCancel, onConfirm }
           <Detail label="Company" value={technician.company} />
           <Detail label="City / State" value={[technician.city, technician.state].filter(Boolean).join(", ")} />
         </div>
+
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+            Unable to remove technician: {error}
+          </div>
+        )}
 
         <div className="mt-6 flex justify-end gap-3">
           <button
