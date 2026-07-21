@@ -45,6 +45,7 @@ function createDisabledSupabaseClient() {
       onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
     },
     functions: { invoke: async () => ({ data: null, error: createMissingConfigError() }) },
+    rpc: async () => ({ data: null, error: createMissingConfigError() }),
     from: () => createDisabledQuery(),
     channel: () => ({
       on: () => ({

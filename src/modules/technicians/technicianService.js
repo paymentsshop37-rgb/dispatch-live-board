@@ -19,6 +19,9 @@ const DEFAULT_COLUMNS = [
   "status",
   "notes",
   "rating",
+  "is_active",
+  "deleted_at",
+  "deleted_by",
   "updated_at",
 ];
 
@@ -76,6 +79,9 @@ export function normalizeTechnician(row) {
     notes,
     availability: firstValue(row, fieldAliases.availability, "Available"),
     rating: Number(firstValue(row, fieldAliases.rating, 0) || 0),
+    isActive: row.is_active !== false,
+    deletedAt: row.deleted_at || "",
+    deletedBy: row.deleted_by || "",
     createdAt: row.created_at || row.createdAt || "",
     updatedAt: row.updated_at || row.updatedAt || "",
   };
@@ -105,7 +111,7 @@ function arrayBackedField(field) {
   return ["services", "coverage_areas"].includes(field);
 }
 
-export async function loadTechnicians() {
+export async function loadTechnicians({ includeInactive = false } = {}) {
   const { data, error } = await supabase
     .from("technicians")
     .select("*")
@@ -115,7 +121,8 @@ export async function loadTechnicians() {
     throw error;
   }
 
-  return (data || []).map(normalizeTechnician);
+  const technicians = (data || []).map(normalizeTechnician);
+  return includeInactive ? technicians : technicians.filter((technician) => technician.isActive);
 }
 
 export async function loadTechnicianColumnSupport() {
@@ -172,23 +179,19 @@ export async function updateTechnician(id, technician, knownColumns = DEFAULT_CO
   return normalizeTechnician(data);
 }
 
-export async function deleteTechnician(id) {
-  const { data, error } = await supabase
-    .from("technicians")
-    .delete()
-    .eq("id", id)
-    .select("id");
+export async function deactivateTechnician(id) {
+  const { error } = await supabase.rpc("deactivate_technician", { p_technician_id: id });
+  if (error) throw error;
+}
 
-  if (error) {
-    console.error("Supabase technician delete error:", error);
-    throw error;
-  }
+export async function restoreTechnician(id) {
+  const { error } = await supabase.rpc("restore_technician", { p_technician_id: id });
+  if (error) throw error;
+}
 
-  if (!data || data.length === 0) {
-    const noDeleteError = new Error("No technician was deleted. Check Supabase delete permissions or row-level security policy.");
-    console.error("Supabase technician delete error:", noDeleteError);
-    throw noDeleteError;
-  }
+export async function permanentlyDeleteUnusedTechnician(id) {
+  const { error } = await supabase.rpc("permanently_delete_unused_technician", { p_technician_id: id });
+  if (error) throw error;
 }
 
 export async function markTechnicianInvitationsDeleted(technicianId) {
@@ -262,6 +265,7 @@ export async function getAvailableTechnicians(city, service) {
       splitServices(technician.services).some((item) => item.toLowerCase().includes(requestedService));
 
     return (
+      technician.isActive &&
       technician.status === "Approved" &&
       technician.availability === "Available" &&
       cityMatches &&

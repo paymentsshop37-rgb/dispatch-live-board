@@ -399,7 +399,7 @@ export default function App() {
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
         {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} onLogout={handleLogout} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
-        {canAccessActiveView && activeView === "technicians" && <TechnicianCenter />}
+        {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}

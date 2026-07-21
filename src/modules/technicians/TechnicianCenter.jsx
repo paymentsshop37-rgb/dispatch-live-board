@@ -25,9 +25,12 @@ import {
 } from "lucide-react";
 import {
   createTechnician,
+  deactivateTechnician,
   getKnownColumns,
   loadTechnicianColumnSupport,
   loadTechnicians,
+  permanentlyDeleteUnusedTechnician,
+  restoreTechnician,
   subscribeToTechnicians,
   updateTechnician,
 } from "./technicianService";
@@ -61,8 +64,9 @@ const emptyTechnician = {
   notes: "",
 };
 
-const tabs = ["Dashboard", "Directory", "Pending", "Approved", "Inactive", "Documents", "Performance"];
+const tabs = ["Dashboard", "Directory", "Pending", "Approved", "Inactive Technicians", "Documents", "Performance"];
 const statuses = ["All", "Pending", "Approved", "Rejected", "Inactive", "Missing Documents"];
+const editableTechnicianStatuses = statuses.filter((status) => !["All", "Inactive"].includes(status));
 const sortOptions = ["Newest", "Rating"];
 const availabilityOptions = ["Available", "Busy", "Off Duty", "Offline"];
 const nearbyPartsCategories = [
@@ -121,7 +125,7 @@ const stateAliases = {
   CALIFORNIA: "CALIFORNIA",
 };
 
-export default function TechnicianCenter() {
+export default function TechnicianCenter({ currentUser }) {
   const [technicians, setTechnicians] = useState([]);
   const [activeTab, setActiveTab] = useState("Dashboard");
   const [form, setForm] = useState(emptyTechnician);
@@ -145,7 +149,8 @@ export default function TechnicianCenter() {
   const [copyMessage, setCopyMessage] = useState("");
   const [missingColumns, setMissingColumns] = useState([]);
 
-  const currentUserRole = localStorage.getItem("currentUserRole") || "dispatcher";
+  const currentUserRole = String(currentUser?.role || "").toLowerCase();
+  const currentAdminName = currentUser?.name || currentUser?.username || "Admin";
   const permissions = getPermissions(currentUserRole);
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
@@ -161,7 +166,7 @@ export default function TechnicianCenter() {
 
     try {
       const [nextTechnicians, columnSupport] = await Promise.all([
-        loadTechnicians(),
+        loadTechnicians({ includeInactive: canApproveTechnicians }),
         loadTechnicianColumnSupport(),
       ]);
       setTechnicians(nextTechnicians);
@@ -188,8 +193,13 @@ export default function TechnicianCenter() {
 
   const safeTechnicians = useMemo(() => {
     if (canViewPrivateTechnicianData) return technicians;
-    return technicians.filter((technician) => isApproved(technician.status));
+    return technicians.filter((technician) => technician.isActive && isApproved(technician.status));
   }, [canViewPrivateTechnicianData, technicians]);
+
+  const visibleTabs = useMemo(
+    () => canApproveTechnicians ? tabs : tabs.filter((tab) => tab !== "Inactive Technicians"),
+    [canApproveTechnicians]
+  );
 
   const serviceOptions = useMemo(() => {
     const services = safeTechnicians.flatMap((technician) =>
@@ -201,9 +211,10 @@ export default function TechnicianCenter() {
 
   const tabTechnicians = useMemo(() => {
     return safeTechnicians.filter((technician) => {
+      if (activeTab === "Inactive Technicians") return !technician.isActive;
+      if (!technician.isActive) return false;
       if (activeTab === "Pending") return technician.status === "Pending";
       if (activeTab === "Approved") return technician.status === "Approved";
-      if (activeTab === "Inactive") return ["Inactive", "Rejected", "Missing Documents"].includes(technician.status);
       if (activeTab === "Documents") return complianceScore(technician) < 100;
       return true;
     });
@@ -242,15 +253,16 @@ export default function TechnicianCenter() {
   }, [search, serviceFilter, sortBy, statusFilter, tabTechnicians]);
 
   const stats = useMemo(() => {
-    const approved = technicians.filter((technician) => isApproved(technician.status));
-    const ratings = technicians.map((technician) => Number(technician.rating || 0)).filter(Boolean);
+    const activeTechnicians = technicians.filter((technician) => technician.isActive);
+    const approved = activeTechnicians.filter((technician) => isApproved(technician.status));
+    const ratings = activeTechnicians.map((technician) => Number(technician.rating || 0)).filter(Boolean);
 
     return {
-      total: technicians.length,
-      pending: technicians.filter((technician) => technician.status === "Pending").length,
+      total: activeTechnicians.length,
+      pending: activeTechnicians.filter((technician) => technician.status === "Pending").length,
       approved: approved.length,
-      inactive: technicians.filter((technician) => ["Inactive", "Rejected", "Missing Documents"].includes(technician.status)).length,
-      missingDocuments: technicians.filter((technician) => complianceScore(technician) < 100).length,
+      inactive: technicians.filter((technician) => !technician.isActive).length,
+      missingDocuments: activeTechnicians.filter((technician) => complianceScore(technician) < 100).length,
       averageRating: ratings.length
         ? (ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length).toFixed(1)
         : "0.0",
@@ -338,13 +350,6 @@ export default function TechnicianCenter() {
       };
     }
 
-    if (status === "Inactive") {
-      return {
-        status,
-        inactiveAt: now,
-      };
-    }
-
     return { status };
   }
 
@@ -367,7 +372,43 @@ export default function TechnicianCenter() {
       return;
     }
 
-    setTechnicianToDelete(technician);
+    setTechnicianToDelete({ technician, mode: "deactivate" });
+  }
+
+  function requestPermanentDeleteTechnician(technician) {
+    if (!canApproveTechnicians) {
+      setError("Only administrators can permanently delete technicians.");
+      return;
+    }
+    setTechnicianToDelete({ technician, mode: "permanent" });
+  }
+
+  async function restoreInactiveTechnician(technician) {
+    if (!canApproveTechnicians) {
+      setError("Only administrators can restore technicians.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await restoreTechnician(technician.id);
+      await logActivity({
+        entityType: "technician",
+        entityId: technician.id,
+        action: "Technician Restored",
+        description: `${technician.full_name || "Technician"} restored by ${currentAdminName}`,
+        createdBy: currentAdminName,
+        metadata: { technicianId: technician.id, technicianName: technician.full_name, action: "restored", previousValues: technician.raw },
+      });
+      setSelectedTechnician(null);
+      setEditingTechnician(null);
+      setCopyMessage("Technician restored successfully.");
+      await refreshTechnicians();
+    } catch (restoreError) {
+      setError(restoreError.message || "Unable to restore technician.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function confirmDeleteTechnician() {
@@ -378,41 +419,40 @@ export default function TechnicianCenter() {
       return;
     }
 
+    const { technician, mode } = technicianToDelete;
+    setSaving(true);
     try {
-      const { error: invitationError } = await supabase
-        .from("technician_invitations")
-        .update({ status: "Deleted" })
-        .eq("technician_id", technicianToDelete.id);
-
-      if (invitationError) {
-        console.warn("Technician invitation cleanup skipped:", invitationError);
+      if (mode === "permanent") {
+        await permanentlyDeleteUnusedTechnician(technician.id);
+      } else {
+        await deactivateTechnician(technician.id);
       }
 
-      const { error: deleteError } = await supabase
-        .from("technicians")
-        .delete()
-        .eq("id", technicianToDelete.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      setTechnicians((current) => current.filter((technician) => technician.id !== technicianToDelete.id));
+      setTechnicians((current) => current.filter((item) => item.id !== technician.id));
       setSelectedTechnician(null);
+      setEditingTechnician(null);
       setTechnicianToDelete(null);
-      setCopyMessage("Technician deleted successfully");
+      setCopyMessage(mode === "permanent" ? "Unused technician permanently deleted." : "Technician removed from the active directory.");
       setError("");
       await logActivity({
         entityType: "technician",
-        entityId: technicianToDelete.id,
-        action: "Technician Deleted",
-        description: `${technicianToDelete.full_name || "Technician"} deleted`,
-        createdBy: localStorage.getItem("currentUserName") || currentUserRole,
+        entityId: technician.id,
+        action: mode === "permanent" ? "Technician Permanently Deleted" : "Technician Deactivated",
+        description: `${technician.full_name || "Technician"} ${mode === "permanent" ? "permanently deleted" : "deactivated"} by ${currentAdminName}`,
+        createdBy: currentAdminName,
+        metadata: {
+          technicianId: technician.id,
+          technicianName: technician.full_name,
+          action: mode === "permanent" ? "permanently deleted" : "deactivated",
+          previousValues: technician.raw,
+        },
       });
       await refreshTechnicians();
     } catch (deleteError) {
       console.error("Delete technician failed:", deleteError);
-      setError(deleteError.message || JSON.stringify(deleteError) || "Unable to delete technician.");
+      setError(deleteError.message || JSON.stringify(deleteError) || "Unable to remove technician.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -553,7 +593,7 @@ export default function TechnicianCenter() {
         <Dashboard stats={stats} />
 
         <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-          {tabs.map((tab) => (
+          {visibleTabs.map((tab) => (
             <button
               key={tab}
               type="button"
@@ -585,6 +625,8 @@ export default function TechnicianCenter() {
             onOpen={setSelectedTechnician}
             onEdit={setEditingTechnician}
             onDelete={requestDeleteTechnician}
+            onRestore={restoreInactiveTechnician}
+            onPermanentDelete={requestPermanentDeleteTechnician}
             onCoverage={setCoverageTechnician}
             onNearbyParts={setNearbyPartsTechnician}
             onAdd={() => setAddTechnicianModalOpen(true)}
@@ -645,7 +687,7 @@ export default function TechnicianCenter() {
                 <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => updateForm("coverage", value)} />
                 <Field label="Services" value={form.services} onChange={(value) => updateForm("services", value)} />
                 <Select label="Availability" value={form.availability} options={availabilityOptions} onChange={(value) => updateForm("availability", value)} />
-                <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => updateForm("status", value)} />
+                <Select label="Status" value={form.status} options={editableTechnicianStatuses} onChange={(value) => updateForm("status", value)} />
                 <TextArea label="Notes" value={form.notes} onChange={(value) => updateForm("notes", value)} />
               </div>
 
@@ -765,8 +807,10 @@ export default function TechnicianCenter() {
                               <div onClick={(event) => event.stopPropagation()}>
                                 <AdminActions
                                   technician={technician}
-                                onStatus={(status) => updateTechnicianStatus(technician, status)}
+                                  onStatus={(status) => updateTechnicianStatus(technician, status)}
                                   onDelete={() => requestDeleteTechnician(technician)}
+                                  onRestore={() => restoreInactiveTechnician(technician)}
+                                  onPermanentDelete={() => requestPermanentDeleteTechnician(technician)}
                                 />
                               </div>
                             )}
@@ -801,6 +845,8 @@ export default function TechnicianCenter() {
           onSaveNotes={(notes) => saveTechnician(selectedTechnician.id, { notes })}
           onStatus={(status) => updateTechnicianStatus(selectedTechnician, status)}
           onDelete={() => requestDeleteTechnician(selectedTechnician)}
+          onRestore={() => restoreInactiveTechnician(selectedTechnician)}
+          onPermanentDelete={() => requestPermanentDeleteTechnician(selectedTechnician)}
         />
       )}
 
@@ -809,6 +855,8 @@ export default function TechnicianCenter() {
           technician={editingTechnician}
           saving={saving}
           canEditStatus={canApproveTechnicians}
+          canDelete={canApproveTechnicians}
+          onDelete={() => requestDeleteTechnician(editingTechnician)}
           onClose={() => setEditingTechnician(null)}
           onSave={async (patch) => {
             setSaving(true);
@@ -845,7 +893,9 @@ export default function TechnicianCenter() {
 
       {technicianToDelete && (
         <DeleteTechnicianModal
-          technician={technicianToDelete}
+          technician={technicianToDelete.technician}
+          mode={technicianToDelete.mode}
+          saving={saving}
           onCancel={() => setTechnicianToDelete(null)}
           onConfirm={confirmDeleteTechnician}
         />
@@ -889,6 +939,8 @@ function TechnicianDirectory({
   onOpen,
   onEdit,
   onDelete,
+  onRestore,
+  onPermanentDelete,
   onCoverage,
   onNearbyParts,
   onAdd,
@@ -1071,6 +1123,8 @@ function TechnicianDirectory({
                   onOpen={onOpen}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onRestore={onRestore}
+                  onPermanentDelete={onPermanentDelete}
                   onCoverage={onCoverage}
                   onNearbyParts={onNearbyParts}
                   onAssign={onAssign}
@@ -1109,7 +1163,7 @@ function RegionalStats({ stats }) {
   );
 }
 
-function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAssign, isFavorite, onOpen, onEdit, onDelete, onCoverage, onNearbyParts, onAssign, onFavorite }) {
+function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAssign, isFavorite, onOpen, onEdit, onDelete, onRestore, onPermanentDelete, onCoverage, onNearbyParts, onAssign, onFavorite }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start gap-4">
@@ -1151,11 +1205,25 @@ function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAss
             <IconTextLink href={directoryWhatsAppLink(technician, lookup)} label="WhatsApp" external tone="emerald"><MessageCircle className="h-4 w-4" /></IconTextLink>
             <IconTextLink href={technicianMapLink(technician)} label="Map" external tone="sky"><MapPin className="h-4 w-4" /></IconTextLink>
             <IconTextButton label="Nearby Parts" onClick={() => onNearbyParts(technician)} tone="amber"><Search className="h-4 w-4" /></IconTextButton>
-            {canAssign && <IconTextButton label="Assign" onClick={() => onAssign(technician)} tone="blue"><UserCheck className="h-4 w-4" /></IconTextButton>}
+            {canAssign && technician.isActive && <IconTextButton label="Assign" onClick={() => onAssign(technician)} tone="blue"><UserCheck className="h-4 w-4" /></IconTextButton>}
             {canEdit && <IconTextButton label="Edit" onClick={() => onEdit(technician)}><Edit3 className="h-4 w-4" /></IconTextButton>}
             <IconTextButton label={isFavorite ? "Favorited" : "Favorite"} onClick={() => onFavorite(technician)} tone={isFavorite ? "amber" : "slate"}><Star className="h-4 w-4" /></IconTextButton>
             {coverageAreas(technician).length > 0 && <IconTextButton label="Coverage" onClick={() => onCoverage(technician)} tone="indigo"><LocateFixed className="h-4 w-4" /></IconTextButton>}
-            {canDelete && <IconTextButton label="Delete" onClick={() => onDelete(technician)} tone="red"><Trash2 className="h-4 w-4" /></IconTextButton>}
+            {canDelete && technician.isActive && (
+              <button type="button" onClick={() => onDelete(technician)} className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
+                <Trash2 className="h-4 w-4" /> Delete Technician
+              </button>
+            )}
+            {canDelete && !technician.isActive && (
+              <>
+                <button type="button" onClick={() => onRestore(technician)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">
+                  <UserCheck className="h-4 w-4" /> Restore Technician
+                </button>
+                <button type="button" onClick={() => onPermanentDelete(technician)} className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
+                  <Trash2 className="h-4 w-4" /> Permanently Delete
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -1191,7 +1259,7 @@ function AddTechnicianModal({ saving, onClose, onSave }) {
           <TextArea label="Services" value={form.services} onChange={(value) => update("services", value)} />
           <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => update("coverage", value)} />
           <Select label="Availability" value={form.availability} options={availabilityOptions} onChange={(value) => update("availability", value)} />
-          <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />
+          <Select label="Status" value={form.status} options={editableTechnicianStatuses} onChange={(value) => update("status", value)} />
           <TextArea label="Notes" value={form.notes} onChange={(value) => update("notes", value)} />
         </div>
 
@@ -1204,7 +1272,7 @@ function AddTechnicianModal({ saving, onClose, onSave }) {
   );
 }
 
-function EditTechnicianModal({ technician, saving, canEditStatus, onClose, onSave }) {
+function EditTechnicianModal({ technician, saving, canEditStatus, canDelete, onClose, onSave, onDelete }) {
   const [form, setForm] = useState({
     full_name: technician.full_name || "",
     company: technician.company || "",
@@ -1247,13 +1315,20 @@ function EditTechnicianModal({ technician, saving, canEditStatus, onClose, onSav
           <TextArea label="Coverage Areas" value={form.coverage} onChange={(value) => update("coverage", value)} />
           <TextArea label="Services" value={form.services} onChange={(value) => update("services", value)} />
           <Select label="Availability" value={form.availability} options={availabilityOptions} onChange={(value) => update("availability", value)} />
-          {canEditStatus && <Select label="Status" value={form.status} options={statuses.filter((status) => status !== "All")} onChange={(value) => update("status", value)} />}
+          {canEditStatus && <Select label="Status" value={form.status} options={editableTechnicianStatuses} onChange={(value) => update("status", value)} />}
           <TextArea label="Notes" value={form.notes} onChange={(value) => update("notes", value)} />
         </div>
-        <button type="submit" disabled={saving} className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
-          <Edit3 className="h-5 w-5" />
-          {saving ? "Saving..." : "Save Technician"}
-        </button>
+        <div className="mt-7 flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          {canDelete && technician.isActive ? (
+            <button type="button" onClick={onDelete} className="inline-flex items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-4 py-3 font-bold text-red-700 hover:bg-red-50">
+              <Trash2 className="h-5 w-5" /> Delete Technician
+            </button>
+          ) : <span />}
+          <button type="submit" disabled={saving} className="flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-6 py-3 font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400">
+            <Edit3 className="h-5 w-5" />
+            {saving ? "Saving..." : "Save Technician"}
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -1690,6 +1765,8 @@ function TechnicianProfileModal({
   onSaveNotes,
   onStatus,
   onDelete,
+  onRestore,
+  onPermanentDelete,
 }) {
   const [notes, setNotes] = useState(technician.notes || "");
 
@@ -1709,7 +1786,7 @@ function TechnicianProfileModal({
 
           <div className="flex flex-wrap gap-2">
             {canApproveTechnicians && (
-              <AdminActions technician={technician} onStatus={onStatus} onDelete={onDelete} />
+              <AdminActions technician={technician} onStatus={onStatus} onDelete={onDelete} onRestore={onRestore} onPermanentDelete={onPermanentDelete} />
             )}
             <button
               type="button"
@@ -1801,9 +1878,20 @@ function TechnicianProfileModal({
   );
 }
 
-function AdminActions({ technician, onStatus, onDelete }) {
+function AdminActions({ technician, onStatus, onDelete, onRestore, onPermanentDelete }) {
   return (
-    <>
+    <div className="flex flex-wrap items-center gap-2">
+      {!technician.isActive ? (
+        <>
+          <button type="button" onClick={onRestore} className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">
+            Restore Technician
+          </button>
+          <button type="button" onClick={onPermanentDelete} className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
+            <Trash2 className="h-4 w-4" /> Permanently Delete
+          </button>
+        </>
+      ) : (
+      <>
       {technician.status !== "Approved" && (
         <button
           type="button"
@@ -1822,15 +1910,6 @@ function AdminActions({ technician, onStatus, onDelete }) {
           Reject
         </button>
       )}
-      {technician.status !== "Inactive" && (
-        <button
-          type="button"
-          onClick={() => onStatus("Inactive")}
-          className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200"
-        >
-          Inactive
-        </button>
-      )}
       {technician.status !== "Missing Documents" && (
         <button
           type="button"
@@ -1840,28 +1919,31 @@ function AdminActions({ technician, onStatus, onDelete }) {
           Mark Missing Documents
         </button>
       )}
-      {String(technician.status || "").toLowerCase() === "pending" && (
-        <button
-          type="button"
-          onClick={onDelete}
-          className="rounded-xl bg-red-100 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-200"
-          title="Delete technician"
-        >
-          Delete
-        </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"
+      >
+        <Trash2 className="h-4 w-4" /> Delete Technician
+      </button>
+      </>
       )}
-    </>
+    </div>
   );
 }
 
-function DeleteTechnicianModal({ technician, onCancel, onConfirm }) {
+function DeleteTechnicianModal({ technician, mode, saving, onCancel, onConfirm }) {
+  const permanent = mode === "permanent";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
       <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
-        <h2 className="text-2xl font-bold text-slate-950">Delete Technician</h2>
+        <h2 className="text-2xl font-bold text-slate-950">{permanent ? "Permanently Delete Technician?" : "Delete Technician?"}</h2>
         <p className="mt-2 text-sm text-slate-600">
-          Are you sure you want to permanently delete this technician?
+          {permanent
+            ? "This permanently removes an unused technician. The operation will be blocked if any previous job is linked to this technician."
+            : "This technician will be removed from the active directory."}
         </p>
+        {!permanent && <p className="mt-2 text-sm text-slate-600">If this technician is already linked to previous jobs, those job records will remain unchanged.</p>}
 
         <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
           <Detail label="Full name" value={technician.full_name} />
@@ -1881,9 +1963,10 @@ function DeleteTechnicianModal({ technician, onCancel, onConfirm }) {
           <button
             type="button"
             onClick={onConfirm}
+            disabled={saving}
             className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
           >
-            Delete
+            {saving ? "Deleting..." : permanent ? "Permanently Delete" : "Delete Technician"}
           </button>
         </div>
       </div>
