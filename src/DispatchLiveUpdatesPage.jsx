@@ -408,6 +408,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, onLogout, onOpenF
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
+  const [deleteRestrictedOpen, setDeleteRestrictedOpen] = useState(false);
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
   const [showAddJobModal, setShowAddJobModal] = useState(false);
@@ -1216,17 +1217,21 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
   async function deleteJob(id) {
     if (!canDeleteJobs) {
-      alert("Only administrators can delete jobs.");
       setJobToDelete(null);
+      await requestDelete(jobs.find((job) => job.id === id) || { id });
       return;
     }
 
     const deletedJob = jobs.find((job) => job.id === id);
 
-    const { error } = await supabase.from("jobs").delete().eq("id", id);
+    const { data: deletedRows, error } = await supabase.from("jobs").delete().eq("id", id).select("id");
 
     if (error) {
       alert("Error deleting job: " + error.message);
+      return;
+    }
+    if (!deletedRows?.length) {
+      alert("The job was not deleted. Your session may not have administrator permission.");
       return;
     }
 const newActivity = {
@@ -1247,21 +1252,30 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     month_key: new Date().toISOString().slice(0, 7)
   },
 ]);
-await logActivity({
-  entityType: "job",
-  entityId: id,
-  action: "Job Deleted",
-  description: `${currentUserName || "Dispatcher"} deleted job ${deletedJob?.reference || deletedJob?.company || id}`,
-  createdBy: currentUserName || "Dispatcher",
-});
-
     setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
     setJobToDelete(null);
   }
 
-  function requestDelete(job) {
+  async function requestDelete(job) {
     if (!canDeleteJobs) {
-      alert("Only administrators can delete jobs.");
+      setJobToDelete(null);
+      setDeleteRestrictedOpen(true);
+      await logActivity({
+        entityType: "job",
+        entityId: job?.id,
+        action: "delete_attempt_blocked",
+        description: `${currentUserName || "User"} (${normalizedUserRole || "unknown"}) attempted to delete job ${job?.reference || job?.id || "unknown"}`,
+        createdBy: currentUserName || "User",
+        metadata: {
+          user_id: currentUser?.authUserId || currentUser?.id || null,
+          user_name: currentUserName || currentUser?.username || "User",
+          user_role: normalizedUserRole || "unknown",
+          job_id: job?.id || null,
+          invoice_number: job?.reference || "",
+          action: "delete_attempt_blocked",
+          timestamp: new Date().toISOString(),
+        },
+      });
       return;
     }
     setJobToDelete(job);
@@ -1451,6 +1465,10 @@ await logActivity({
     }
     if (action === "cancel") {
       updateJob(job.id, "status", "Canceled");
+      return;
+    }
+    if (action === "delete") {
+      requestDelete(job);
       return;
     }
     if (action === "maps") {
@@ -2317,11 +2335,9 @@ await logActivity({
                           <IconAction title="More" onClick={(event) => openJobContextMenu(event, job)} className="bg-white/10 text-slate-200 hover:bg-white/15">
                             <MoreHorizontal className="h-4 w-4" />
                           </IconAction>
-                          {canDeleteJobs && (
-                            <IconAction title="Delete" onClick={() => requestDelete(job)} className="bg-red-100 text-red-700 hover:bg-red-200">
-                              <Trash2 className="h-4 w-4" />
-                            </IconAction>
-                          )}
+                          <IconAction title="Delete" onClick={() => requestDelete(job)} className="bg-red-100 text-red-700 hover:bg-red-200">
+                            <Trash2 className="h-4 w-4" />
+                          </IconAction>
                         </div>
                       </Td>
                     </tr>
@@ -2354,8 +2370,8 @@ await logActivity({
             {jobToDelete && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
                 <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
-                  <h3 className="text-xl font-bold text-slate-900">Confirm Delete</h3>
-                  <p className="mt-2 text-sm text-slate-600">Are you sure you want to delete this job?</p>
+                  <h3 className="text-xl font-bold text-slate-900">Delete Job?</h3>
+                  <p className="mt-2 text-sm text-slate-600">This action will permanently remove the selected job. This cannot be undone.</p>
 
                   <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm">
                     <p className="font-bold">{jobToDelete.reference || "No Invoice #"}</p>
@@ -2377,7 +2393,21 @@ await logActivity({
                       onClick={() => deleteJob(jobToDelete.id)}
                       className="rounded-xl bg-red-600 px-4 py-2 font-bold text-white hover:bg-red-700"
                     >
-                      Yes, Delete Job
+                      Delete Job
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {deleteRestrictedOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+                  <h3 className="text-xl font-bold text-slate-900">Delete Restricted</h3>
+                  <p className="mt-2 text-sm text-slate-600">You do not have permission to delete jobs. Please contact an administrator to remove this job.</p>
+                  <div className="mt-5 flex justify-end">
+                    <button type="button" onClick={() => setDeleteRestrictedOpen(false)} className="rounded-xl bg-slate-950 px-4 py-2 font-bold text-white hover:bg-slate-800">
+                      Close
                     </button>
                   </div>
                 </div>
@@ -3047,6 +3077,7 @@ function JobContextMenu({ x, y, job, onAction }) {
     ["maps", "Open Maps"],
     ["call", "Call Customer"],
     ["whatsapp", "WhatsApp Customer"],
+    ["delete", "Delete Job"],
   ];
 
   return (
