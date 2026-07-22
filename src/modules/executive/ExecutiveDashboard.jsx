@@ -46,6 +46,7 @@ const columnAliases = {
 };
 
 const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "This Year", "Custom Range"];
+const defaultFilterMode = "This Week";
 
 const importantActivityActions = new Set([
   ...SYSTEM_ACTIVITY_ACTIONS,
@@ -87,7 +88,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastSync, setLastSync] = useState(null);
-  const [filterMode, setFilterMode] = useState("This Month");
+  const [filterMode, setFilterMode] = useState(defaultFilterMode);
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
 
   useEffect(() => {
@@ -699,9 +700,13 @@ function getDateRange(mode, customRange) {
   const today = localDate(now);
   const startOfWeek = new Date(now);
   startOfWeek.setDate(now.getDate() - now.getDay());
+  startOfWeek.setHours(0, 0, 0, 0);
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 6);
+  endOfWeek.setHours(23, 59, 59, 999);
 
   if (mode === "Today") return { from: today, to: today };
-  if (mode === "This Week") return { from: localDate(startOfWeek), to: today };
+  if (mode === "This Week") return { from: localDate(startOfWeek), to: localDate(endOfWeek) };
   if (mode === "Last Week") {
     const first = new Date(startOfWeek);
     first.setDate(startOfWeek.getDate() - 7);
