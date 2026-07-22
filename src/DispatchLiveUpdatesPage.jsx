@@ -2060,8 +2060,8 @@ await logActivity({
               </div>
             </div>
 
-            <div className="w-full max-w-none overflow-x-auto rounded-2xl border border-white/10 bg-[#0f1c2e]">
-              <table className="min-w-[1900px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
+            <div className="max-h-[calc(100vh-13rem)] w-full max-w-none overflow-auto rounded-2xl border border-white/10 bg-[#0f1c2e]">
+              <table className="min-w-[1720px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-[#0b1628] text-xs uppercase tracking-wide text-slate-200">
                   <tr>
                     <Th>#</Th>
@@ -2092,7 +2092,7 @@ await logActivity({
                     <tr
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
-                    className={`h-11 align-middle text-slate-200 transition hover:bg-blue-500/10 ${
+                    className={`h-14 max-h-14 align-middle text-slate-200 transition hover:bg-blue-500/10 ${
                       job.rowFlag === "Problem" || job.status === "Dry Run"
                           ? "border-l-4 border-red-500 bg-red-500/10"
                           : "border-l-4 border-transparent odd:bg-white/[0.03] even:bg-white/[0.06]"
@@ -2128,7 +2128,7 @@ await logActivity({
                       </Td>
 
                       <Td className="text-center">
-                        <div className="flex items-center justify-center gap-2">
+                        <div className="flex h-full items-center justify-center">
                           <select
                             className={`${darkSelectClass} h-8 rounded-full px-3 text-xs font-bold`}
                             style={jobStatusControlStyle(job.status)}
@@ -2141,11 +2141,6 @@ await logActivity({
                               </option>
                             ))}
                           </select>
-                          {(job.manualEta || extractEta(job.updates)) && (
-                            <span className="text-xs font-semibold text-slate-400">
-                              ETA: {job.manualEta || extractEta(job.updates)}
-                            </span>
-                          )}
                         </div>
                       </Td>
 
@@ -2155,13 +2150,13 @@ await logActivity({
 
                       <Td>
                         <input
-                          className={`${tableControlClass} w-[320px] px-2 py-1`}
+                          className={`${tableControlClass} w-52 px-2 py-1`}
                           value={job.company}
                           onChange={(e) => updateJob(job.id, "company", e.target.value)}
                         />
                       </Td>
 
-                      <Td><Editable value={job.tech} onChange={(v) => updateJob(job.id, "tech", v)} /></Td>
+                      <Td><Editable className="w-28" value={job.tech} onChange={(v) => updateJob(job.id, "tech", v)} /></Td>
 
                       <Td>
                         <div className="flex items-center gap-2">
@@ -2180,7 +2175,7 @@ await logActivity({
 
                       <Td>
                         <select
-                          className={`rounded-full border px-3 py-1 text-xs font-bold ${invoiceStyles[job.invoice] || invoiceStyles.Pending}`}
+                          className={`max-w-24 rounded-full border px-2 py-1 text-xs font-bold ${invoiceStyles[job.invoice] || invoiceStyles.Pending}`}
                           value={job.invoice}
                           onChange={(e) => updateJob(job.id, "invoice", e.target.value)}
                         >
@@ -2219,7 +2214,7 @@ await logActivity({
                           type="button"
                           title={job.updates || "No updates"}
                           onClick={() => setUpdatesJob(job)}
-                          className={`${tableControlClass} block w-72 truncate px-2 py-1.5 text-left text-xs font-semibold hover:border-[#2563eb]`}
+                          className={`${tableControlClass} block w-56 overflow-hidden text-ellipsis whitespace-nowrap px-2 py-1.5 text-left text-xs font-semibold hover:border-[#2563eb]`}
                         >
                           {firstLine(job.updates) || "No updates"}
                         </button>
@@ -3411,10 +3406,10 @@ function JobDocumentsModal({ job, isAdmin, currentUserName, onUpload, onDeleted,
   );
 }
 
-function Editable({ value, onChange }) {
+function Editable({ value, onChange, className = "" }) {
   return (
     <input
-      className={`${tableControlClass} w-32 px-2 py-1`}
+      className={`${tableControlClass} w-32 px-2 py-1 ${className}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
     />
@@ -3841,7 +3836,7 @@ function Th({ children }) {
 }
 
 function Td({ children, className = "" }) {
-  return <td className={`border-b border-white/10 px-4 py-1.5 align-middle ${className}`}>{children}</td>;
+  return <td className={`h-14 max-h-14 overflow-hidden border-b border-white/10 px-3 py-0 align-middle ${className}`}>{children}</td>;
 }
 
 function IconAction({ title, onClick, className = "", children }) {
