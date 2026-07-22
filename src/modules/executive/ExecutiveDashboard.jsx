@@ -181,7 +181,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
           </div>
         )}
 
-        <section className="grid gap-4 lg:grid-cols-3 2xl:grid-cols-6">
+        <section className="executive-kpi-grid grid gap-4 lg:grid-cols-3 2xl:grid-cols-6">
           <KpiCard title="Revenue" value={money(analytics.revenue)} detail="Today's trend" icon={CircleDollarSign} tone="blue" trend={analytics.todayRevenue} />
           <KpiCard title="Expenses" value={money(analytics.expenses)} detail="Parts + labor" icon={TrendingDown} tone="orange" trend={analytics.todayExpenses} />
           <KpiCard title="Profit" value={money(analytics.profit)} detail={`${analytics.profitMargin.toFixed(1)}% margin`} icon={TrendingUp} tone="green" trend={analytics.todayProfit} />
@@ -192,7 +192,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
 
         <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_500px]">
           <main className="space-y-6">
-            <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+            <section className="executive-chart-grid grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
               <Panel title="Jobs Status" subtitle="Completed, active, cancelled, pending and dry runs" icon={BarChart3}>
                 <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:items-center">
                   <DonutChart segments={analytics.statusSegments} total={analytics.totalJobs} />
@@ -209,7 +209,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
               </Panel>
             </section>
 
-            <section className="grid gap-6 xl:grid-cols-2">
+            <section className="executive-chart-grid grid gap-6 xl:grid-cols-2">
               <Panel title="Dispatcher Performance" subtitle="Completion rate and ranking" icon={Users}>
                 <PerformanceTable type="dispatcher" rows={dispatcherRows} />
               </Panel>
@@ -218,7 +218,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
               </Panel>
             </section>
 
-            <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <section className="executive-chart-grid grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
               <Panel title="Jobs by City" subtitle="Top 10 service markets" icon={MapPin}>
                 <HorizontalBars rows={cityRows} emptyLabel="No city data yet." />
               </Panel>

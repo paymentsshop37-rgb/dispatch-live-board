@@ -1052,8 +1052,8 @@ function TechnicianDirectory({
 
       <div className="sticky top-0 z-20 mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:static md:grid-cols-2 xl:grid-cols-[1.4fr_0.7fr_0.7fr_0.9fr_0.8fr_0.7fr_0.8fr_auto]">
           <SearchBox value={search} onChange={onSearch} placeholder="Search by name, phone, company" />
-          <button type="button" onClick={() => setMobileFiltersOpen((open) => !open)} className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white md:hidden">{mobileFiltersOpen ? "Hide Filters" : "State, City & Filters"}</button>
-          <div className={`${mobileFiltersOpen ? "grid" : "hidden"} gap-2 md:contents`}>
+          <button type="button" onClick={() => setMobileFiltersOpen((open) => !open)} className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white lg:hidden">{mobileFiltersOpen ? "Hide Filters" : "State, City & Filters"}</button>
+          <div className={`${mobileFiltersOpen ? "grid" : "hidden"} gap-2 lg:contents`}>
             <Select value={selectedState || "All"} options={["All", ...regionTree.map((state) => state.state)]} onChange={(value) => { setShortcut("all"); setSelectedState(value === "All" ? "" : value); setSelectedCity(""); }} />
             <Select value={selectedCity || "All"} options={cityOptions} onChange={(value) => { setShortcut("all"); setSelectedCity(value === "All" ? "" : value); }} />
             <Select value={coverageFilter} options={coverageOptions} onChange={setCoverageFilter} />
@@ -1066,7 +1066,7 @@ function TechnicianDirectory({
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 md:block">
+        <aside className="hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:block">
           <div className="mb-3">
             <button type="button" onClick={() => selectShortcut("all")} className={`mb-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-black ${shortcut === "all" && !selectedState ? "bg-slate-950 text-white" : "bg-white text-slate-800 hover:bg-slate-100"}`}>
               <span>🌎 United States</span>
@@ -1140,7 +1140,7 @@ function TechnicianDirectory({
               </div>
             </div>
           ) : (
-            <div className="grid gap-4 2xl:grid-cols-2">
+            <div className="technician-mobile-grid grid gap-4 2xl:grid-cols-2">
               {rankedTechnicians.map((technician) => (
                 <TechnicianRegionalCard
                   key={technician.id}

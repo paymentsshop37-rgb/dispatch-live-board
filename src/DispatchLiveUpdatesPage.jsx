@@ -1808,7 +1808,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto pb-24 md:hidden">
+            <div className="flex-1 overflow-y-auto pb-24 lg:hidden">
               <div className="mb-4 flex gap-2" aria-label={`Step ${mobileJobStep} of 5`}>
                 {[1, 2, 3, 4, 5].map((step) => <span key={step} className={`h-2 flex-1 rounded-full ${step <= mobileJobStep ? "bg-blue-500" : "bg-white/10"}`} />)}
               </div>
@@ -1822,7 +1822,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </div>
             </div>
 
-            <div className="hidden gap-3 overflow-y-auto md:grid md:grid-cols-2 xl:grid-cols-4">
+            <div className="hidden gap-3 overflow-y-auto lg:grid lg:grid-cols-2 xl:grid-cols-4">
               <Input label="Date" type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
               <Input label="Time" placeholder="10:45 AM" value={form.time} onChange={(v) => setForm({ ...form, time: v })} />
               <Input label="Invoice #" value={form.reference} onChange={(v) => setForm({ ...form, reference: v })} />
@@ -2115,7 +2115,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </div>
             </div>
 
-            <div className="grid gap-3 md:hidden">
+            <div className="dispatch-mobile-grid grid gap-3 lg:hidden">
               {filteredJobs.slice(0, mobileVisibleCount).map((job, index) => {
                 const eta = job.manualEta || extractEta(job.updates);
                 const financialOpen = mobileFinancialIds.includes(String(job.id));
@@ -2181,13 +2181,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               {filteredJobs.length === 0 && <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-400">No live jobs found.</div>}
               {mobileVisibleCount < filteredJobs.length && <button type="button" onClick={() => setMobileVisibleCount((count) => count + 50)} className="min-h-11 rounded-xl bg-blue-600 px-4 font-bold text-white">Load 50 More Jobs</button>}
             </div>
-            <div className="sticky bottom-0 -mx-4 mt-auto grid grid-cols-3 gap-2 border-t border-white/10 bg-[#0b1628] p-4 md:hidden">
+            <div className="sticky bottom-0 -mx-4 mt-auto grid grid-cols-3 gap-2 border-t border-white/10 bg-[#0b1628] p-4 lg:hidden">
               <button type="button" onClick={() => { localStorage.setItem("nttr-mobile-job-draft", JSON.stringify(form)); setToastMessage("Job draft saved"); }} className="min-h-12 rounded-xl bg-white/10 px-2 text-xs font-bold text-slate-100">Save Draft</button>
               <button type="button" disabled={mobileJobStep === 1} onClick={() => setMobileJobStep((step) => Math.max(1, step - 1))} className="min-h-12 rounded-xl border border-white/10 px-2 text-sm font-bold text-white disabled:opacity-40">Previous</button>
               {mobileJobStep < 5 ? <button type="button" onClick={() => setMobileJobStep((step) => Math.min(5, step + 1))} className="min-h-12 rounded-xl bg-blue-600 px-2 text-sm font-bold text-white">Next</button> : <button type="submit" className="min-h-12 rounded-xl bg-emerald-600 px-2 text-sm font-bold text-white">Save Job</button>}
             </div>
 
-            <div className="hidden max-h-[calc(100vh-13rem)] w-full max-w-none overflow-auto rounded-2xl border border-white/10 bg-[#0f1c2e] md:block">
+            <div className="hidden max-h-[calc(100vh-13rem)] w-full max-w-none overflow-auto rounded-2xl border border-white/10 bg-[#0f1c2e] lg:block">
               <table className="min-w-[1720px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-[#0b1628] text-xs uppercase tracking-wide text-slate-200">
                   <tr>
@@ -3748,7 +3748,7 @@ function MobileMenuAction({ label, onClick, danger = false }) {
 
 function MobileJobDetailSheet({ job, onClose, onUpdate, onAssign, onMap }) {
   return (
-    <div className="fixed inset-0 z-[85] flex items-end bg-black/60 md:hidden" onClick={onClose}>
+    <div className="fixed inset-0 z-[85] flex items-end bg-black/60 lg:hidden" onClick={onClose}>
       <section className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-[#0b1628] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-white" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase text-blue-300">Job Details</p><h3 className="text-xl font-black">{job.reference || "No Invoice #"}</h3></div><button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10">Close</button></div>
         <div className="mt-5 grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">

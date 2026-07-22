@@ -4,4 +4,54 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
+}
+
+@media (orientation: portrait) and (max-width: 1023px) {
+  .dispatch-mobile-grid,
+  .technician-mobile-grid,
+  .executive-kpi-grid,
+  .executive-chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (orientation: landscape) and (max-width: 1023px) {
+  .app-main {
+    padding-right: 72px;
+    padding-bottom: 0;
+  }
+
+  .mobile-bottom-nav {
+    top: 72px;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: 72px;
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(5, minmax(44px, 1fr));
+    border-top: 0;
+    border-left: 1px solid rgb(51 65 85);
+    padding: 0;
+  }
+
+  .executive-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: landscape) and (min-width: 760px) and (max-width: 1023px) {
+  .dispatch-mobile-grid,
+  .technician-mobile-grid,
+  .executive-chart-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (orientation: landscape) and (min-width: 900px) and (max-width: 1023px) {
+  .technician-mobile-grid,
+  .executive-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }

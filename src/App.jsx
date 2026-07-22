@@ -377,7 +377,7 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden pb-20 md:pb-0 lg:pl-60">
+      <main className="app-main min-h-screen w-full max-w-none min-w-0 overflow-x-hidden pb-20 lg:pb-0 lg:pl-60">
         <div className="flex min-h-[72px] items-center border-b border-slate-800 bg-[#0b1628] px-4 py-4 text-white shadow-sm md:px-8">
           <div className="flex w-full max-w-none items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -438,7 +438,7 @@ export default function App() {
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-[70] grid h-20 grid-cols-5 border-t border-slate-700 bg-[#08111f]/95 px-1 pb-[env(safe-area-inset-bottom)] text-white backdrop-blur md:hidden">
+      <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-[70] grid h-20 grid-cols-5 border-t border-slate-700 bg-[#08111f]/95 px-1 pb-[env(safe-area-inset-bottom)] text-white backdrop-blur lg:hidden">
         <MobileNavButton icon={ClipboardList} label="Board" active={activeView === "dispatch"} onClick={() => setActiveView("dispatch")} />
         <MobileNavButton icon={Plus} label="Add Job" onClick={() => { setActiveView("dispatch"); setAddJobRequest((value) => value + 1); }} />
         <MobileNavButton icon={Users} label="Technicians" active={activeView === "technicians"} onClick={() => setActiveView("technicians")} />
