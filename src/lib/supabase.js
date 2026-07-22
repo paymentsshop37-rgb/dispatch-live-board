@@ -8,6 +8,12 @@ const missingVariables = [
   !supabaseAnonKey && "VITE_SUPABASE_ANON_KEY",
 ].filter(Boolean);
 
+// Remove tokens written by earlier persistent-client configurations. The
+// sessionStorage-backed client below never restores these values.
+Object.keys(window.localStorage).forEach((key) => {
+  if (key.startsWith("sb-") && key.includes("auth-token")) window.localStorage.removeItem(key);
+});
+
 function createMissingConfigError() {
   return new Error(
     `Missing Supabase environment variable${missingVariables.length > 1 ? "s" : ""}: ${missingVariables.join(
@@ -22,6 +28,7 @@ function createDisabledQuery() {
     order: () => query,
     limit: () => query,
     eq: () => query,
+    or: () => query,
     insert: () => query,
     update: () => query,
     delete: () => query,
@@ -66,5 +73,12 @@ function createDisabledSupabaseClient() {
 
 export const supabase =
   missingVariables.length === 0
-    ? createClient(supabaseUrl, supabaseAnonKey)
+    ? createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          storage: window.sessionStorage,
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+        },
+      })
     : createDisabledSupabaseClient();

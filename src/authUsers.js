@@ -26,10 +26,15 @@ export function profileToSession(profile, authSession) {
 }
 
 export async function clearAuthSession() {
-  const { error } = await supabase.auth.signOut({ scope: "local" });
-  clearCustomAuthStorage();
-  window.dispatchEvent(new Event("nttr-auth-changed"));
-  if (error) throw error;
+  let signOutError;
+  try {
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    signOutError = error;
+  } finally {
+    clearCustomAuthStorage();
+    window.dispatchEvent(new Event("nttr-auth-changed"));
+  }
+  if (signOutError) throw signOutError;
 }
 
 export function clearCustomAuthStorage() {
@@ -37,9 +42,60 @@ export function clearCustomAuthStorage() {
     ["currentUser", "currentUserName", "currentUserRole"].includes(key) ||
     /^(nttr-(auth|session|user|role|access)|auth-|user-session)/i.test(key);
 
-  [localStorage, sessionStorage].forEach((storage) => {
-    Object.keys(storage).forEach((key) => {
-      if (isCustomAuthKey(key)) storage.removeItem(key);
-    });
+  Object.keys(localStorage).forEach((key) => {
+    if (isCustomAuthKey(key) || key.startsWith("sb-")) localStorage.removeItem(key);
   });
+  sessionStorage.clear();
+}
+
+const sessionAuditIdKey = "nttr-session-audit-id";
+const sessionLoginTimeKey = "nttr-session-login-time";
+
+export async function startSessionAudit(profile) {
+  if (!profile?.authUserId || sessionStorage.getItem(sessionAuditIdKey)) return;
+  const id = crypto.randomUUID();
+  const loginTime = new Date().toISOString();
+  const { error } = await supabase.from("session_audit_log").insert([{
+    id,
+    user_id: profile.authUserId,
+    user_name: profile.name || profile.username || "User",
+    role: String(profile.role || "").toLowerCase(),
+    login_time: loginTime,
+    browser: browserName(),
+    device: deviceName(),
+  }]);
+  if (error) {
+    console.warn("Session audit start failed:", error.message);
+    return;
+  }
+  sessionStorage.setItem(sessionAuditIdKey, id);
+  sessionStorage.setItem(sessionLoginTimeKey, loginTime);
+}
+
+export async function finishSessionAudit(logoutReason) {
+  const id = sessionStorage.getItem(sessionAuditIdKey);
+  const loginTime = sessionStorage.getItem(sessionLoginTimeKey);
+  if (!id) return;
+  const logoutTime = new Date();
+  const duration = loginTime ? Math.max(0, Math.round((logoutTime.getTime() - new Date(loginTime).getTime()) / 1000)) : 0;
+  const { error } = await supabase.from("session_audit_log").update({
+    logout_time: logoutTime.toISOString(),
+    logout_reason: logoutReason,
+    session_duration: duration,
+  }).eq("id", id);
+  if (error) console.warn("Session audit finish failed:", error.message);
+}
+
+function browserName() {
+  const agent = navigator.userAgent;
+  if (agent.includes("Edg/")) return "Microsoft Edge";
+  if (agent.includes("Chrome/")) return "Google Chrome";
+  if (agent.includes("Firefox/")) return "Mozilla Firefox";
+  if (agent.includes("Safari/") && !agent.includes("Chrome/")) return "Safari";
+  return "Unknown browser";
+}
+
+function deviceName() {
+  const mobile = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+  return `${mobile ? "Mobile" : "Desktop"} · ${navigator.platform || "Unknown platform"}`;
 }

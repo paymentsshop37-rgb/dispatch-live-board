@@ -25,7 +25,7 @@ import {
   X,
 } from "lucide-react";
 import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
-import { clearAuthSession, loadCurrentProfile, profileToSession } from "./authUsers";
+import { clearAuthSession, clearCustomAuthStorage, finishSessionAudit, loadCurrentProfile, profileToSession, startSessionAudit } from "./authUsers";
 import { ActivityLogPage } from "./modules/activity";
 import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard } from "./modules/billing";
@@ -56,6 +56,10 @@ const sidebarItems = [
   { id: "reports", label: "Reports", icon: BarChart3, target: "dashboard", adminOnly: true },
   { id: "settings", label: "Settings", icon: Settings, target: "administration", adminOnly: true },
 ];
+
+const inactivityWarningMs = 28 * 60 * 1000;
+const inactivityLogoutMs = 30 * 60 * 1000;
+const logoutChannelName = "dispatch-live-session-security";
 
 const sidebarSections = [
   {
@@ -99,8 +103,13 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [addJobRequest, setAddJobRequest] = useState(0);
   const [jobSearchRequest, setJobSearchRequest] = useState(0);
+  const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
+  const [networkLocked, setNetworkLocked] = useState(() => !navigator.onLine);
+  const [inactivityResetKey, setInactivityResetKey] = useState(0);
   const authValidationId = useRef(0);
   const manualLogout = useRef(false);
+  const logoutInProgress = useRef(false);
+  const logoutChannel = useRef(null);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isAuthenticated = Boolean(session.isAuthenticated);
 
@@ -119,14 +128,31 @@ export default function App() {
     }
   }, []);
 
-  const handleLogout = useCallback(async () => {
+  const handleLogout = useCallback(async (reason = "manual_logout", message = "", broadcast = true) => {
+    if (logoutInProgress.current) return;
+    logoutInProgress.current = true;
     manualLogout.current = true;
     resetApplicationState();
     redirectToLogin();
+    setSessionWarningOpen(false);
+    setNetworkLocked(false);
+    if (message) setAuthMessage(message);
+    if (broadcast) {
+      logoutChannel.current?.postMessage({ type: "logout", reason, message });
+      try {
+        localStorage.setItem("nttr-logout-signal", JSON.stringify({ reason, message, at: Date.now() }));
+        localStorage.removeItem("nttr-logout-signal");
+      } catch {
+        // BroadcastChannel remains the primary synchronization mechanism.
+      }
+    }
     try {
+      await finishSessionAudit(reason);
       await clearAuthSession();
     } catch {
       // Local state and storage are already cleared; remain safely signed out.
+    } finally {
+      window.setTimeout(() => { logoutInProgress.current = false; }, 0);
     }
   }, [redirectToLogin, resetApplicationState]);
 
@@ -148,22 +174,21 @@ export default function App() {
       try {
         const profile = await loadCurrentProfile(authSession.user.id);
         if (profile.status !== "Active") {
-          await supabase.auth.signOut({ scope: "local" });
-          if (mounted) setAuthMessage("Your account is inactive. Contact an administrator.");
+          if (mounted) await handleLogout("session_invalid", "Your account is inactive. Contact an administrator.");
           return;
         }
         if (!["admin", "dispatcher", "supervisor"].includes(String(profile.role).toLowerCase())) {
-          await supabase.auth.signOut({ scope: "local" });
-          if (mounted) setAuthMessage("You do not have permission to access this application.");
+          if (mounted) await handleLogout("session_invalid", "You do not have permission to access this application.");
           return;
         }
         if (mounted && !manualLogout.current && validationId === authValidationId.current) {
-          setSession(profileToSession(profile, authSession));
+          const verifiedSession = profileToSession(profile, authSession);
+          setSession(verifiedSession);
+          void startSessionAudit(verifiedSession);
           if (window.location.pathname === "/login") window.history.replaceState({}, "", "/");
         }
       } catch {
-        await supabase.auth.signOut({ scope: "local" });
-        if (mounted) setAuthMessage("Unable to verify your account profile.");
+        if (mounted) await handleLogout("session_invalid", "Unable to verify your account profile.");
       } finally {
         if (mounted && validationId === authValidationId.current) setAuthLoading(false);
       }
@@ -172,6 +197,7 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (event === "SIGNED_OUT") {
         manualLogout.current = true;
+        clearCustomAuthStorage();
         resetApplicationState();
         redirectToLogin();
         return;
@@ -180,7 +206,7 @@ export default function App() {
       window.setTimeout(() => validate(nextSession), 0);
     });
     return () => { mounted = false; data?.subscription?.unsubscribe(); };
-  }, [redirectToLogin, resetApplicationState]);
+  }, [handleLogout, redirectToLogin, resetApplicationState]);
 
   useEffect(() => {
     const authUserId = session.authUserId || session.id;
@@ -190,8 +216,7 @@ export default function App() {
       { event: "UPDATE", schema: "public", table: "app_users", filter: `auth_user_id=eq.${authUserId}` },
       async ({ new: profile }) => {
         if (profile?.status !== "Active") {
-          setAuthMessage("Your account is inactive. Contact an administrator.");
-          await supabase.auth.signOut({ scope: "local" });
+          await handleLogout("admin_forced_logout", "Your account is inactive. Contact an administrator.");
         } else {
           setSession((current) => current.isAuthenticated
             ? { ...current, ...profileToSession(profile, { user: { id: current.id } }) }
@@ -200,11 +225,114 @@ export default function App() {
       }
     ).subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [session.authUserId, session.id]);
+  }, [handleLogout, session.authUserId, session.id]);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated && !isPublicRegistration) redirectToLogin();
   }, [authLoading, isAuthenticated, isPublicRegistration, redirectToLogin]);
+
+  useEffect(() => {
+    const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(logoutChannelName) : null;
+    logoutChannel.current = channel;
+    const receiveLogout = (payload) => {
+      if (payload?.type !== "logout") return;
+      handleLogout(payload.reason || "manual_logout", payload.message || "", false);
+    };
+    if (channel) channel.onmessage = (event) => receiveLogout(event.data);
+    const onStorage = (event) => {
+      if (event.key !== "nttr-logout-signal" || !event.newValue) return;
+      try { receiveLogout({ type: "logout", ...JSON.parse(event.newValue) }); } catch { receiveLogout({ type: "logout" }); }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      channel?.close();
+      if (logoutChannel.current === channel) logoutChannel.current = null;
+    };
+  }, [handleLogout]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined;
+    let warningShown = false;
+    let warningTimer;
+    let logoutTimer;
+    let lastHandledActivity = 0;
+    const schedule = () => {
+      window.clearTimeout(warningTimer);
+      window.clearTimeout(logoutTimer);
+      warningShown = false;
+      setSessionWarningOpen(false);
+      warningTimer = window.setTimeout(() => {
+        warningShown = true;
+        setSessionWarningOpen(true);
+      }, inactivityWarningMs);
+      logoutTimer = window.setTimeout(() => {
+        handleLogout("inactivity_timeout", "Your session expired due to inactivity. Please sign in again.");
+      }, inactivityLogoutMs);
+    };
+    const onActivity = (event) => {
+      if (!event.isTrusted || warningShown) return;
+      const now = Date.now();
+      if (now - lastHandledActivity < 1000) return;
+      lastHandledActivity = now;
+      schedule();
+    };
+    const activityEvents = ["mousemove", "mousedown", "click", "keydown", "touchstart", "touchmove", "scroll"];
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, onActivity, { passive: true }));
+    schedule();
+    return () => {
+      window.clearTimeout(warningTimer);
+      window.clearTimeout(logoutTimer);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, onActivity));
+    };
+  }, [handleLogout, inactivityResetKey, isAuthenticated]);
+
+  useEffect(() => {
+    let connectionLost = !navigator.onLine;
+    if (connectionLost && isAuthenticated) setNetworkLocked(true);
+    const onOffline = () => {
+      connectionLost = true;
+      if (isAuthenticated) setNetworkLocked(true);
+    };
+    const onOnline = () => {
+      if (connectionLost && isAuthenticated) {
+        handleLogout("internet_connection_lost", "Your connection was restored. Please sign in again.");
+      }
+      connectionLost = false;
+    };
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const onConnectionChange = () => {
+      if (!navigator.onLine) onOffline();
+    };
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
+    connection?.addEventListener?.("change", onConnectionChange);
+    return () => {
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+      connection?.removeEventListener?.("change", onConnectionChange);
+    };
+  }, [handleLogout, isAuthenticated]);
+
+  const continueSession = useCallback(async () => {
+    const { data, error } = await supabase.auth.getSession();
+    const authSession = data?.session;
+    if (error || !authSession?.user) {
+      await handleLogout("session_invalid", "Your session is no longer valid. Please sign in again.");
+      return;
+    }
+    try {
+      const profile = await loadCurrentProfile(authSession.user.id);
+      if (profile?.status !== "Active" || !["admin", "dispatcher", "supervisor"].includes(String(profile?.role || "").toLowerCase())) {
+        await handleLogout("session_invalid", "Your session is no longer valid. Please sign in again.");
+        return;
+      }
+      setSessionWarningOpen(false);
+      setInactivityResetKey((value) => value + 1);
+    } catch {
+      await handleLogout("session_invalid", "Your session is no longer valid. Please sign in again.");
+    }
+  }, [handleLogout]);
 
   const role = normalizeRole(session.role);
   const permissions = useMemo(() => getPermissions(role), [role]);
@@ -296,6 +424,29 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
+      {networkLocked && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/95 p-6 text-center text-white">
+          <div className="max-w-md rounded-3xl border border-red-400/30 bg-red-500/10 p-7 shadow-2xl">
+            <AlertTriangle className="mx-auto h-10 w-10 text-red-300" />
+            <h2 className="mt-4 text-2xl font-black">Connection Lost</h2>
+            <p className="mt-3 font-semibold text-red-100">Internet connection lost. Your session has been locked.</p>
+            <p className="mt-3 text-sm text-slate-300">When the connection returns, you will be signed out and required to enter your credentials again.</p>
+          </div>
+        </div>
+      )}
+
+      {sessionWarningOpen && !networkLocked && (
+        <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <h2 className="text-2xl font-black text-slate-950">Session Expiring</h2>
+            <p className="mt-3 text-sm font-semibold text-slate-600">Your session will expire in 2 minutes due to inactivity.</p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => handleLogout("manual_logout")} className="min-h-11 rounded-xl border border-slate-300 px-4 font-bold text-slate-700">Log Out</button>
+              <button type="button" onClick={continueSession} className="min-h-11 rounded-xl bg-blue-600 px-4 font-bold text-white">Continue Session</button>
+            </div>
+          </div>
+        </div>
+      )}
       <aside className="hidden bg-[#08111f] text-white lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col">
         <div className="flex w-full flex-col gap-4 p-4 lg:min-h-screen">
           <div className="border-b border-white/10 pb-5">
@@ -369,7 +520,7 @@ export default function App() {
               <HelpCircle className="h-4 w-4" />
               Help Center
             </button>
-            <button type="button" onClick={handleLogout} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white">
+            <button type="button" onClick={() => handleLogout("manual_logout")} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-bold text-slate-300 hover:bg-white/10 hover:text-white">
               <LogOut className="h-4 w-4" />
               Logout
             </button>
@@ -409,7 +560,7 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} onLogout={handleLogout} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
