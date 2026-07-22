@@ -53,8 +53,8 @@ const sidebarItems = [
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "users", label: "Users", icon: Users, adminOnly: true },
   { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher", "supervisor"] },
-  { id: "reports", label: "Reports", icon: BarChart3, adminOnly: true },
-  { id: "settings", label: "Settings", icon: Settings, adminOnly: true },
+  { id: "reports", label: "Reports", icon: BarChart3, target: "dashboard", adminOnly: true },
+  { id: "settings", label: "Settings", icon: Settings, target: "administration", adminOnly: true },
 ];
 
 const sidebarSections = [
@@ -428,7 +428,7 @@ export default function App() {
               <button type="button" onClick={() => setMobileMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><X className="h-5 w-5" /></button>
             </div>
             <nav className="grid gap-2">
-              {visibleItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => { setActiveView(item.id); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Icon className="h-5 w-5" />{item.label}</button>; })}
+              {visibleItems.map((item) => { const Icon = item.icon; const target = item.target || item.id; return <button key={item.id} type="button" onClick={() => { setActiveView(target); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Icon className="h-5 w-5" />{item.label}</button>; })}
               <button type="button" onClick={() => { setActiveView("flat-rate"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><BookOpen className="h-5 w-5" />Flat Rate Guide</button>
               <button type="button" onClick={() => { setActiveView("parts-intelligence"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><PackageSearch className="h-5 w-5" />Parts Intelligence</button>
               <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs font-black uppercase text-slate-500">Profile</p><p className="mt-1 font-bold">{session.name || session.username}</p><p className="text-xs capitalize text-slate-400">{roleLabel(role)}</p></div>
