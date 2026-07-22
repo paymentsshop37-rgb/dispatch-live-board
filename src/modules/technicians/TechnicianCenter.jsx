@@ -25,12 +25,14 @@ import {
 } from "lucide-react";
 import {
   createTechnician,
+  compareTechniciansByAssignedNumber,
   deleteOrDeactivateTechnician,
   getKnownColumns,
   loadTechnicianColumnSupport,
   loadTechnicians,
   permanentlyDeleteUnusedTechnician,
   restoreTechnician,
+  sortTechniciansByAssignedNumber,
   subscribeToTechnicians,
   updateTechnician,
 } from "./technicianService";
@@ -49,6 +51,7 @@ import { getPermissions } from "../permissions";
 
 const emptyTechnician = {
   full_name: "",
+  assigned_number: "",
   phone: "",
   email: "",
   company: "",
@@ -67,7 +70,7 @@ const emptyTechnician = {
 const tabs = ["Dashboard", "Directory", "Pending", "Approved", "Inactive Technicians", "Documents", "Performance"];
 const statuses = ["All", "Pending", "Approved", "Rejected", "Inactive", "Missing Documents"];
 const editableTechnicianStatuses = statuses.filter((status) => !["All", "Inactive"].includes(status));
-const sortOptions = ["Newest", "Rating"];
+const sortOptions = ["Assigned Number"];
 const availabilityOptions = ["Available", "Busy", "Off Duty", "Offline"];
 const nearbyPartsCategories = [
   "Commercial Tire Shops",
@@ -132,7 +135,7 @@ export default function TechnicianCenter({ currentUser }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [serviceFilter, setServiceFilter] = useState("All");
-  const [sortBy, setSortBy] = useState("Newest");
+  const [sortBy, setSortBy] = useState("Assigned Number");
   const [selectedTechnician, setSelectedTechnician] = useState(null);
   const [editingTechnician, setEditingTechnician] = useState(null);
   const [coverageTechnician, setCoverageTechnician] = useState(null);
@@ -228,6 +231,7 @@ export default function TechnicianCenter({ currentUser }) {
       .filter((technician) => {
         const searchText = [
           technician.full_name,
+          technician.assigned_number,
           technician.phone,
           technician.company,
           technician.city,
@@ -249,7 +253,8 @@ export default function TechnicianCenter({ currentUser }) {
       })
       .sort((a, b) => {
         if (sortBy === "Rating") return Number(b.rating || 0) - Number(a.rating || 0);
-        return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        if (sortBy === "Newest") return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        return compareTechniciansByAssignedNumber(a, b);
       });
   }, [search, serviceFilter, sortBy, statusFilter, tabTechnicians]);
 
@@ -286,6 +291,7 @@ export default function TechnicianCenter({ currentUser }) {
     const technicianValues = prepareDirectoryTechnicianValues(canApproveTechnicians ? values : { ...values, status: "Approved" });
 
     try {
+      assertUniqueAssignedNumber(technicianValues.assigned_number, technicians);
       const technician = await createTechnician(technicianValues, knownColumns);
       await logActivity({
         entityType: "technician",
@@ -300,7 +306,7 @@ export default function TechnicianCenter({ currentUser }) {
       setActiveTab("Directory");
       setCopyMessage("Technician added successfully.");
     } catch (saveError) {
-      setError(saveError.message || "Unable to save technician.");
+      setError(technicianSaveError(saveError));
     } finally {
       setSaving(false);
     }
@@ -311,6 +317,12 @@ export default function TechnicianCenter({ currentUser }) {
     if (!currentTechnician) return;
 
     const nextTechnician = { ...currentTechnician, ...patch };
+    try {
+      assertUniqueAssignedNumber(nextTechnician.assigned_number, technicians, id);
+    } catch (validationError) {
+      setError(validationError.message);
+      return false;
+    }
     setTechnicians((current) =>
       current.map((technician) => (technician.id === id ? nextTechnician : technician))
     );
@@ -326,9 +338,11 @@ export default function TechnicianCenter({ currentUser }) {
         description: `Technician updated by ${updatedBy}`,
         createdBy: updatedBy,
       });
+      return true;
     } catch (saveError) {
-      setError(saveError.message || "Unable to update technician.");
+      setError(technicianSaveError(saveError));
       refreshTechnicians();
+      return false;
     }
   }
 
@@ -682,6 +696,7 @@ export default function TechnicianCenter({ currentUser }) {
 
               <div className="grid gap-3">
                 <Field label="Full Name" value={form.full_name} onChange={(value) => updateForm("full_name", value)} required />
+                <Field label="Assigned Number" value={form.assigned_number} onChange={(value) => updateForm("assigned_number", value)} type="number" min={1} />
                 <Field label="Company" value={form.company} onChange={(value) => updateForm("company", value)} />
                 <Field label="Phone" value={form.phone} onChange={(value) => updateForm("phone", value)} required />
                 <Field label="Email" value={form.email} onChange={(value) => updateForm("email", value)} type="email" />
@@ -753,6 +768,7 @@ export default function TechnicianCenter({ currentUser }) {
                         className="cursor-pointer border-t border-slate-200 align-top hover:bg-slate-50"
                       >
                         <Td>
+                          {technician.assigned_number && <span className="mr-2 rounded-full bg-blue-100 px-2 py-1 text-xs font-black text-blue-700">#{technician.assigned_number}</span>}
                           <button
                             type="button"
                             onClick={(event) => {
@@ -868,9 +884,9 @@ export default function TechnicianCenter({ currentUser }) {
           onSave={async (patch) => {
             setSaving(true);
             const nextPatch = prepareDirectoryTechnicianValues(patch);
-            await saveTechnician(editingTechnician.id, canApproveTechnicians ? nextPatch : basicTechnicianPatch(nextPatch));
+            const saved = await saveTechnician(editingTechnician.id, canApproveTechnicians ? nextPatch : basicTechnicianPatch(nextPatch));
             setSaving(false);
-            setEditingTechnician(null);
+            if (saved) setEditingTechnician(null);
           }}
         />
       )}
@@ -893,6 +909,7 @@ export default function TechnicianCenter({ currentUser }) {
       {addTechnicianModalOpen && (
         <AddTechnicianModal
           saving={saving}
+          canAssignNumber={canApproveTechnicians}
           onClose={() => setAddTechnicianModalOpen(false)}
           onSave={saveNewTechnician}
         />
@@ -977,7 +994,7 @@ function TechnicianDirectory({
   const [companyFilter, setCompanyFilter] = useState("All");
   const regionalStats = useMemo(() => buildRegionalStats(technicians, favoriteIds), [favoriteIds, technicians]);
   const rankedTechnicians = useMemo(() => {
-    return rankTechniciansByCoverage(technicians, { ...lookup, state: selectedState || lookup.state, city: selectedCity || lookup.city })
+    return sortTechniciansByAssignedNumber(rankTechniciansByCoverage(technicians, { ...lookup, state: selectedState || lookup.state, city: selectedCity || lookup.city })
       .filter((technician) => shortcut !== "favorites" || favoriteIds.includes(String(technician.id)))
       .filter((technician) => shortcut !== "available" || technician.availability === "Available")
       .filter((technician) => availabilityFilter === "All" || technician.availability === availabilityFilter)
@@ -985,7 +1002,7 @@ function TechnicianDirectory({
       .filter((technician) => !selectedCity || normalizeText(technician.city) === normalizeText(selectedCity))
       .filter((technician) => coverageFilter === "All" || coverageAreas(technician).includes(coverageFilter))
       .filter((technician) => ratingFilter === "All" || Number(technician.rating || 0) >= Number(ratingFilter))
-      .filter((technician) => companyFilter === "All" || technician.company === companyFilter);
+      .filter((technician) => companyFilter === "All" || technician.company === companyFilter));
   }, [availabilityFilter, companyFilter, coverageFilter, favoriteIds, lookup, ratingFilter, selectedCity, selectedState, shortcut, technicians]);
   function selectShortcut(nextShortcut) {
     setShortcut(nextShortcut);
@@ -1006,7 +1023,7 @@ function TechnicianDirectory({
     onSearch("");
     onStatusFilter("All");
     onServiceFilter("All");
-    onSort("Newest");
+    onSort("Assigned Number");
     setAvailabilityFilter("All");
     setSelectedState("");
     setSelectedCity("");
@@ -1181,7 +1198,10 @@ function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAss
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <button type="button" onClick={() => onOpen(technician)} className="truncate text-left text-lg font-black text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button>
+              <div className="flex items-center gap-2">
+                {technician.assigned_number && <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-black text-blue-700">#{technician.assigned_number}</span>}
+                <button type="button" onClick={() => onOpen(technician)} className="truncate text-left text-lg font-black text-slate-950 hover:text-blue-700">{technician.full_name || "Unnamed technician"}</button>
+              </div>
               <p className="text-sm font-semibold text-slate-500">{technician.company || "No company listed"}</p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1239,7 +1259,7 @@ function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAss
   );
 }
 
-function AddTechnicianModal({ saving, onClose, onSave }) {
+function AddTechnicianModal({ saving, canAssignNumber, onClose, onSave }) {
   const [form, setForm] = useState(emptyTechnician);
 
   function update(field, value) {
@@ -1259,6 +1279,7 @@ function AddTechnicianModal({ saving, onClose, onSave }) {
 
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Full Name" value={form.full_name} onChange={(value) => update("full_name", value)} required />
+          {canAssignNumber && <Field label="Assigned Number" value={form.assigned_number} onChange={(value) => update("assigned_number", value)} type="number" min={1} />}
           <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} required />
           <Field label="Company" value={form.company} onChange={(value) => update("company", value)} />
           <Field label="Email" value={form.email} onChange={(value) => update("email", value)} type="email" />
@@ -1283,6 +1304,7 @@ function AddTechnicianModal({ saving, onClose, onSave }) {
 function EditTechnicianModal({ technician, saving, canEditStatus, canDelete, onClose, onSave, onDelete }) {
   const [form, setForm] = useState({
     full_name: technician.full_name || "",
+    assigned_number: technician.assigned_number || "",
     company: technician.company || "",
     phone: technician.phone || "",
     email: technician.email || "",
@@ -1313,6 +1335,7 @@ function EditTechnicianModal({ technician, saving, canEditStatus, canDelete, onC
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <Field label="Full Name" value={form.full_name} onChange={(value) => update("full_name", value)} required />
+          {canEditStatus && <Field label="Assigned Number" value={form.assigned_number} onChange={(value) => update("assigned_number", value)} type="number" min={1} />}
           <Field label="Company" value={form.company} onChange={(value) => update("company", value)} />
           <Field label="Phone" value={form.phone} onChange={(value) => update("phone", value)} required />
           <Field label="Email" value={form.email} onChange={(value) => update("email", value)} type="email" />
@@ -2649,19 +2672,39 @@ function ActionButton({ icon, label, onClick, tone = "slate" }) {
   );
 }
 
-function Field({ label, value, onChange, type = "text", required = false }) {
+function Field({ label, value, onChange, type = "text", required = false, min }) {
   return (
     <label className="space-y-1 text-sm font-medium">
       {label}
       <input
         type={type}
         required={required}
+        min={min}
+        step={type === "number" ? 1 : undefined}
         className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
     </label>
   );
+}
+
+function assertUniqueAssignedNumber(value, technicians, excludedId = null) {
+  if (value === "" || value === null || value === undefined) return;
+  const assignedNumber = Number(value);
+  if (!Number.isInteger(assignedNumber) || assignedNumber < 1) {
+    throw new Error("Assigned Number must be a whole number of 1 or greater.");
+  }
+  if (technicians.some((technician) => technician.id !== excludedId && Number(technician.assigned_number) === assignedNumber)) {
+    throw new Error(`Assigned Number ${assignedNumber} is already in use.`);
+  }
+}
+
+function technicianSaveError(error) {
+  if (error?.code === "23505" || String(error?.message || "").toLowerCase().includes("assigned_number")) {
+    return "That Assigned Number is already in use. Choose a different number.";
+  }
+  return error?.message || "Unable to save technician.";
 }
 
 function Select({ label, value, options, onChange }) {

@@ -35,7 +35,7 @@ import {
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
 import { logActivity } from "./modules/activity";
-import { loadTechnicians } from "./modules/technicians/technicianService";
+import { compareTechniciansByAssignedNumber, loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 
 const normalizeText = (value) => {
@@ -908,18 +908,7 @@ profit: filteredJobs.reduce(
 
       return matchesLocation && matchesService;
     })
-      .sort((a, b) => {
-        const scoreDifference = technicianAssignmentScore(b, city, state) - technicianAssignmentScore(a, city, state);
-        if (scoreDifference !== 0) return scoreDifference;
-
-        const availabilityDifference = technicianAvailabilityRank(b.availability) - technicianAvailabilityRank(a.availability);
-        if (availabilityDifference !== 0) return availabilityDifference;
-
-        const ratingDifference = Number(b.rating || 0) - Number(a.rating || 0);
-        if (ratingDifference !== 0) return ratingDifference;
-
-        return technicianCompliance(b) - technicianCompliance(a);
-      });
+      .sort(compareTechniciansByAssignedNumber);
   }, [assignmentFilters, assignmentJob, dispatchTechnicians]);
 
   async function addJob(e) {

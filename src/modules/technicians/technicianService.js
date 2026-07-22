@@ -4,6 +4,7 @@ const DEFAULT_COLUMNS = [
   "id",
   "created_at",
   "full_name",
+  "assigned_number",
   "phone",
   "email",
   "company",
@@ -27,6 +28,7 @@ const DEFAULT_COLUMNS = [
 
 const fieldAliases = {
   full_name: ["full_name"],
+  assigned_number: ["assigned_number", "technician_number", "display_order"],
   phone: ["phone"],
   email: ["email"],
   company: ["company", "company_name"],
@@ -65,6 +67,7 @@ export function normalizeTechnician(row) {
     raw: row,
     id: row.id,
     full_name: firstValue(row, fieldAliases.full_name),
+    assigned_number: normalizeAssignedNumber(firstValue(row, fieldAliases.assigned_number, null)),
     phone: firstValue(row, fieldAliases.phone),
     email: firstValue(row, fieldAliases.email),
     company: firstValue(row, fieldAliases.company),
@@ -98,7 +101,9 @@ function buildPayload(technician, knownColumns = DEFAULT_COLUMNS) {
   Object.keys(fieldAliases).forEach((field) => {
     const column = resolveColumn(field, knownColumns);
     if (knownColumns.includes(column) && Object.prototype.hasOwnProperty.call(technician, field)) {
-      payload[column] = arrayBackedField(field)
+      payload[column] = field === "assigned_number"
+        ? normalizeAssignedNumber(technician[field])
+        : arrayBackedField(field)
         ? splitList(technician[field], field === "services" ? /[,\n\r;]+/ : /[\n\r;]+/)
         : technician[field];
     }
@@ -124,7 +129,7 @@ export async function loadTechnicians({ includeInactive = false } = {}) {
     throw error;
   }
 
-  const technicians = (data || []).map(normalizeTechnician);
+  const technicians = sortTechniciansByAssignedNumber((data || []).map(normalizeTechnician));
   return includeInactive ? technicians : technicians.filter((technician) => technician.isActive);
 }
 
@@ -331,7 +336,7 @@ export async function getAvailableTechnicians(city, service) {
   const requestedCity = String(city || "").trim().toLowerCase();
   const requestedService = String(service || "").trim().toLowerCase();
 
-  return technicians.filter((technician) => {
+  return sortTechniciansByAssignedNumber(technicians.filter((technician) => {
     const cityMatches =
       !requestedCity ||
       String(technician.city || "").toLowerCase() === requestedCity ||
@@ -348,5 +353,31 @@ export async function getAvailableTechnicians(city, service) {
       cityMatches &&
       serviceMatches
     );
-  });
+  }));
+}
+
+export function getAssignedNumber(technician) {
+  const dedicatedNumber = normalizeAssignedNumber(
+    technician?.assigned_number ?? technician?.technician_number ?? technician?.display_order
+  );
+  if (dedicatedNumber !== null) return dedicatedNumber;
+
+  const match = String(technician?.full_name || technician?.name || "").match(/(\d+)\s*$/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+export function compareTechniciansByAssignedNumber(a, b) {
+  const numberDifference = getAssignedNumber(a) - getAssignedNumber(b);
+  if (numberDifference !== 0) return numberDifference;
+  return String(a?.full_name || a?.name || "").localeCompare(String(b?.full_name || b?.name || ""), undefined, { numeric: true });
+}
+
+export function sortTechniciansByAssignedNumber(technicians) {
+  return [...technicians].sort(compareTechniciansByAssignedNumber);
+}
+
+function normalizeAssignedNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 1 ? number : null;
 }
