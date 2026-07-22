@@ -14,6 +14,9 @@ import {
   HelpCircle,
   LayoutDashboard,
   LogOut,
+  Menu,
+  Plus,
+  Search,
   Save,
   Settings,
   Shield,
@@ -93,6 +96,9 @@ export default function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [alertJobs, setAlertJobs] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [addJobRequest, setAddJobRequest] = useState(0);
+  const [jobSearchRequest, setJobSearchRequest] = useState(0);
   const authValidationId = useRef(0);
   const manualLogout = useRef(false);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
@@ -290,7 +296,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
-      <aside className="flex bg-[#08111f] text-white lg:fixed lg:inset-y-0 lg:w-60 lg:flex-col">
+      <aside className="hidden bg-[#08111f] text-white lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col">
         <div className="flex w-full flex-col gap-4 p-4 lg:min-h-screen">
           <div className="border-b border-white/10 pb-5">
             <p className="text-3xl font-black tracking-[0.18em] text-white">NTTR</p>
@@ -371,12 +377,17 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden lg:pl-60">
+      <main className="min-h-screen w-full max-w-none min-w-0 overflow-x-hidden pb-20 md:pb-0 lg:pl-60">
         <div className="flex min-h-[72px] items-center border-b border-slate-800 bg-[#0b1628] px-4 py-4 text-white shadow-sm md:px-8">
           <div className="flex w-full max-w-none items-center justify-between gap-4">
-            <div>
+            <div className="flex min-w-0 items-center gap-3">
+              <button type="button" onClick={() => setMobileMenuOpen(true)} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 lg:hidden" aria-label="Open navigation">
+                <Menu className="h-5 w-5" />
+              </button>
+              <div className="min-w-0">
               <p className="text-xs font-bold uppercase tracking-wide text-blue-300">NTTR Command Center</p>
-              <h2 className="text-2xl font-bold">{activeView === "dispatch" ? "Dispatch Cockpit" : viewTitle(activeView)}</h2>
+              <h2 className="truncate text-xl font-bold sm:text-2xl">{activeView === "dispatch" ? "Dispatch Cockpit" : viewTitle(activeView)}</h2>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <NotificationBell count={smartAlerts.length} onClick={() => setAlertsOpen(true)} />
@@ -398,7 +409,7 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} onLogout={handleLogout} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} onLogout={handleLogout} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
@@ -408,8 +419,38 @@ export default function App() {
         {canAccessActiveView && activeView === "flat-rate" && <FlatRateGuide session={session} role={role} onCreateJob={() => { localStorage.setItem("flat-rate-create-job", "1"); setActiveView("dispatch"); }} />}
         {canAccessActiveView && activeView === "parts-intelligence" && <PartsIntelligence session={session} role={role} />}
       </main>
+
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[90] bg-black/60 lg:hidden" onClick={() => setMobileMenuOpen(false)}>
+          <div className="h-full w-[86%] max-w-sm overflow-y-auto bg-[#08111f] p-5 text-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-5 flex items-center justify-between">
+              <div><p className="text-2xl font-black tracking-[0.18em]">NTTR</p><p className="text-xs text-slate-400">Dispatch Live</p></div>
+              <button type="button" onClick={() => setMobileMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><X className="h-5 w-5" /></button>
+            </div>
+            <nav className="grid gap-2">
+              {visibleItems.map((item) => { const Icon = item.icon; return <button key={item.id} type="button" onClick={() => { setActiveView(item.id); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Icon className="h-5 w-5" />{item.label}</button>; })}
+              <button type="button" onClick={() => { setActiveView("flat-rate"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><BookOpen className="h-5 w-5" />Flat Rate Guide</button>
+              <button type="button" onClick={() => { setActiveView("parts-intelligence"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><PackageSearch className="h-5 w-5" />Parts Intelligence</button>
+              <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs font-black uppercase text-slate-500">Profile</p><p className="mt-1 font-bold">{session.name || session.username}</p><p className="text-xs capitalize text-slate-400">{roleLabel(role)}</p></div>
+              <button type="button" onClick={() => { handleLogout(); setMobileMenuOpen(false); }} className="mt-3 flex min-h-11 items-center gap-3 rounded-xl bg-red-500/10 px-3 py-2 text-left font-bold text-red-300"><LogOut className="h-5 w-5" />Log Out</button>
+            </nav>
+          </div>
+        </div>
+      )}
+
+      <nav className="fixed inset-x-0 bottom-0 z-[70] grid h-20 grid-cols-5 border-t border-slate-700 bg-[#08111f]/95 px-1 pb-[env(safe-area-inset-bottom)] text-white backdrop-blur md:hidden">
+        <MobileNavButton icon={ClipboardList} label="Board" active={activeView === "dispatch"} onClick={() => setActiveView("dispatch")} />
+        <MobileNavButton icon={Plus} label="Add Job" onClick={() => { setActiveView("dispatch"); setAddJobRequest((value) => value + 1); }} />
+        <MobileNavButton icon={Users} label="Technicians" active={activeView === "technicians"} onClick={() => setActiveView("technicians")} />
+        <MobileNavButton icon={Search} label="Search" onClick={() => { setActiveView("dispatch"); setJobSearchRequest((value) => value + 1); }} />
+        <MobileNavButton icon={Menu} label="More" onClick={() => setMobileMenuOpen(true)} />
+      </nav>
     </div>
   );
+}
+
+function MobileNavButton({ icon: Icon, label, active = false, onClick }) {
+  return <button type="button" onClick={onClick} className={`flex min-h-11 flex-col items-center justify-center gap-1 text-[11px] font-bold ${active ? "text-blue-300" : "text-slate-400"}`}><Icon className="h-5 w-5" />{label}</button>;
 }
 
 function canShowSidebarItem(item, role, permissions) {

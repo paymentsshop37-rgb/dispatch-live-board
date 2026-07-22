@@ -292,13 +292,13 @@ function ExecutiveHeader({ loading, lastSync, filterMode, customRange, onRefresh
       </div>
 
       <div className="grid gap-3 px-5 py-4 md:px-7 xl:grid-cols-[1fr_auto_auto] xl:items-end">
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1">
           {filterPresets.map((preset) => (
             <button
               key={preset}
               type="button"
               onClick={() => onFilterMode(preset)}
-              className={`rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-wide transition ${
+              className={`min-h-11 shrink-0 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-wide transition ${
                 filterMode === preset ? "bg-blue-500 text-white shadow-lg shadow-blue-950/30" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/10 hover:text-slate-100"
               }`}
             >

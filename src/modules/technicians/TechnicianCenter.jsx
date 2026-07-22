@@ -977,6 +977,7 @@ function TechnicianDirectory({
   const [selectedState, setSelectedState] = useState("");
   const [selectedCity, setSelectedCity] = useState("");
   const [shortcut, setShortcut] = useState("all");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [expandedStates, setExpandedStates] = useState({});
   const [favoriteIds, setFavoriteIds] = useState(() => loadFavoriteTechnicians());
   const regionTree = useMemo(() => buildRegionTree(technicians), [technicians]);
@@ -1049,20 +1050,23 @@ function TechnicianDirectory({
 
       <RegionalStats stats={regionalStats} />
 
-      <div className="mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-[1.4fr_0.7fr_0.7fr_0.9fr_0.8fr_0.7fr_0.8fr_auto]">
+      <div className="sticky top-0 z-20 mt-5 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 md:static md:grid-cols-2 xl:grid-cols-[1.4fr_0.7fr_0.7fr_0.9fr_0.8fr_0.7fr_0.8fr_auto]">
           <SearchBox value={search} onChange={onSearch} placeholder="Search by name, phone, company" />
-          <Select value={selectedState || "All"} options={["All", ...regionTree.map((state) => state.state)]} onChange={(value) => { setShortcut("all"); setSelectedState(value === "All" ? "" : value); setSelectedCity(""); }} />
-          <Select value={selectedCity || "All"} options={cityOptions} onChange={(value) => { setShortcut("all"); setSelectedCity(value === "All" ? "" : value); }} />
-          <Select value={coverageFilter} options={coverageOptions} onChange={setCoverageFilter} />
-          <Select value={serviceFilter} options={serviceOptions} onChange={onServiceFilter} />
-          <Select value={availabilityFilter} options={["All", ...availabilityOptions]} onChange={setAvailabilityFilter} />
-          <Select value={ratingFilter} options={["All", "1", "2", "3", "4", "5"]} onChange={setRatingFilter} />
-          <Select value={companyFilter} options={companyOptions} onChange={setCompanyFilter} />
-          <button type="button" onClick={clearFilters} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100">Clear Filters</button>
+          <button type="button" onClick={() => setMobileFiltersOpen((open) => !open)} className="min-h-11 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white md:hidden">{mobileFiltersOpen ? "Hide Filters" : "State, City & Filters"}</button>
+          <div className={`${mobileFiltersOpen ? "grid" : "hidden"} gap-2 md:contents`}>
+            <Select value={selectedState || "All"} options={["All", ...regionTree.map((state) => state.state)]} onChange={(value) => { setShortcut("all"); setSelectedState(value === "All" ? "" : value); setSelectedCity(""); }} />
+            <Select value={selectedCity || "All"} options={cityOptions} onChange={(value) => { setShortcut("all"); setSelectedCity(value === "All" ? "" : value); }} />
+            <Select value={coverageFilter} options={coverageOptions} onChange={setCoverageFilter} />
+            <Select value={serviceFilter} options={serviceOptions} onChange={onServiceFilter} />
+            <Select value={availabilityFilter} options={["All", ...availabilityOptions]} onChange={setAvailabilityFilter} />
+            <Select value={ratingFilter} options={["All", "1", "2", "3", "4", "5"]} onChange={setRatingFilter} />
+            <Select value={companyFilter} options={companyOptions} onChange={setCompanyFilter} />
+            <button type="button" onClick={clearFilters} className="min-h-11 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100">Clear Filters</button>
+          </div>
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <aside className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <aside className="hidden rounded-2xl border border-slate-200 bg-slate-50 p-4 md:block">
           <div className="mb-3">
             <button type="button" onClick={() => selectShortcut("all")} className={`mb-2 flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-black ${shortcut === "all" && !selectedState ? "bg-slate-950 text-white" : "bg-white text-slate-800 hover:bg-slate-100"}`}>
               <span>🌎 United States</span>
@@ -2643,7 +2647,7 @@ function SearchBox({ value, onChange, placeholder = "Name, phone, company, city,
     <div className="relative">
       <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
       <input
-        className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-slate-500"
+        className="min-h-11 w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-slate-500"
         placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -2710,7 +2714,7 @@ function technicianSaveError(error) {
 function Select({ label, value, options, onChange }) {
   const control = (
     <select
-      className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
+      className="min-h-11 w-full rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-500"
       value={value}
       onChange={(event) => onChange(event.target.value)}
     >

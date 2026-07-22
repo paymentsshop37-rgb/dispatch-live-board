@@ -387,7 +387,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser, onLogout, onOpenFlatRate, onOpenParts }) {
+export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, onLogout, onOpenFlatRate, onOpenParts }) {
   const formRef = useRef(null);
   const searchInputRef = useRef(null);
   const [jobs, setJobs] = useState([]);
@@ -409,9 +409,14 @@ export default function DispatchLiveUpdatesPage({ currentUser, onLogout, onOpenF
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [deleteRestrictedOpen, setDeleteRestrictedOpen] = useState(false);
+  const [mobileVisibleCount, setMobileVisibleCount] = useState(50);
+  const [mobileMoreJobId, setMobileMoreJobId] = useState(null);
+  const [mobileFinancialIds, setMobileFinancialIds] = useState([]);
+  const [mobileDetailJob, setMobileDetailJob] = useState(null);
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
   const [showAddJobModal, setShowAddJobModal] = useState(false);
+  const [mobileJobStep, setMobileJobStep] = useState(1);
   const [updatesJob, setUpdatesJob] = useState(null);
   const [documentsJob, setDocumentsJob] = useState(null);
   const [techPaymentJob, setTechPaymentJob] = useState(null);
@@ -461,6 +466,30 @@ export default function DispatchLiveUpdatesPage({ currentUser, onLogout, onOpenF
       setShowAddJobModal(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (addJobRequest > 0) {
+      try {
+        const savedDraft = JSON.parse(localStorage.getItem("nttr-mobile-job-draft") || "null");
+        if (savedDraft) setForm((current) => ({ ...current, ...savedDraft }));
+      } catch {
+        localStorage.removeItem("nttr-mobile-job-draft");
+      }
+      setMobileJobStep(1);
+      setShowAddJobModal(true);
+    }
+  }, [addJobRequest]);
+
+  useEffect(() => {
+    if (jobSearchRequest > 0) {
+      document.getElementById("mobile-job-search")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      window.setTimeout(() => searchInputRef.current?.focus(), 250);
+    }
+  }, [jobSearchRequest]);
+
+  useEffect(() => {
+    setMobileVisibleCount(50);
+  }, [search, statusFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, periodFilter, fromDate, toDate]);
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -917,6 +946,7 @@ profit: filteredJobs.reduce(
 
     const newJob = {
       ...form,
+      updates: [form.customerPhone ? `Customer Phone: ${form.customerPhone}` : "", form.complaint ? `Complaint: ${form.complaint}` : "", form.updates].filter(Boolean).join("\n"),
       parts: Number(form.parts || 0),
       totalBill: Number(form.totalBill || 0),
       techLabor: Number(form.techLabor || 0),
@@ -936,6 +966,7 @@ profit: filteredJobs.reduce(
     if (data) {
       setJobs((currentJobs) => [fromDbJob(data), ...currentJobs]);
       setForm(emptyForm());
+      localStorage.removeItem("nttr-mobile-job-draft");
       setShowAddJobModal(false);
       setActivityLogs((logs) => [
         {
@@ -1476,7 +1507,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
       return;
     }
     if (action === "call") {
-      alert("Customer phone is not stored on this job yet.");
+      const phone = customerPhoneFromJob(job);
+      if (phone) window.location.href = `tel:${phone}`;
+      else alert("Customer phone is not stored on this job yet.");
       return;
     }
     if (action === "whatsapp") {
@@ -1763,19 +1796,33 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
         <div className="grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           {showAddJobModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <form ref={formRef} onSubmit={addJob} className="max-h-[92vh] w-full max-w-[1000px] overflow-auto rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
+          <form ref={formRef} onSubmit={addJob} className="flex h-[100dvh] w-full max-w-[1000px] flex-col overflow-hidden bg-[#0b1628] p-4 shadow-2xl shadow-black/40 md:max-h-[92vh] md:h-auto md:rounded-2xl md:border md:border-white/10">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-black text-white">Add New Job</h2>
                 <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Dispatch intake</p>
               </div>
-              <button type="button" onClick={() => setShowAddJobModal(false)} className="rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-white/15">
+              <button type="button" onClick={() => setShowAddJobModal(false)} className="min-h-11 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-white/15">
                 Close
               </button>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="flex-1 overflow-y-auto pb-24 md:hidden">
+              <div className="mb-4 flex gap-2" aria-label={`Step ${mobileJobStep} of 5`}>
+                {[1, 2, 3, 4, 5].map((step) => <span key={step} className={`h-2 flex-1 rounded-full ${step <= mobileJobStep ? "bg-blue-500" : "bg-white/10"}`} />)}
+              </div>
+              <p className="mb-4 text-sm font-black uppercase tracking-wide text-blue-300">Step {mobileJobStep} of 5 · {mobileJobStep === 1 ? "Customer" : mobileJobStep === 2 ? "Job Details" : mobileJobStep === 3 ? "Assignment" : mobileJobStep === 4 ? "Costs & Notes" : "Review"}</p>
+              <div className="grid gap-4">
+                {mobileJobStep === 1 && <><Input label="Customer / Invoice #" value={form.reference} onChange={(value) => setForm({ ...form, reference: value })} /><Input label="Company" value={form.company} onChange={(value) => setForm({ ...form, company: value })} /><Input label="Phone" type="tel" value={form.customerPhone || ""} onChange={(value) => setForm({ ...form, customerPhone: value })} /></>}
+                {mobileJobStep === 2 && <><Input label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} /><Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
+                {mobileJobStep === 3 && <><Input label="Technician" list="technician-suggestions" value={form.tech} onChange={(value) => setForm({ ...form, tech: value })} /><Input label="Dispatcher" list="dispatcher-suggestions" value={form.dispatch} onChange={(value) => setForm({ ...form, dispatch: value })} /><Select label="Priority" value={form.rowFlag} onChange={(value) => setForm({ ...form, rowFlag: value })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} /><Select label="Status" value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={jobStatusOptions} /></>}
+                {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.updates} onChange={(event) => setForm({ ...form, updates: event.target.value })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
+                {mobileJobStep === 5 && <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MobileJobField label="Invoice" value={form.reference || "Not assigned"} /><MobileJobField label="Company" value={form.company || "Not provided"} /><MobileJobField label="Location" value={form.location || "Not provided"} /><MobileJobField label="Technician" value={form.tech || "Unassigned"} /><MobileJobField label="Dispatcher" value={form.dispatch || "Unassigned"} /><MobileJobField label="Priority" value={form.rowFlag} /><MobileJobField label="Notes" value={form.updates || form.complaint || "No notes"} lines={2} /></div>}
+              </div>
+            </div>
+
+            <div className="hidden gap-3 overflow-y-auto md:grid md:grid-cols-2 xl:grid-cols-4">
               <Input label="Date" type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
               <Input label="Time" placeholder="10:45 AM" value={form.time} onChange={(v) => setForm({ ...form, time: v })} />
               <Input label="Invoice #" value={form.reference} onChange={(v) => setForm({ ...form, reference: v })} />
@@ -1970,6 +2017,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 <div className="relative min-w-0">
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                   <input
+                    id="mobile-job-search"
                     ref={searchInputRef}
                     className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
                     placeholder="Search by Ref #, Company, Location, Technician"
@@ -2067,7 +2115,79 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </div>
             </div>
 
-            <div className="max-h-[calc(100vh-13rem)] w-full max-w-none overflow-auto rounded-2xl border border-white/10 bg-[#0f1c2e]">
+            <div className="grid gap-3 md:hidden">
+              {filteredJobs.slice(0, mobileVisibleCount).map((job, index) => {
+                const eta = job.manualEta || extractEta(job.updates);
+                const financialOpen = mobileFinancialIds.includes(String(job.id));
+                const moreOpen = mobileMoreJobId === job.id;
+                return (
+                  <article key={job.id} onClick={() => setMobileDetailJob(job)} className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${job.rowFlag === "Problem" || job.status === "Dry Run" ? "border-red-400/60 bg-red-500/10" : "border-white/10 bg-[#0f1c2e]"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-black text-white">#{index + 1}</span>
+                          <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${job.rowFlag === "Problem" ? "bg-red-500 text-white" : "bg-white/10 text-slate-300"}`}>{job.rowFlag || "Normal"}</span>
+                        </div>
+                        <p className="mt-2 text-xs font-semibold text-slate-400">{job.date || "No date"} · {job.time || "No time"}</p>
+                      </div>
+                      <select onClick={(event) => event.stopPropagation()} value={job.status} onChange={(event) => updateJob(job.id, "status", event.target.value)} className={`${darkSelectClass} min-h-11 max-w-[52%] rounded-xl px-3 text-xs font-black`} style={jobStatusControlStyle(job.status)} aria-label={`Status for job ${job.reference || index + 1}`}>
+                        {jobStatusOptions.map((status) => <option key={status} value={status} style={darkOptionStyle}>{jobStatusLabel(status)}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 text-sm">
+                      <MobileJobField label="Invoice" value={job.reference || "Not assigned"} />
+                      <MobileJobField label="Company" value={job.company || "Not provided"} />
+                      <MobileJobField label="Location" value={job.location || "Not provided"} />
+                      <div className="grid grid-cols-2 gap-3">
+                        <MobileJobField label="Dispatcher" value={job.dispatch || "Unassigned"} />
+                        <MobileJobField label="Technician" value={job.tech || "Unassigned"} />
+                      </div>
+                      <MobileJobField label="Last Update" value={firstLine(job.updates) || "No updates"} lines={2} />
+                      {eta && <MobileJobField label="ETA" value={eta} />}
+                    </div>
+
+                    {isAdmin && (
+                      <div className="mt-3" onClick={(event) => event.stopPropagation()}>
+                        <button type="button" onClick={() => setMobileFinancialIds((current) => current.includes(String(job.id)) ? current.filter((id) => id !== String(job.id)) : [...current, String(job.id)])} className="min-h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3 text-left text-xs font-bold text-slate-300">
+                          {financialOpen ? "Hide" : "Show"} Financial Details
+                        </button>
+                        {financialOpen && <div className="mt-2 grid grid-cols-2 gap-2 rounded-xl bg-black/20 p-3 text-xs"><MobileJobField label="Total Bill" value={money(job.totalBill)} /><MobileJobField label="Parts" value={money(job.parts)} /><MobileJobField label="Tech Labor" value={money(job.techLabor)} /><MobileJobField label="Profit" value={money(Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0))} /></div>}
+                      </div>
+                    )}
+
+                    <div className="mt-4 grid grid-cols-4 gap-2" onClick={(event) => event.stopPropagation()}>
+                      <MobileAction icon={<Phone />} label="Call" onClick={() => handleJobContextAction("call", job)} />
+                      <MobileAction icon={<MessageCircle />} label="WhatsApp" onClick={() => handleJobContextAction("whatsapp", job)} />
+                      <MobileAction icon={<Edit3 />} label="Update" onClick={() => setUpdatesJob(job)} />
+                      <MobileAction icon={<MoreHorizontal />} label="More" onClick={() => setMobileMoreJobId(moreOpen ? null : job.id)} />
+                    </div>
+
+                    {moreOpen && (
+                      <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-[#0b1628] p-2" onClick={(event) => event.stopPropagation()}>
+                        <MobileMenuAction label="Map" onClick={() => handleJobContextAction("maps", job)} />
+                        <MobileMenuAction label="Edit Job" onClick={() => setUpdatesJob(job)} />
+                        <MobileMenuAction label="Assign Technician" onClick={() => setAssignmentJob(job)} />
+                        <MobileMenuAction label="Flat Rate" onClick={onOpenFlatRate} />
+                        <MobileMenuAction label="Parts" onClick={onOpenParts} />
+                        <label className="flex min-h-11 cursor-pointer items-center justify-center rounded-lg bg-white/10 px-3 text-center text-xs font-bold text-slate-100">Upload Photo<input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => uploadPhoto(job.id, event.target.files[0], "Job photo")} /></label>
+                        <label className="flex min-h-11 cursor-pointer items-center justify-center rounded-lg bg-white/10 px-3 text-center text-xs font-bold text-slate-100">Upload Invoice<input type="file" accept="image/*,application/pdf" className="hidden" onChange={(event) => uploadPhoto(job.id, event.target.files[0], "Invoice / photo")} /></label>
+                        <MobileMenuAction label="Delete" danger onClick={() => requestDelete(job)} />
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+              {filteredJobs.length === 0 && <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-400">No live jobs found.</div>}
+              {mobileVisibleCount < filteredJobs.length && <button type="button" onClick={() => setMobileVisibleCount((count) => count + 50)} className="min-h-11 rounded-xl bg-blue-600 px-4 font-bold text-white">Load 50 More Jobs</button>}
+            </div>
+            <div className="sticky bottom-0 -mx-4 mt-auto grid grid-cols-3 gap-2 border-t border-white/10 bg-[#0b1628] p-4 md:hidden">
+              <button type="button" onClick={() => { localStorage.setItem("nttr-mobile-job-draft", JSON.stringify(form)); setToastMessage("Job draft saved"); }} className="min-h-12 rounded-xl bg-white/10 px-2 text-xs font-bold text-slate-100">Save Draft</button>
+              <button type="button" disabled={mobileJobStep === 1} onClick={() => setMobileJobStep((step) => Math.max(1, step - 1))} className="min-h-12 rounded-xl border border-white/10 px-2 text-sm font-bold text-white disabled:opacity-40">Previous</button>
+              {mobileJobStep < 5 ? <button type="button" onClick={() => setMobileJobStep((step) => Math.min(5, step + 1))} className="min-h-12 rounded-xl bg-blue-600 px-2 text-sm font-bold text-white">Next</button> : <button type="submit" className="min-h-12 rounded-xl bg-emerald-600 px-2 text-sm font-bold text-white">Save Job</button>}
+            </div>
+
+            <div className="hidden max-h-[calc(100vh-13rem)] w-full max-w-none overflow-auto rounded-2xl border border-white/10 bg-[#0f1c2e] md:block">
               <table className="min-w-[1720px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-[#0b1628] text-xs uppercase tracking-wide text-slate-200">
                   <tr>
@@ -2368,8 +2488,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             </div>
 
             {jobToDelete && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+              <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-4">
+                <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl md:rounded-3xl">
                   <h3 className="text-xl font-bold text-slate-900">Delete Job?</h3>
                   <p className="mt-2 text-sm text-slate-600">This action will permanently remove the selected job. This cannot be undone.</p>
 
@@ -2401,8 +2521,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             )}
 
             {deleteRestrictedOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+              <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-center md:p-4">
+                <div className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-6 shadow-2xl md:rounded-3xl">
                   <h3 className="text-xl font-bold text-slate-900">Delete Restricted</h3>
                   <p className="mt-2 text-sm text-slate-600">You do not have permission to delete jobs. Please contact an administrator to remove this job.</p>
                   <div className="mt-5 flex justify-end">
@@ -2412,6 +2532,16 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   </div>
                 </div>
               </div>
+            )}
+
+            {mobileDetailJob && (
+              <MobileJobDetailSheet
+                job={mobileDetailJob}
+                onClose={() => setMobileDetailJob(null)}
+                onUpdate={() => { setUpdatesJob(mobileDetailJob); setMobileDetailJob(null); }}
+                onAssign={() => { setAssignmentJob(mobileDetailJob); setMobileDetailJob(null); }}
+                onMap={() => handleJobContextAction("maps", mobileDetailJob)}
+              />
             )}
 
             {canEditJobFinancial && techPaymentJob && (
@@ -3137,7 +3267,7 @@ function Input({ label, value, onChange, type = "text", placeholder = "", list =
       <span>{label}</span>
       <input
         type={type}
-        className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
+        className="min-h-11 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 text-base font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400 md:min-h-9 md:text-sm"
         placeholder={placeholder}
         list={list || undefined}
         value={value}
@@ -3153,7 +3283,7 @@ function Select({ label, value, onChange, options }) {
     <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300">
       <span>{label}</span>
       <select
-        className={`${darkSelectClass} h-9 w-full px-3 text-sm font-semibold`}
+        className={`${darkSelectClass} min-h-11 w-full px-3 text-base font-semibold md:min-h-9 md:text-sm`}
         style={isJobStatus ? jobStatusControlStyle(value) : undefined}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -3170,8 +3300,8 @@ function Select({ label, value, onChange, options }) {
 
 function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChange, onAssign, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-4xl rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
+      <div className="max-h-[92dvh] w-full max-w-4xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40 md:rounded-2xl">
         <div className="flex flex-col gap-3 border-b border-white/10 pb-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">Assign Technician</p>
@@ -3231,8 +3361,8 @@ function UpdatesModal({ job, onClose, onSave }) {
   const [value, setValue] = useState(job.updates || "");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
+      <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40 md:rounded-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">Job Updates</p>
@@ -3565,6 +3695,7 @@ function whatsappLink(job, technician, requestedService) {
 }
 
 function customerWhatsAppLink(job) {
+  const phone = customerPhoneFromJob(job).replace(/\D/g, "");
   const message = [
     "NTTR Dispatch",
     "",
@@ -3580,7 +3711,13 @@ function customerWhatsAppLink(job) {
     "Please contact NTTR Dispatch for your job update.",
   ].join("\n");
 
-  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+}
+
+function customerPhoneFromJob(job) {
+  const directPhone = String(job?.customerPhone || job?.phone || "").trim();
+  if (directPhone) return directPhone;
+  return String(job?.updates || "").match(/customer\s+phone\s*:\s*(\+?[\d().\s-]{7,})/i)?.[1]?.trim() || "";
 }
 
 function mapLink(location) {
@@ -3590,6 +3727,41 @@ function mapLink(location) {
 function googleMapsNearbyLink(category, location) {
   const searchTerm = category === "Road Service" ? "mobile truck repair" : category;
   return `https://www.google.com/maps/search/${encodeURIComponent(`${searchTerm} near ${location || ""}`).replace(/%20/g, "+")}`;
+}
+
+function MobileJobField({ label, value, lines = 1 }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={`${lines === 2 ? "line-clamp-2" : "truncate"} mt-0.5 font-semibold text-slate-100`} title={String(value || "")}>{value}</p>
+    </div>
+  );
+}
+
+function MobileAction({ icon, label, onClick }) {
+  return <button type="button" onClick={onClick} className="flex min-h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-white/10 px-1 text-[10px] font-bold text-slate-100">{React.cloneElement(icon, { className: "h-4 w-4" })}<span className="truncate">{label}</span></button>;
+}
+
+function MobileMenuAction({ label, onClick, danger = false }) {
+  return <button type="button" onClick={onClick} className={`min-h-11 rounded-lg px-3 text-xs font-bold ${danger ? "bg-red-500/15 text-red-300" : "bg-white/10 text-slate-100"}`}>{label}</button>;
+}
+
+function MobileJobDetailSheet({ job, onClose, onUpdate, onAssign, onMap }) {
+  return (
+    <div className="fixed inset-0 z-[85] flex items-end bg-black/60 md:hidden" onClick={onClose}>
+      <section className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-[#0b1628] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-white" onClick={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase text-blue-300">Job Details</p><h3 className="text-xl font-black">{job.reference || "No Invoice #"}</h3></div><button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10">Close</button></div>
+        <div className="mt-5 grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <MobileJobField label="Company" value={job.company || "Not provided"} />
+          <MobileJobField label="Location" value={job.location || "Not provided"} />
+          <div className="grid grid-cols-2 gap-3"><MobileJobField label="Dispatcher" value={job.dispatch || "Unassigned"} /><MobileJobField label="Technician" value={job.tech || "Unassigned"} /></div>
+          <MobileJobField label="Status" value={job.status || "Pending"} />
+          <MobileJobField label="Updates" value={job.updates || "No updates"} lines={2} />
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2"><MobileMenuAction label="Add Update" onClick={onUpdate} /><MobileMenuAction label="Assign Tech" onClick={onAssign} /><MobileMenuAction label="Open Map" onClick={onMap} /></div>
+      </section>
+    </div>
+  );
 }
 
 function jobPartsLocation(job) {
