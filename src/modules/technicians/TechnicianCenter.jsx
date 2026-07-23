@@ -176,6 +176,7 @@ export default function TechnicianCenter({ currentUser }) {
       setTechnicians(nextTechnicians);
       setMissingColumns(columnSupport.missing);
     } catch (loadError) {
+      console.error("Technician load error:", loadError);
       setError(loadError.message || "Unable to load technicians.");
     } finally {
       setLoading(false);

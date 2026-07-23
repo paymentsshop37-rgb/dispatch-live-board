@@ -123,13 +123,14 @@ export async function loadTechnicians({ includeInactive = false } = {}) {
 
   if (!includeInactive) query = query.eq("is_active", true);
 
-  const { data, error } = await query.order("assigned_number", { ascending: true, nullsFirst: false });
+  const { data, error } = await query.order("full_name", { ascending: true });
 
   if (error) {
+    console.error("Technician load error:", error);
     throw error;
   }
 
-  const technicians = sortTechniciansByAssignedNumber((data || []).map(normalizeTechnician));
+  const technicians = (data || []).map(normalizeTechnician);
   return includeInactive ? technicians : technicians.filter((technician) => technician.isActive);
 }
 
@@ -362,14 +363,14 @@ export function getAssignedNumber(technician) {
   );
   if (dedicatedNumber !== null) return dedicatedNumber;
 
-  const match = String(technician?.full_name || technician?.name || "").match(/(\d+)\s*$/);
+  const match = String(technician?.full_name || "").match(/(\d+)\s*$/);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
 
 export function compareTechniciansByAssignedNumber(a, b) {
   const numberDifference = getAssignedNumber(a) - getAssignedNumber(b);
   if (numberDifference !== 0) return numberDifference;
-  return String(a?.full_name || a?.name || "").localeCompare(String(b?.full_name || b?.name || ""), undefined, { numeric: true });
+  return String(a?.full_name || "").localeCompare(String(b?.full_name || ""), undefined, { numeric: true });
 }
 
 export function sortTechniciansByAssignedNumber(technicians) {

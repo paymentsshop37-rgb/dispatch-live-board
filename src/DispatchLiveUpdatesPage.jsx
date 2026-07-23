@@ -464,6 +464,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [techniciansSupportCurrentJobId, setTechniciansSupportCurrentJobId] = useState(false);
   const [supportsActivityLog, setSupportsActivityLog] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
+  const [technicianLoadError, setTechnicianLoadError] = useState("");
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -696,11 +697,13 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   }, [accessGranted, jobs]);
 
   async function loadDispatchTechnicians() {
+    setTechnicianLoadError("");
     try {
       const technicians = await loadTechnicians();
       setDispatchTechnicians(technicians);
     } catch (error) {
-      console.error("Error loading technicians:", error.message);
+      console.error("Technician load error:", error);
+      setTechnicianLoadError(error?.message || "Unable to load technicians.");
     }
   }
 
@@ -919,10 +922,10 @@ return (
   const recentTechnicians = useMemo(
     () => [
       ...new Set([
-        ...jobs.map((job) => job.tech).filter(Boolean),
         ...dispatchTechnicians.map((technician) => technician.full_name).filter(Boolean),
+        ...jobs.map((job) => job.tech).filter(Boolean),
       ]),
-    ].slice(0, 8),
+    ].sort((a, b) => a.localeCompare(b)),
     [jobs, dispatchTechnicians]
   );
   const recentDispatchers = useMemo(() => recentValues(jobs, "dispatch"), [jobs]);
@@ -2213,6 +2216,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </div>
             </div>
 
+            {technicianLoadError && (
+              <div className="mb-3 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100">
+                Technician load error: {technicianLoadError}
+              </div>
+            )}
+
             <div className="dispatch-mobile-grid grid gap-3 lg:hidden">
               {filteredJobs.slice(0, mobileVisibleCount).map((job, index) => {
                 const eta = job.manualEta || extractEta(job.updates);
@@ -2717,10 +2726,14 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <UpdatesModal
                 job={updatesJob}
                 canEditTechPayment={canEditJobFinancial}
+                technicianNames={dispatchTechnicians.map((technician) => technician.full_name).filter(Boolean)}
                 onClose={() => setUpdatesJob(null)}
-                onSave={async ({ updates, jobReference, techPaymentStatus }) => {
+                onSave={async ({ updates, jobReference, techPaymentStatus, technician }) => {
                   if (jobReference !== updatesJob.jobReference) {
                     await updateJob(updatesJob.id, "jobReference", jobReference);
+                  }
+                  if (technician !== updatesJob.tech) {
+                    await updateJob(updatesJob.id, "tech", technician);
                   }
                   if (canEditJobFinancial && techPaymentStatus !== updatesJob.techPaymentStatus) {
                     await updateTechPaymentStatus(updatesJob, techPaymentStatus);
@@ -3495,10 +3508,11 @@ function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChan
   );
 }
 
-function UpdatesModal({ job, canEditTechPayment = false, onClose, onSave }) {
+function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], onClose, onSave }) {
   const [value, setValue] = useState(job.updates || "");
   const [jobReference, setJobReference] = useState(job.jobReference || "");
   const [techPaymentStatus, setTechPaymentStatus] = useState(job.techPaymentStatus || "Pending");
+  const [technician, setTechnician] = useState(job.tech || "");
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
@@ -3519,6 +3533,18 @@ function UpdatesModal({ job, canEditTechPayment = false, onClose, onSave }) {
             placeholder="ABC-12345"
           />
         </label>
+        <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
+          <span>Technician</span>
+          <input
+            list="edit-job-technician-suggestions"
+            className={`${tableControlClass} min-h-11 px-3 text-base font-semibold`}
+            value={technician}
+            onChange={(event) => setTechnician(event.target.value)}
+          />
+          <datalist id="edit-job-technician-suggestions">
+            {technicianNames.map((fullName) => <option key={fullName} value={fullName} />)}
+          </datalist>
+        </label>
         {canEditTechPayment && (
           <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
             <span>Tech Payment</span>
@@ -3532,7 +3558,7 @@ function UpdatesModal({ job, canEditTechPayment = false, onClose, onSave }) {
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15">Cancel</button>
-          <button type="button" onClick={() => onSave({ updates: value, jobReference, techPaymentStatus })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
+          <button type="button" onClick={() => onSave({ updates: value, jobReference, techPaymentStatus, technician })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
         </div>
       </div>
     </div>
