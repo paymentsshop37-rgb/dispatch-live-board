@@ -1,4 +1,4 @@
-export const techPaymentStatusOptions = ["Pending", "Reviewing", "Approved", "Paid", "Cancelled", "Hold"];
+export const techPaymentStatusOptions = ["Pending", "Reviewing", "Approved", "Paid", "Cancelled"];
 
 export const techPaymentStatusVisuals = {
   Pending: { icon: "🟠", backgroundColor: "#FFF3CD", color: "#B45309" },

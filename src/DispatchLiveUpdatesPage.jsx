@@ -119,7 +119,7 @@ const nearbyPartsCache = new Map();
 const jobPipeline = ["New", "Pending", "Assigned", "Tech Accepted", "En Route", "On Site", "In Progress", "Waiting Parts", "Working", "Completed", "Invoiced", "Paid"];
 const jobStatusOptions = [...jobPipeline, "Need Review", "Declined", "Canceled", "Cancelled", "Dry Run"];
 const techPaymentFieldAliases = {
-  status: ["tech_payment_status", "technician_payment_status", "tech_paid_status"],
+  status: ["tech_payment_status"],
   method: ["tech_payment_method", "technician_payment_method"],
   paidDate: ["tech_paid_date", "technician_paid_date", "tech_payment_paid_at", "paid_date"],
   paidBy: ["tech_paid_by", "technician_paid_by", "tech_payment_paid_by", "paid_by"],
@@ -1197,21 +1197,25 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
   async function updateTechPaymentStatus(job, value) {
     if (!techPaymentColumns.status) {
-      alert("Tech payment columns are not available yet.");
-      setJobs((currentJobs) =>
-        currentJobs.map((currentJob) =>
-          currentJob.id === job.id ? { ...currentJob, techPaymentStatus: value } : currentJob
-        )
-      );
+      console.error("Tech payment update failed: jobs.tech_payment_status is unavailable.");
+      setToastMessage("Unable to update Tech Payment status.");
+      window.setTimeout(() => setToastMessage(""), 3500);
       return;
     }
 
+    setJobs((currentJobs) =>
+      currentJobs.map((currentJob) =>
+        currentJob.id === job.id ? { ...currentJob, techPaymentStatus: value } : currentJob
+      )
+    );
     await saveTechPaymentDetails(job.id, { techPaymentStatus: value });
   }
 
   async function saveTechPaymentDetails(jobId, details) {
     if (!techPaymentColumns.status) {
-      alert("Tech payment columns are not available yet.");
+      console.error("Tech payment update failed: jobs.tech_payment_status is unavailable.");
+      setToastMessage("Unable to update Tech Payment status.");
+      window.setTimeout(() => setToastMessage(""), 3500);
       return false;
     }
 
@@ -1226,7 +1230,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
     const update = {};
     if (techPaymentColumns.status && details.techPaymentStatus !== undefined) {
-      update[techPaymentColumns.status] = details.techPaymentStatus || "Pending";
+      update.tech_payment_status = details.techPaymentStatus || "Pending";
     }
     if (techPaymentColumns.method && details.techPaymentMethod !== undefined) {
       update[techPaymentColumns.method] = details.techPaymentMethod || "";
@@ -1252,7 +1256,9 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
     const { error } = await supabase.from("jobs").update(update).eq("id", jobId);
 
     if (error) {
-      alert("Error updating tech payment: " + error.message);
+      console.error("Tech payment update failed:", error);
+      setToastMessage("Unable to update Tech Payment status.");
+      window.setTimeout(() => setToastMessage(""), 3500);
       await loadJobs();
       return false;
     }
@@ -2204,7 +2210,14 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         <MobileJobField label="Technician" value={job.tech || "Unassigned"} />
                       </div>
                       <MobileJobField label="Last Update" value={firstLine(job.updates) || "No updates"} lines={2} />
-                      <TechPaymentStatusBadge status={job.techPaymentStatus} />
+                      {canEditJobFinancial ? (
+                        <TechPaymentSelect
+                          value={job.techPaymentStatus || "Pending"}
+                          onChange={(value) => updateTechPaymentStatus(job, value)}
+                        />
+                      ) : (
+                        <TechPaymentStatusBadge status={job.techPaymentStatus} />
+                      )}
                       {eta && <MobileJobField label="ETA" value={eta} />}
                     </div>
 
@@ -2617,6 +2630,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 onParts={() => { closeJobDetails(); onOpenParts(); }}
                 onDelete={(job) => { closeJobDetails(); requestDelete(job); }}
                 onChangeStatus={(job, status) => updateJob(job.id, "status", status)}
+                onChangeTechPayment={(job, status) => updateTechPaymentStatus(job, status)}
               />
             )}
 
@@ -2656,10 +2670,14 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             {updatesJob && (
               <UpdatesModal
                 job={updatesJob}
+                canEditTechPayment={canEditJobFinancial}
                 onClose={() => setUpdatesJob(null)}
-                onSave={async ({ updates, jobReference }) => {
+                onSave={async ({ updates, jobReference, techPaymentStatus }) => {
                   if (jobReference !== updatesJob.jobReference) {
                     await updateJob(updatesJob.id, "jobReference", jobReference);
+                  }
+                  if (canEditJobFinancial && techPaymentStatus !== updatesJob.techPaymentStatus) {
+                    await updateTechPaymentStatus(updatesJob, techPaymentStatus);
                   }
                   await updateJob(updatesJob.id, "updates", updates);
                   setUpdatesJob(null);
@@ -3431,9 +3449,10 @@ function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChan
   );
 }
 
-function UpdatesModal({ job, onClose, onSave }) {
+function UpdatesModal({ job, canEditTechPayment = false, onClose, onSave }) {
   const [value, setValue] = useState(job.updates || "");
   const [jobReference, setJobReference] = useState(job.jobReference || "");
+  const [techPaymentStatus, setTechPaymentStatus] = useState(job.techPaymentStatus || "Pending");
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
@@ -3454,6 +3473,12 @@ function UpdatesModal({ job, onClose, onSave }) {
             placeholder="ABC-12345"
           />
         </label>
+        {canEditTechPayment && (
+          <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
+            <span>Tech Payment</span>
+            <TechPaymentSelect value={techPaymentStatus} onChange={setTechPaymentStatus} />
+          </label>
+        )}
         <textarea
           className="mt-4 min-h-40 w-full rounded-xl border border-white/10 bg-[#111f33] p-3 text-sm font-semibold text-white outline-none focus:border-blue-400"
           value={value}
@@ -3461,7 +3486,7 @@ function UpdatesModal({ job, onClose, onSave }) {
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15">Cancel</button>
-          <button type="button" onClick={() => onSave({ updates: value, jobReference })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
+          <button type="button" onClick={() => onSave({ updates: value, jobReference, techPaymentStatus })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
         </div>
       </div>
     </div>
@@ -3841,54 +3866,34 @@ function TechPaymentSelect({
   compact = false,
   ariaLabel = "Tech Payment status",
 }) {
-  const [open, setOpen] = useState(false);
   const isAll = value === "All";
   const options = includeAll ? ["All", ...techPaymentStatusOptions] : techPaymentStatusOptions;
 
   return (
-    <div
-      className={`relative ${compact ? "w-40" : "w-full"}`}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
-      }}
-    >
-      <button
-        type="button"
+    <div className={`relative z-[5] ${compact ? "w-40" : "w-full"}`} onClick={(event) => event.stopPropagation()}>
+      <select
         aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
         disabled={disabled}
-        onClick={() => setOpen((current) => !current)}
-        className={`${compact ? "h-9 text-xs" : "min-h-11 text-sm"} flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 font-black outline-none disabled:cursor-not-allowed disabled:opacity-60`}
+        value={value || "Pending"}
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+        onChange={(event) => {
+          event.stopPropagation();
+          onChange(event.target.value);
+        }}
+        className={`${compact ? "h-9 text-xs" : "min-h-11 text-sm"} relative z-[5] w-full cursor-pointer rounded-xl border px-3 py-2 font-black outline-none disabled:cursor-not-allowed disabled:opacity-60`}
         style={isAll ? { backgroundColor: "#0f172a", color: "#ffffff", borderColor: "#334155" } : techPaymentControlStyle(value)}
       >
-        <span className="truncate">{isAll ? "All Tech Payments" : techPaymentLabel(value)}</span>
-        <span aria-hidden="true" className="text-[10px]">▼</span>
-      </button>
-      {open && !disabled && (
-        <div role="listbox" className="absolute left-0 top-full z-[100] mt-1 grid min-w-full gap-1 rounded-xl border border-slate-300 bg-white p-1 shadow-2xl">
-          {options.map((status) => {
-            const optionIsAll = status === "All";
-            return (
-              <button
-                type="button"
-                role="option"
-                aria-selected={value === status}
-                key={status}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  onChange(status);
-                  setOpen(false);
-                }}
-                className="min-h-11 whitespace-nowrap rounded-lg border px-3 py-2 text-left text-sm font-black"
-                style={optionIsAll ? { backgroundColor: "#0f172a", color: "#ffffff", borderColor: "#334155" } : techPaymentControlStyle(status)}
-              >
-                {optionIsAll ? "All Tech Payments" : techPaymentLabel(status)}
-              </button>
-            );
-          })}
-        </div>
-      )}
+        {options.map((status) => (
+          <option
+            key={status}
+            value={status}
+            style={status === "All" ? darkOptionStyle : techPaymentControlStyle(status)}
+          >
+            {status === "All" ? "All Tech Payments" : techPaymentLabel(status)}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
@@ -3920,7 +3925,7 @@ function MobileJobDetailSheet({ job, onClose, onUpdate, onAssign, onMap }) {
   );
 }
 
-function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpdate, onAssign, onFiles, onFlatRate, onParts, onDelete, onChangeStatus }) {
+function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpdate, onAssign, onFiles, onFlatRate, onParts, onDelete, onChangeStatus, onChangeTechPayment }) {
   const [details, setDetails] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -4044,7 +4049,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
 
               <DetailSection title="Parts Information">{details.parts.length ? <div className="space-y-2">{details.parts.map((item) => <div key={item.id} className="rounded-xl bg-white/5 p-3"><p className="font-bold text-white">{item.part_name_snapshot || item.part_name || "Part"}</p><DetailGrid items={[["Part number", item.part_number_snapshot || item.part_number], ["Brand", item.brand_name], ["Quantity", item.quantity], ["Unit price", money(item.unit_selling_price)], ["Core charge", money(item.core_charge)], ["Extended total", money(item.extended_total)], ["Supplier", item.supplier_name], ["Availability", item.availability_status], ["Added by", item.created_by]]} /></div>)}</div> : <EmptyDetail label="No parts recorded." />}</DetailSection>
 
-              {isAdmin && <DetailSection title="Financial Information" accent><TechPaymentStatusBadge status={job.techPaymentStatus} /><DetailGrid items={[["Total bill", money(job.totalBill)], ["Parts cost", money(job.parts)], ["Tech labor", money(job.techLabor)], ["Other costs", money(raw.other_costs)], ["Service call", money(raw.service_call)], ["Mileage", money(raw.mileage_fee)], ["After-hours fees", money(raw.after_hours_fee)], ["Tax", money(raw.tax)], ["Discount", money(raw.discount)], ["Gross profit", money(Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0))], ["Profit margin", profitMargin(job)], ["Tech payment", money(raw.tech_payment)]]} /></DetailSection>}
+              {isAdmin && <DetailSection title="Financial Information" accent><div className="mb-3"><TechPaymentSelect value={job.techPaymentStatus || "Pending"} onChange={(status) => { setDetails((current) => current ? { ...current, job: { ...current.job, techPaymentStatus: status } } : current); onChangeTechPayment(job, status); }} /></div><DetailGrid items={[["Total bill", money(job.totalBill)], ["Parts cost", money(job.parts)], ["Tech labor", money(job.techLabor)], ["Other costs", money(raw.other_costs)], ["Service call", money(raw.service_call)], ["Mileage", money(raw.mileage_fee)], ["After-hours fees", money(raw.after_hours_fee)], ["Tax", money(raw.tax)], ["Discount", money(raw.discount)], ["Gross profit", money(Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0))], ["Profit margin", profitMargin(job)], ["Tech payment", money(raw.tech_payment)]]} /></DetailSection>}
 
               <DetailSection title="Invoice and Payment"><DetailGrid items={[["Invoice status", job.invoice], ["Payment method", job.paymentMethod], ["Payment state", job.invoice === "Paid" ? "Paid" : job.invoice === "Cancelled" ? "Cancelled" : "Pending"], ["Payment reference", valueFrom(raw.payment_reference, job.techPaymentReference)], ["Payment date", valueFrom(raw.payment_date, job.techPaidDate)], ["Received by", job.paymentReceiver]]} /></DetailSection>
 
