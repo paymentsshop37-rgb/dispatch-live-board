@@ -400,6 +400,11 @@ function emptyForm() {
 export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, onLogout, onOpenFlatRate, onOpenParts }) {
   const formRef = useRef(null);
   const searchInputRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const topScrollRef = useRef(null);
+  const dispatchTableRef = useRef(null);
+  const horizontalSyncLockRef = useRef(false);
+  const [dispatchTableWidth, setDispatchTableWidth] = useState(1720);
   const [jobs, setJobs] = useState([]);
   const [accessGranted] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState(
@@ -472,6 +477,39 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
+
+  function syncDispatchScroll(source, target) {
+    if (horizontalSyncLockRef.current || !source.current || !target.current) return;
+    horizontalSyncLockRef.current = true;
+    target.current.scrollLeft = source.current.scrollLeft;
+    requestAnimationFrame(() => {
+      horizontalSyncLockRef.current = false;
+    });
+  }
+
+  useEffect(() => {
+    const table = dispatchTableRef.current;
+    const tableContainer = tableScrollRef.current;
+    if (!table || !tableContainer) return undefined;
+
+    const measureTable = () => {
+      setDispatchTableWidth(Math.max(table.scrollWidth, table.offsetWidth, tableContainer.clientWidth));
+      if (topScrollRef.current) topScrollRef.current.scrollLeft = tableContainer.scrollLeft;
+    };
+
+    measureTable();
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measureTable) : null;
+    resizeObserver?.observe(table);
+    resizeObserver?.observe(tableContainer);
+    window.addEventListener("resize", measureTable);
+    window.addEventListener("orientationchange", measureTable);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", measureTable);
+      window.removeEventListener("orientationchange", measureTable);
+    };
+  }, [canEditJobFinancial, dispatchViewMode]);
 
   useEffect(() => {
     if (localStorage.getItem("flat-rate-create-job") === "1") {
@@ -2261,8 +2299,21 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               {mobileJobStep < 5 ? <button type="button" onClick={() => setMobileJobStep((step) => Math.min(5, step + 1))} className="min-h-12 rounded-xl bg-blue-600 px-2 text-sm font-bold text-white">Next</button> : <button type="submit" className="min-h-12 rounded-xl bg-emerald-600 px-2 text-sm font-bold text-white">Save Job</button>}
             </div>
 
-            <div className="hidden max-h-[calc(100vh-13rem)] w-full max-w-none overflow-auto rounded-2xl border border-white/10 bg-[#0f1c2e] lg:block">
-              <table className="min-w-[1720px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
+            <div
+              ref={topScrollRef}
+              onScroll={() => syncDispatchScroll(topScrollRef, tableScrollRef)}
+              className="dispatch-top-scrollbar sticky top-0 z-30 hidden w-full overflow-x-auto overflow-y-hidden border-x border-t border-white/10 bg-[#0f1c2e] lg:block"
+              aria-label="Dispatch Board top horizontal scrollbar"
+            >
+              <div style={{ width: dispatchTableWidth, height: 1 }} />
+            </div>
+
+            <div
+              ref={tableScrollRef}
+              onScroll={() => syncDispatchScroll(tableScrollRef, topScrollRef)}
+              className="dispatch-table-scroll hidden max-h-[calc(100vh-13rem)] w-full max-w-none overflow-auto rounded-b-2xl border border-white/10 bg-[#0f1c2e] lg:block"
+            >
+              <table ref={dispatchTableRef} className="min-w-[1720px] table-auto border-separate border-spacing-0 whitespace-nowrap text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-[#0b1628] text-xs uppercase tracking-wide text-slate-200">
                   <tr>
                     <Th>#</Th>
