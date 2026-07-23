@@ -123,7 +123,7 @@ export async function loadTechnicians({ includeInactive = false } = {}) {
 
   if (!includeInactive) query = query.eq("is_active", true);
 
-  const { data, error } = await query.order("created_at", { ascending: false });
+  const { data, error } = await query.order("assigned_number", { ascending: true, nullsFirst: false });
 
   if (error) {
     throw error;

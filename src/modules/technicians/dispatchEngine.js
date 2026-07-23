@@ -50,7 +50,6 @@ export function rankTechnicians(technicians, job) {
   const requestedService = job.requestedService || job.service || job.updates || "";
 
   return technicians
-    .filter((technician) => technician.status === "Approved")
     .filter((technician) => technician.availability === "Available")
     .filter((technician) => coverageMatches(technician, city))
     .filter((technician) => serviceMatches(technician, requestedService))
@@ -79,19 +78,8 @@ export async function assignTechnicianToJob(job, technician, assignedBy = "Dispa
     tech: technician.full_name || "",
   };
 
-  const technicianUpdates = {
-    current_job_id: job.id,
-    availability: "Busy",
-  };
-
   const { error: jobError } = await supabase.from("jobs").update(jobUpdates).eq("id", job.id);
   if (jobError) throw jobError;
-
-  const { error: technicianError } = await supabase
-    .from("technicians")
-    .update(technicianUpdates)
-    .eq("id", technician.id);
-  if (technicianError) throw technicianError;
 
   return {
     assignedAt,

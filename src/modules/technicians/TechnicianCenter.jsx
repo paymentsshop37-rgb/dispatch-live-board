@@ -158,7 +158,7 @@ export default function TechnicianCenter({ currentUser }) {
   const permissions = getPermissions(currentUserRole);
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
-  const canEditDirectoryTechnicians = canApproveTechnicians || permissions.canAssignTechnicians;
+  const canEditDirectoryTechnicians = canApproveTechnicians;
   const knownColumns = useMemo(() => getKnownColumns(technicians).filter((column) => !missingColumns.includes(column)), [missingColumns, technicians]);
   const missingDirectoryColumns = useMemo(() => missingColumns, [missingColumns]);
   const registrationLink = buildRegistrationLink();
@@ -197,7 +197,7 @@ export default function TechnicianCenter({ currentUser }) {
 
   const safeTechnicians = useMemo(() => {
     if (canViewPrivateTechnicianData) return technicians;
-    return technicians.filter((technician) => technician.isActive && isApproved(technician.status));
+    return technicians.filter((technician) => technician.isActive);
   }, [canViewPrivateTechnicianData, technicians]);
 
   const visibleTabs = useMemo(
@@ -285,6 +285,10 @@ export default function TechnicianCenter({ currentUser }) {
   }
 
   async function saveNewTechnician(values) {
+    if (!canApproveTechnicians) {
+      setError("Only administrators can create technicians.");
+      return false;
+    }
     setSaving(true);
     setError("");
     const createdBy = localStorage.getItem("currentUserName") || currentUserRole;
@@ -313,6 +317,10 @@ export default function TechnicianCenter({ currentUser }) {
   }
 
   async function saveTechnician(id, patch) {
+    if (!canApproveTechnicians) {
+      setError("Only administrators can edit technicians.");
+      return false;
+    }
     const currentTechnician = technicians.find((technician) => technician.id === id);
     if (!currentTechnician) return;
 
@@ -578,16 +586,16 @@ export default function TechnicianCenter({ currentUser }) {
                 <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500">
                   Central hub for technician management, compliance, dispatch readiness, and performance.
                 </p>
-                <p className="mt-2 text-xs font-bold text-slate-400">Only approved technicians are visible.</p>
+                <p className="mt-2 text-xs font-bold text-slate-400">Active technicians are visible to Admin, Dispatcher, and Supervisor users.</p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center justify-start gap-2 xl:max-w-3xl xl:justify-end">
               {canEditDirectoryTechnicians && <ActionButton onClick={() => setAddTechnicianModalOpen(true)} icon={<UserPlus />} label="Add Technician" tone="blue" />}
-              <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />
-              <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />
-              <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />
-              <ActionButton onClick={shareRegistrationBySms} icon={<Smartphone />} label="SMS Invite" tone="blue" />
+              {canApproveTechnicians && <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />}
+              {canApproveTechnicians && <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />}
+              {canApproveTechnicians && <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />}
+              {canApproveTechnicians && <ActionButton onClick={shareRegistrationBySms} icon={<Smartphone />} label="SMS Invite" tone="blue" />}
               <ActionButton onClick={refreshTechnicians} icon={<RefreshCw className={loading ? "animate-spin" : ""} />} label="Refresh" />
             </div>
           </div>
@@ -600,7 +608,7 @@ export default function TechnicianCenter({ currentUser }) {
 
           {!canViewPrivateTechnicianData && (
             <p className="mt-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-semibold text-blue-700">
-              Dispatcher-safe mode is active. Only approved technicians are visible.
+              Dispatcher-safe mode is active. All active technicians are visible; management controls remain Admin-only.
             </p>
           )}
 

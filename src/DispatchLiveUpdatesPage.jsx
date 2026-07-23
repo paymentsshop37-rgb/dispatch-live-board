@@ -698,12 +698,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   async function loadDispatchTechnicians() {
     try {
       const technicians = await loadTechnicians();
-      setDispatchTechnicians(
-        technicians.filter((technician) => {
-          const isApproved = String(technician.status || "").toLowerCase() === "approved";
-          return isApproved;
-        })
-      );
+      setDispatchTechnicians(technicians);
     } catch (error) {
       console.error("Error loading technicians:", error.message);
     }
@@ -1466,7 +1461,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
       if (techniciansSupportCurrentJobId) {
         technicianUpdate.current_job_id = job.id;
       }
-      if (Object.keys(technicianUpdate).length > 0) {
+      if (isAdmin && Object.keys(technicianUpdate).length > 0) {
         const { error: technicianUpdateError } = await supabase
           .from("technicians")
           .update(technicianUpdate)
@@ -2961,7 +2956,7 @@ function DispatchCockpit({
           </div>
           <div className="max-h-[430px] space-y-3 overflow-y-auto pr-1">
             {technicians.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No matching approved technicians.</div>
+              <div className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No matching active technicians.</div>
             ) : (
               technicians.map((technician) => (
                 <div key={technician.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -3472,7 +3467,7 @@ function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChan
 
         <div className="mt-3 max-h-[58vh] overflow-auto rounded-xl border border-white/10">
           {technicians.length === 0 ? (
-            <div className="p-6 text-center text-sm font-semibold text-slate-400">No matching approved technicians.</div>
+            <div className="p-6 text-center text-sm font-semibold text-slate-400">No matching active technicians.</div>
           ) : (
             technicians.map((technician) => (
               <div key={technician.id} className="grid gap-3 border-b border-white/10 bg-white/[0.03] px-3 py-2 text-sm last:border-b-0 md:grid-cols-[minmax(0,1fr)_130px_90px_90px_90px] md:items-center">
