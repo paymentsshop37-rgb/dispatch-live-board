@@ -293,6 +293,7 @@ function fromDbJob(row) {
   return {
     photo_url: row.photo_url || "",
     id: row.id,
+    displayNumber: row.display_number || row.job_number || "",
     createdAt: row.created_at || "",
     updatedAt: row.updated_at || "",
     date: row.job_date || "",
@@ -413,7 +414,9 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [mobileMoreJobId, setMobileMoreJobId] = useState(null);
   const [mobileFinancialIds, setMobileFinancialIds] = useState([]);
   const [mobileDetailJob, setMobileDetailJob] = useState(null);
-  const [detailsJobId, setDetailsJobId] = useState(() => jobIdFromPath());
+  const initialDetailsJobId = jobIdFromPath();
+  const [selectedJobId, setSelectedJobId] = useState(initialDetailsJobId || null);
+  const [jobDetailsOpen, setJobDetailsOpen] = useState(Boolean(initialDetailsJobId));
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
   const [showAddJobModal, setShowAddJobModal] = useState(false);
@@ -498,7 +501,11 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
       localStorage.removeItem("nttr-open-job-details-id");
       openJobDetails(pendingDetailsId);
     }
-    const onPopState = () => setDetailsJobId(jobIdFromPath());
+    const onPopState = () => {
+      const pathJobId = jobIdFromPath();
+      setSelectedJobId(pathJobId || null);
+      setJobDetailsOpen(Boolean(pathJobId));
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, []);
@@ -506,14 +513,16 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   function openJobDetails(jobOrId) {
     const jobId = typeof jobOrId === "object" ? jobOrId?.id : jobOrId;
     if (!jobId) return;
-    setDetailsJobId(String(jobId));
+    setSelectedJobId(String(jobId));
+    setJobDetailsOpen(true);
     if (window.location.pathname !== `/jobs/${jobId}`) {
       window.history.pushState({ jobDetails: true }, "", `/jobs/${jobId}`);
     }
   }
 
   function closeJobDetails() {
-    setDetailsJobId("");
+    setJobDetailsOpen(false);
+    setSelectedJobId(null);
     if (window.history.state?.jobDetails) window.history.back();
     else window.history.replaceState({}, "", "/");
   }
@@ -2152,7 +2161,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <button type="button" onClick={(event) => { event.stopPropagation(); openJobDetails(job); }} className="flex min-h-11 items-center rounded-lg px-1 text-sm font-black text-blue-300 underline decoration-blue-400/50 underline-offset-4">{job.reference || `#${index + 1}`}</button>
+                          <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openJobDetails(job.id); }} className="job-number-button flex min-h-11 items-center rounded-lg px-1 text-sm font-black text-blue-300 underline decoration-blue-400/50 underline-offset-4">#{job.displayNumber || index + 1}</button>
                           <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${job.rowFlag === "Problem" ? "bg-red-500 text-white" : "bg-white/10 text-slate-300"}`}>{job.rowFlag || "Normal"}</span>
                         </div>
                         <p className="mt-2 text-xs font-semibold text-slate-400">{job.date || "No date"} · {job.time || "No time"}</p>
@@ -2253,8 +2262,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       }`}
                     >
                       <Td>
-                        <button type="button" onClick={() => openJobDetails(job)} className="inline-flex min-h-9 items-center rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-blue-200 underline decoration-blue-400/40 underline-offset-4 hover:bg-blue-500/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400">
-                          {job.reference || `#${index + 1}`}
+                        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openJobDetails(job.id); }} className="job-number-button inline-flex min-h-9 items-center rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-blue-200 underline decoration-blue-400/40 underline-offset-4 hover:bg-blue-500/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                          #{job.displayNumber || index + 1}
                         </button>
                       </Td>
 
@@ -2571,9 +2580,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               />
             )}
 
-            {detailsJobId && (
+            {jobDetailsOpen && selectedJobId && (
               <JobDetailsDrawer
-                jobId={detailsJobId}
+                jobId={selectedJobId}
                 role={normalizedUserRole}
                 currentUserName={currentUserName}
                 onClose={closeJobDetails}
@@ -3816,6 +3825,14 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
   const isAdmin = role === "admin";
 
   useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  useEffect(() => {
     let mounted = true;
     async function loadDetails(showSkeleton = true) {
       if (showSkeleton) setLoading(true);
@@ -3879,7 +3896,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {loading && <JobDetailsSkeleton />}
-          {error && <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-5 font-bold text-red-100">Unable to load job details: {error}</div>}
+          {error && <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-5 text-red-100"><h3 className="text-xl font-black">Unable to Open Job</h3><p className="mt-2 font-semibold">The job could not be loaded or you do not have permission to view it.</p></div>}
           {!loading && job && (
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
