@@ -22,6 +22,11 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "../activity";
+import {
+  techPaymentControlStyle,
+  techPaymentLabel,
+  techPaymentStatusOptions,
+} from "../../utils/techPaymentStatus";
 
 const columnAliases = {
   id: ["id"],
@@ -124,10 +129,17 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
   const cityRows = useMemo(() => groupJobs(filteredJobs, (job) => job.city || "Unknown").slice(0, 10), [filteredJobs]);
   const dispatcherRows = useMemo(() => buildDispatcherRows(filteredJobs), [filteredJobs]);
   const technicianRows = useMemo(() => buildTechnicianRows(filteredJobs), [filteredJobs]);
+  const techPaymentSummary = useMemo(
+    () => techPaymentStatusOptions.map((status) => ({
+      status,
+      count: filteredJobs.filter((job) => job.techPaymentStatus === status).length,
+    })),
+    [filteredJobs]
+  );
   const activityFeed = useMemo(() => activityRows.slice(0, 15), [activityRows]);
 
   function exportCsv() {
-    const headers = ["Date", "Invoice #", "Company", "City", "Status", "Dispatcher", "Technician", "Payment Method", "Invoice Status", "Total Bill", "Parts", "Tech Labor", "Profit"];
+    const headers = ["Date", "Invoice #", "Company", "City", "Status", "Dispatcher", "Technician", "Payment Method", "Invoice Status", "Tech Payment", "Total Bill", "Parts", "Tech Labor", "Profit"];
     const rows = filteredJobs.map((job) => [
       job.date,
       job.invoiceNumber,
@@ -138,6 +150,7 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
       job.technician,
       job.paymentMethod,
       job.invoiceStatus,
+      techPaymentLabel(job.techPaymentStatus),
       job.totalBill,
       job.parts,
       job.techLabor,
@@ -227,6 +240,17 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
                   {analytics.invoiceSegments.map((item) => (
                     <InvoiceTile key={item.label} item={item} />
                   ))}
+                </div>
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <p className="mb-3 text-xs font-black uppercase tracking-[0.14em] text-slate-400">Tech Payment Status</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {techPaymentSummary.map(({ status, count }) => (
+                      <div key={status} className="flex items-center justify-between rounded-xl border px-3 py-2 text-sm font-black" style={techPaymentControlStyle(status)}>
+                        <span>{techPaymentLabel(status)}</span>
+                        <span>{count}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </Panel>
             </section>

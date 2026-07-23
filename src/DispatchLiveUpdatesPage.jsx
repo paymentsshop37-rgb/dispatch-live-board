@@ -37,6 +37,12 @@ import { supabase } from "./lib/supabase";
 import { logActivity } from "./modules/activity";
 import { compareTechniciansByAssignedNumber, loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
+import {
+  techPaymentControlStyle,
+  techPaymentLabel,
+  techPaymentStatusOptions,
+  techPaymentVisual,
+} from "./utils/techPaymentStatus";
 
 const normalizeText = (value) => {
   return String(value || "")
@@ -112,14 +118,6 @@ const nearbyPartsCategories = [
 const nearbyPartsCache = new Map();
 const jobPipeline = ["New", "Pending", "Assigned", "Tech Accepted", "En Route", "On Site", "In Progress", "Waiting Parts", "Working", "Completed", "Invoiced", "Paid"];
 const jobStatusOptions = [...jobPipeline, "Need Review", "Declined", "Canceled", "Cancelled", "Dry Run"];
-const techPaymentStatusOptions = ["Pending", "Reviewing", "Approved", "Paid", "Hold"];
-const techPaymentStatusStyles = {
-  Pending: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  Reviewing: "bg-orange-100 text-orange-800 border-orange-200",
-  Approved: "bg-blue-100 text-blue-800 border-blue-200",
-  Paid: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  Hold: "bg-red-100 text-red-800 border-red-200",
-};
 const techPaymentFieldAliases = {
   status: ["tech_payment_status", "technician_payment_status", "tech_paid_status"],
   method: ["tech_payment_method", "technician_payment_method"],
@@ -138,6 +136,7 @@ const fieldMap = {
   photo_url: "photo_url",
   date: "job_date",
   time: "job_time",
+  jobReference: "reference_number",
   reference: "invoice_number",
   rowFlag: "row_flag",
   invoice: "invoice_status",
@@ -174,6 +173,7 @@ function exportJobsToCSV(jobs) {
   const headers = [
     "Date",
     "Time",
+    "Reference #",
     "Invoice",
     "Dispatch",
     "Company",
@@ -194,6 +194,7 @@ function exportJobsToCSV(jobs) {
   const rows = jobs.map((job) => [
     job.date,
     job.time,
+    job.jobReference,
     job.reference,
     job.dispatch,
     job.company,
@@ -207,7 +208,7 @@ function exportJobsToCSV(jobs) {
     job.totalBill,
     job.parts,
     job.techLabor,
-    job.techPaymentStatus || "Pending",
+    techPaymentLabel(job.techPaymentStatus),
     Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0),
   ]);
 
@@ -237,11 +238,14 @@ function exportJobsToPDF(jobs, showProfit = true) {
       return `
         <tr>
           <td>${job.date || ""}</td>
+          <td>${job.time || ""}</td>
+          <td>${job.jobReference || ""}</td>
           <td>${job.reference || ""}</td>
           <td>${job.company || ""}</td>
           <td>${job.tech || ""}</td>
           <td>${job.location || ""}</td>
           <td>${job.status || ""}</td>
+          <td><span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${techPaymentVisual(job.techPaymentStatus).backgroundColor};color:${techPaymentVisual(job.techPaymentStatus).color};font-weight:700">${techPaymentLabel(job.techPaymentStatus)}</span></td>
           <td>$${Number(job.totalBill || 0).toFixed(2)}</td>
           ${showProfit ? `<td>$${profit.toFixed(2)}</td>` : ""}
         </tr>
@@ -270,11 +274,14 @@ function exportJobsToPDF(jobs, showProfit = true) {
           <thead>
             <tr>
               <th>Date</th>
-              <th>Status</th>
-              <th>Invoice</th>
+              <th>Time</th>
+              <th>Reference #</th>
+              <th>Invoice #</th>
               <th>Company</th>
               <th>Tech</th>
               <th>Location</th>
+              <th>Status</th>
+              <th>Tech Payment</th>
               <th>Total Bill</th>
               ${showProfit ? "<th>Profit</th>" : ""}
             </tr>
@@ -298,6 +305,7 @@ function fromDbJob(row) {
     updatedAt: row.updated_at || "",
     date: row.job_date || "",
     time: row.job_time || "",
+    jobReference: row.reference_number || "",
     reference: row.invoice_number || "",
     dispatch: row.dispatch || "",
     company: row.company || "",
@@ -330,6 +338,7 @@ function toDbJob(job) {
   return {
     job_date: job.date || null,
     job_time: job.time || "",
+    reference_number: String(job.jobReference || "").trim() || null,
     invoice_number: job.reference || "",
     dispatch: job.dispatch || "",
     company: job.company || "",
@@ -407,6 +416,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [techFilter, setTechFilter] = useState("All");
   const [companyFilter, setCompanyFilter] = useState("All");
   const [invoiceFilter, setInvoiceFilter] = useState("All");
+  const [techPaymentFilter, setTechPaymentFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [deleteRestrictedOpen, setDeleteRestrictedOpen] = useState(false);
@@ -493,7 +503,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
 
   useEffect(() => {
     setMobileVisibleCount(50);
-  }, [search, statusFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, periodFilter, fromDate, toDate]);
+  }, [search, statusFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
 
   useEffect(() => {
     const pendingDetailsId = localStorage.getItem("nttr-open-job-details-id");
@@ -734,6 +744,7 @@ const { data: logsData } = await supabase
         const matchesTech = techFilter === "All" || job.tech === techFilter;
         const matchesCompany = companyFilter === "All" || job.company === companyFilter;
         const matchesInvoice = invoiceFilter === "All" || job.invoice === invoiceFilter;
+        const matchesTechPayment = techPaymentFilter === "All" || job.techPaymentStatus === techPaymentFilter;
 const today = new Date();
 const jobDate = new Date(job.date + " 00:00:00");
 
@@ -832,6 +843,7 @@ return (
   matchesTech &&
   matchesCompany &&
   matchesInvoice &&
+  matchesTechPayment &&
   matchesPeriod &&
   matchesDateRange
 );
@@ -842,7 +854,7 @@ return (
 
   return dateTimeA - dateTimeB;
 });
-  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, periodFilter, fromDate, toDate]);
+  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
 
   const dates = useMemo(
     () => [...new Set(jobs.map((job) => job.date).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b)),
@@ -1139,9 +1151,12 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
     const dbField = fieldMap[field] || field;
 
+    const databaseValue =
+      field === "jobReference" ? String(value || "").trim() || null : value;
+
     const { error } = await supabase
       .from("jobs")
-      .update({ [dbField]: value })
+      .update({ [dbField]: databaseValue })
       .eq("id", id);
 
     if (error) {
@@ -1850,11 +1865,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </div>
               <p className="mb-4 text-sm font-black uppercase tracking-wide text-blue-300">Step {mobileJobStep} of 5 · {mobileJobStep === 1 ? "Customer" : mobileJobStep === 2 ? "Job Details" : mobileJobStep === 3 ? "Assignment" : mobileJobStep === 4 ? "Costs & Notes" : "Review"}</p>
               <div className="grid gap-4">
-                {mobileJobStep === 1 && <><Input label="Customer / Invoice #" value={form.reference} onChange={(value) => setForm({ ...form, reference: value })} /><Input label="Company" value={form.company} onChange={(value) => setForm({ ...form, company: value })} /><Input label="Phone" type="tel" value={form.customerPhone || ""} onChange={(value) => setForm({ ...form, customerPhone: value })} /></>}
+                {mobileJobStep === 1 && <><Input label="Invoice #" value={form.reference} onChange={(value) => setForm({ ...form, reference: value })} /><Input label="Reference #" value={form.jobReference || ""} onChange={(value) => setForm({ ...form, jobReference: value })} /><Input label="Company" value={form.company} onChange={(value) => setForm({ ...form, company: value })} /><Input label="Phone" type="tel" value={form.customerPhone || ""} onChange={(value) => setForm({ ...form, customerPhone: value })} /></>}
                 {mobileJobStep === 2 && <><Input label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} /><Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
                 {mobileJobStep === 3 && <><Input label="Technician" list="technician-suggestions" value={form.tech} onChange={(value) => setForm({ ...form, tech: value })} /><Input label="Dispatcher" list="dispatcher-suggestions" value={form.dispatch} onChange={(value) => setForm({ ...form, dispatch: value })} /><Select label="Priority" value={form.rowFlag} onChange={(value) => setForm({ ...form, rowFlag: value })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} /><Select label="Status" value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={jobStatusOptions} /></>}
                 {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.updates} onChange={(event) => setForm({ ...form, updates: event.target.value })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
-                {mobileJobStep === 5 && <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MobileJobField label="Invoice" value={form.reference || "Not assigned"} /><MobileJobField label="Company" value={form.company || "Not provided"} /><MobileJobField label="Location" value={form.location || "Not provided"} /><MobileJobField label="Technician" value={form.tech || "Unassigned"} /><MobileJobField label="Dispatcher" value={form.dispatch || "Unassigned"} /><MobileJobField label="Priority" value={form.rowFlag} /><MobileJobField label="Notes" value={form.updates || form.complaint || "No notes"} lines={2} /></div>}
+                {mobileJobStep === 5 && <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MobileJobField label="Reference #" value={form.jobReference || "Not assigned"} /><MobileJobField label="Invoice #" value={form.reference || "Not assigned"} /><MobileJobField label="Company" value={form.company || "Not provided"} /><MobileJobField label="Location" value={form.location || "Not provided"} /><MobileJobField label="Technician" value={form.tech || "Unassigned"} /><MobileJobField label="Dispatcher" value={form.dispatch || "Unassigned"} /><MobileJobField label="Priority" value={form.rowFlag} /><MobileJobField label="Notes" value={form.updates || form.complaint || "No notes"} lines={2} /></div>}
               </div>
             </div>
 
@@ -2056,7 +2071,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     id="mobile-job-search"
                     ref={searchInputRef}
                     className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
-                    placeholder="Search by Ref #, Company, Location, Technician"
+                    placeholder="Search by Reference #, Invoice #, Company, Location, Technician"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
@@ -2116,6 +2131,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   ))}
                 </select>
 
+                <TechPaymentSelect
+                  ariaLabel="Filter by Tech Payment status"
+                  value={techPaymentFilter}
+                  onChange={setTechPaymentFilter}
+                  includeAll
+                />
+
                 <input
                   type="date"
                   className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
@@ -2142,6 +2164,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     setFromDate("");
                     setToDate("");
                     setInvoiceFilter("All");
+                    setTechPaymentFilter("All");
                     setPeriodFilter("All");
                   }}
                   className="h-9 whitespace-nowrap rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15"
@@ -2172,7 +2195,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     </div>
 
                     <div className="mt-4 grid gap-3 text-sm">
-                      <MobileJobField label="Invoice" value={job.reference || "Not assigned"} />
+                      <MobileJobField label="Reference #" value={job.jobReference || "Not assigned"} />
+                      <MobileJobField label="Invoice #" value={job.reference || "Not assigned"} />
                       <MobileJobField label="Company" value={job.company || "Not provided"} />
                       <MobileJobField label="Location" value={job.location || "Not provided"} />
                       <div className="grid grid-cols-2 gap-3">
@@ -2180,6 +2204,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         <MobileJobField label="Technician" value={job.tech || "Unassigned"} />
                       </div>
                       <MobileJobField label="Last Update" value={firstLine(job.updates) || "No updates"} lines={2} />
+                      <TechPaymentStatusBadge status={job.techPaymentStatus} />
                       {eta && <MobileJobField label="ETA" value={eta} />}
                     </div>
 
@@ -2232,6 +2257,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <Th>Date</Th>
                     <Th>Status</Th>
                     <Th>Time</Th>
+                    <Th>Reference #</Th>
                     <Th>Invoice #</Th>
                     <Th>Dispatch</Th>
                     <Th>Company</Th>
@@ -2308,6 +2334,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       </Td>
 
                       <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
+                      <Td><Editable className="w-36" value={job.jobReference} onChange={(v) => updateJob(job.id, "jobReference", v)} /></Td>
                       <Td><Editable value={job.reference} onChange={(v) => updateJob(job.id, "reference", v)} /></Td>
                       <Td><Editable value={job.dispatch} onChange={(v) => updateJob(job.id, "dispatch", v)} /></Td>
 
@@ -2418,16 +2445,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
                       <Td>
                         <div className="flex items-center justify-center">
-                          <select
-                            className={`${darkSelectClass} h-9 w-36 rounded-xl px-2 text-center text-xs font-bold`}
+                          <TechPaymentSelect
                             value={job.techPaymentStatus || "Pending"}
-                            onChange={(e) => updateTechPaymentStatus(job, e.target.value)}
+                            onChange={(value) => updateTechPaymentStatus(job, value)}
                             disabled={!canEditJobFinancial}
-                          >
-                            {techPaymentStatusOptions.map((status) => (
-                              <option key={status} style={darkOptionStyle}>{status}</option>
-                            ))}
-                          </select>
+                            compact
+                          />
                         </div>
                       </Td>
 
@@ -2634,8 +2657,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <UpdatesModal
                 job={updatesJob}
                 onClose={() => setUpdatesJob(null)}
-                onSave={async (value) => {
-                  await updateJob(updatesJob.id, "updates", value);
+                onSave={async ({ updates, jobReference }) => {
+                  if (jobReference !== updatesJob.jobReference) {
+                    await updateJob(updatesJob.id, "jobReference", jobReference);
+                  }
+                  await updateJob(updatesJob.id, "updates", updates);
                   setUpdatesJob(null);
                 }}
               />
@@ -2958,8 +2984,8 @@ function TechPaymentModal({ job, columnsAvailable, columns = {}, onClose, onSave
             <h3 className="mt-1 text-2xl font-black text-slate-950">{job.tech || "No technician assigned"}</h3>
             <p className="mt-1 text-sm font-semibold text-slate-500">Job / Invoice #: {job.reference || job.id || "N/A"}</p>
           </div>
-          <span className={`w-fit rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${techPaymentStatusStyles[details.techPaymentStatus] || techPaymentStatusStyles.Pending}`}>
-            {details.techPaymentStatus || "Pending"}
+          <span className="w-fit rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide" style={techPaymentControlStyle(details.techPaymentStatus)}>
+            {techPaymentLabel(details.techPaymentStatus)}
           </span>
         </div>
 
@@ -2985,15 +3011,10 @@ function TechPaymentModal({ job, columnsAvailable, columns = {}, onClose, onSave
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <label className="grid gap-2 text-sm font-bold text-slate-600">
             Tech Payment Status
-            <select
-              className={`${darkSelectClass} rounded-xl px-3 py-2 font-semibold`}
+            <TechPaymentSelect
               value={details.techPaymentStatus}
-              onChange={(event) => setDetails((current) => ({ ...current, techPaymentStatus: event.target.value }))}
-            >
-              {techPaymentStatusOptions.map((status) => (
-                <option key={status} style={darkOptionStyle}>{status}</option>
-              ))}
-            </select>
+              onChange={(value) => setDetails((current) => ({ ...current, techPaymentStatus: value }))}
+            />
           </label>
 
           <label className="grid gap-2 text-sm font-bold text-slate-600">
@@ -3412,17 +3433,27 @@ function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChan
 
 function UpdatesModal({ job, onClose, onSave }) {
   const [value, setValue] = useState(job.updates || "");
+  const [jobReference, setJobReference] = useState(job.jobReference || "");
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
       <div className="max-h-[92dvh] w-full max-w-2xl overflow-y-auto rounded-t-3xl border border-white/10 bg-[#0b1628] p-4 shadow-2xl shadow-black/40 md:rounded-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">Job Updates</p>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">Edit Job</p>
             <h2 className="mt-1 text-lg font-black text-white">{job.reference || job.company || `Job ${job.id}`}</h2>
           </div>
           <button type="button" onClick={onClose} className="h-9 rounded-lg bg-white/10 px-3 text-xs font-bold text-slate-100 hover:bg-white/15">Close</button>
         </div>
+        <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
+          <span>Reference #</span>
+          <input
+            className={`${tableControlClass} min-h-11 px-3 text-base font-semibold`}
+            value={jobReference}
+            onChange={(event) => setJobReference(event.target.value)}
+            placeholder="ABC-12345"
+          />
+        </label>
         <textarea
           className="mt-4 min-h-40 w-full rounded-xl border border-white/10 bg-[#111f33] p-3 text-sm font-semibold text-white outline-none focus:border-blue-400"
           value={value}
@@ -3430,7 +3461,7 @@ function UpdatesModal({ job, onClose, onSave }) {
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15">Cancel</button>
-          <button type="button" onClick={() => onSave(value)} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Updates</button>
+          <button type="button" onClick={() => onSave({ updates: value, jobReference })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
         </div>
       </div>
     </div>
@@ -3791,6 +3822,77 @@ function MobileJobField({ label, value, lines = 1 }) {
   );
 }
 
+function TechPaymentStatusBadge({ status }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-xs font-black uppercase tracking-wide text-slate-400">Tech Payment</span>
+      <span className="inline-flex min-h-8 items-center rounded-full border px-3 py-1 text-xs font-black" style={techPaymentControlStyle(status)}>
+        {techPaymentLabel(status)}
+      </span>
+    </div>
+  );
+}
+
+function TechPaymentSelect({
+  value,
+  onChange,
+  disabled = false,
+  includeAll = false,
+  compact = false,
+  ariaLabel = "Tech Payment status",
+}) {
+  const [open, setOpen] = useState(false);
+  const isAll = value === "All";
+  const options = includeAll ? ["All", ...techPaymentStatusOptions] : techPaymentStatusOptions;
+
+  return (
+    <div
+      className={`relative ${compact ? "w-40" : "w-full"}`}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((current) => !current)}
+        className={`${compact ? "h-9 text-xs" : "min-h-11 text-sm"} flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 font-black outline-none disabled:cursor-not-allowed disabled:opacity-60`}
+        style={isAll ? { backgroundColor: "#0f172a", color: "#ffffff", borderColor: "#334155" } : techPaymentControlStyle(value)}
+      >
+        <span className="truncate">{isAll ? "All Tech Payments" : techPaymentLabel(value)}</span>
+        <span aria-hidden="true" className="text-[10px]">▼</span>
+      </button>
+      {open && !disabled && (
+        <div role="listbox" className="absolute left-0 top-full z-[100] mt-1 grid min-w-full gap-1 rounded-xl border border-slate-300 bg-white p-1 shadow-2xl">
+          {options.map((status) => {
+            const optionIsAll = status === "All";
+            return (
+              <button
+                type="button"
+                role="option"
+                aria-selected={value === status}
+                key={status}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  onChange(status);
+                  setOpen(false);
+                }}
+                className="min-h-11 whitespace-nowrap rounded-lg border px-3 py-2 text-left text-sm font-black"
+                style={optionIsAll ? { backgroundColor: "#0f172a", color: "#ffffff", borderColor: "#334155" } : techPaymentControlStyle(status)}
+              >
+                {optionIsAll ? "All Tech Payments" : techPaymentLabel(status)}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MobileAction({ icon, label, onClick }) {
   return <button type="button" onClick={onClick} className="flex min-h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-white/10 px-1 text-[10px] font-bold text-slate-100">{React.cloneElement(icon, { className: "h-4 w-4" })}<span className="truncate">{label}</span></button>;
 }
@@ -3809,6 +3911,7 @@ function MobileJobDetailSheet({ job, onClose, onUpdate, onAssign, onMap }) {
           <MobileJobField label="Location" value={job.location || "Not provided"} />
           <div className="grid grid-cols-2 gap-3"><MobileJobField label="Dispatcher" value={job.dispatch || "Unassigned"} /><MobileJobField label="Technician" value={job.tech || "Unassigned"} /></div>
           <MobileJobField label="Status" value={job.status || "Pending"} />
+          <TechPaymentStatusBadge status={job.techPaymentStatus} />
           <MobileJobField label="Updates" value={job.updates || "No updates"} lines={2} />
         </div>
         <div className="mt-4 grid grid-cols-3 gap-2"><MobileMenuAction label="Add Update" onClick={onUpdate} /><MobileMenuAction label="Assign Tech" onClick={onAssign} /><MobileMenuAction label="Open Map" onClick={onMap} /></div>
@@ -3912,7 +4015,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
 
               <DetailSection title="Job Identification">
                 <DetailGrid items={[
-                  ["Internal job number", job.id], ["Invoice number", job.reference], ["Reference number", valueFrom(raw.reference, raw.reference_number, raw.po_number)],
+                  ["Internal job number", job.id], ["Invoice number", job.reference], ["Reference number", job.jobReference],
                   ["Created", valueFrom(raw.created_at, `${job.date || ""} ${job.time || ""}`)], ["Last modified", raw.updated_at], ["Status", job.status],
                   ["Priority", job.rowFlag], ["Job source", valueFrom(raw.job_source, raw.source, "Dispatch Live")],
                 ]} />
@@ -3941,7 +4044,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
 
               <DetailSection title="Parts Information">{details.parts.length ? <div className="space-y-2">{details.parts.map((item) => <div key={item.id} className="rounded-xl bg-white/5 p-3"><p className="font-bold text-white">{item.part_name_snapshot || item.part_name || "Part"}</p><DetailGrid items={[["Part number", item.part_number_snapshot || item.part_number], ["Brand", item.brand_name], ["Quantity", item.quantity], ["Unit price", money(item.unit_selling_price)], ["Core charge", money(item.core_charge)], ["Extended total", money(item.extended_total)], ["Supplier", item.supplier_name], ["Availability", item.availability_status], ["Added by", item.created_by]]} /></div>)}</div> : <EmptyDetail label="No parts recorded." />}</DetailSection>
 
-              {isAdmin && <DetailSection title="Financial Information" accent><DetailGrid items={[["Total bill", money(job.totalBill)], ["Parts cost", money(job.parts)], ["Tech labor", money(job.techLabor)], ["Other costs", money(raw.other_costs)], ["Service call", money(raw.service_call)], ["Mileage", money(raw.mileage_fee)], ["After-hours fees", money(raw.after_hours_fee)], ["Tax", money(raw.tax)], ["Discount", money(raw.discount)], ["Gross profit", money(Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0))], ["Profit margin", profitMargin(job)], ["Tech payment", money(raw.tech_payment)], ["Payment status", job.techPaymentStatus]]} /></DetailSection>}
+              {isAdmin && <DetailSection title="Financial Information" accent><TechPaymentStatusBadge status={job.techPaymentStatus} /><DetailGrid items={[["Total bill", money(job.totalBill)], ["Parts cost", money(job.parts)], ["Tech labor", money(job.techLabor)], ["Other costs", money(raw.other_costs)], ["Service call", money(raw.service_call)], ["Mileage", money(raw.mileage_fee)], ["After-hours fees", money(raw.after_hours_fee)], ["Tax", money(raw.tax)], ["Discount", money(raw.discount)], ["Gross profit", money(Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0))], ["Profit margin", profitMargin(job)], ["Tech payment", money(raw.tech_payment)]]} /></DetailSection>}
 
               <DetailSection title="Invoice and Payment"><DetailGrid items={[["Invoice status", job.invoice], ["Payment method", job.paymentMethod], ["Payment state", job.invoice === "Paid" ? "Paid" : job.invoice === "Cancelled" ? "Cancelled" : "Pending"], ["Payment reference", valueFrom(raw.payment_reference, job.techPaymentReference)], ["Payment date", valueFrom(raw.payment_date, job.techPaidDate)], ["Received by", job.paymentReceiver]]} /></DetailSection>
 
@@ -4111,6 +4214,7 @@ function recentValues(jobs, key) {
 
 function formatJobForClipboard(job) {
   return [
+    `Reference #: ${job.jobReference || ""}`,
     `Invoice: ${job.reference || ""}`,
     `Company: ${job.company || ""}`,
     `Location: ${job.location || ""}`,
