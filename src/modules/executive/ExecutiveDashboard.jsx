@@ -82,7 +82,7 @@ const activityIconMap = {
   "Login Failure": ShieldAlert,
 };
 
-export default function ExecutiveDashboard({ onOpenActivity }) {
+export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
   const [jobs, setJobs] = useState([]);
   const [activityRows, setActivityRows] = useState([]);
   const [warnings, setWarnings] = useState([]);
@@ -236,7 +236,7 @@ export default function ExecutiveDashboard({ onOpenActivity }) {
             <Panel title="Recent Activity" subtitle="Important events only" icon={Activity}>
               <div className="max-h-[820px] space-y-3 overflow-y-auto pr-1">
                 {activityFeed.map((item) => (
-                  <ActivityItem key={item.id} item={item} jobs={jobs} />
+                  <ActivityItem key={item.id} item={item} jobs={jobs} onOpenJob={onOpenJob} />
                 ))}
                 {!activityFeed.length && <EmptyState label="No important activity yet." />}
               </div>
@@ -486,7 +486,7 @@ function InvoiceTile({ item }) {
   );
 }
 
-function ActivityItem({ item, jobs }) {
+function ActivityItem({ item, jobs, onOpenJob }) {
   const Icon = activityIconMap[item.action] || Activity;
   const job = jobs.find((candidate) => String(candidate.id) === String(item.entity_id));
   return (
@@ -504,7 +504,7 @@ function ActivityItem({ item, jobs }) {
             <span className="shrink-0 text-xs font-black uppercase text-slate-500">{shortTime(item.created_at)}</span>
           </div>
           <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-400 sm:grid-cols-2">
-            <span>Job #: {job?.invoiceNumber || item.entity_id || "N/A"}</span>
+            {item.entity_id && onOpenJob ? <button type="button" onClick={() => onOpenJob(item.entity_id)} className="min-h-11 text-left font-black text-blue-300 underline underline-offset-4">Job #: {job?.invoiceNumber || item.entity_id}</button> : <span>Job #: {job?.invoiceNumber || item.entity_id || "N/A"}</span>}
             <span>City: {job?.city || "N/A"}</span>
           </div>
         </div>

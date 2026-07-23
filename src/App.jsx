@@ -402,6 +402,12 @@ export default function App() {
     setActiveView("dispatch");
   }
 
+  function openJobDetailsFromView(jobId) {
+    if (!jobId) return;
+    localStorage.setItem("nttr-open-job-details-id", String(jobId));
+    setActiveView("dispatch");
+  }
+
   useEffect(() => {
     if (!role && !visibleItems.some((item) => item.id === activeView)) {
       setActiveView("dispatch");
@@ -559,10 +565,10 @@ export default function App() {
         />
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
-        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} /> : <DispatcherDashboard />)}
+        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} /> : <DispatcherDashboard />)}
         {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
-        {canAccessActiveView && activeView === "customers" && <CustomerCRM />}
+        {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}

@@ -5,7 +5,7 @@ import { supabase } from "../../lib/supabase";
 const profileTabs = ["Overview", "Contacts", "Locations", "Invoices", "Jobs", "Notes", "Payment History", "Activity Timeline"];
 const defaultContactRoles = ["Fleet Manager", "Dispatcher", "Accounting", "After Hours"];
 
-export default function CustomerCRM() {
+export default function CustomerCRM({ onOpenJob }) {
   const [jobs, setJobs] = useState([]);
   const [customerRows, setCustomerRows] = useState([]);
   const [contactRows, setContactRows] = useState([]);
@@ -157,13 +157,14 @@ export default function CustomerCRM() {
           onClose={() => setSelectedCustomer(null)}
           openProfile={openProfile}
           onSave={saveCustomerProfile}
+          onOpenJob={onOpenJob}
         />
       )}
     </div>
   );
 }
 
-function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfile, onSave }) {
+function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfile, onSave, onOpenJob }) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(() => createCustomerDraft(customer));
@@ -246,11 +247,11 @@ function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfi
               deleteLocation={(index) => setDraft((current) => ({ ...current, locations: current.locations.filter((_, locationIndex) => locationIndex !== index) }))}
             />
           )}
-          {activeTab === "Invoices" && <InvoicesTab jobs={customer.jobs} />}
-          {activeTab === "Jobs" && <JobsTab jobs={customer.jobs} />}
+          {activeTab === "Invoices" && <InvoicesTab jobs={customer.jobs} onOpenJob={onOpenJob} />}
+          {activeTab === "Jobs" && <JobsTab jobs={customer.jobs} onOpenJob={onOpenJob} />}
           {activeTab === "Notes" && <NotesTab draft={draft} editing={editing} updateField={updateField} />}
-          {activeTab === "Payment History" && <PaymentHistoryTab jobs={customer.jobs} />}
-          {activeTab === "Activity Timeline" && <TimelineTab customer={customer} />}
+          {activeTab === "Payment History" && <PaymentHistoryTab jobs={customer.jobs} onOpenJob={onOpenJob} />}
+          {activeTab === "Activity Timeline" && <TimelineTab customer={customer} onOpenJob={onOpenJob} />}
         </div>
       </div>
     </div>
@@ -328,28 +329,28 @@ function LocationsTab({ draft, editing, updateLocation, addLocation, deleteLocat
   );
 }
 
-function InvoicesTab({ jobs }) {
-  return <JobsTable jobs={jobs} invoiceMode />;
+function InvoicesTab({ jobs, onOpenJob }) {
+  return <JobsTable jobs={jobs} invoiceMode onOpenJob={onOpenJob} />;
 }
 
-function JobsTab({ jobs }) {
-  return <JobsTable jobs={jobs} />;
+function JobsTab({ jobs, onOpenJob }) {
+  return <JobsTable jobs={jobs} onOpenJob={onOpenJob} />;
 }
 
 function NotesTab({ draft, editing, updateField }) {
   return <EditableField label="Notes" value={draft.notes} editing={editing} onChange={(value) => updateField("notes", value)} multiline />;
 }
 
-function PaymentHistoryTab({ jobs }) {
-  return <JobsTable jobs={jobs.filter((job) => isPaid(job.invoiceStatus))} invoiceMode />;
+function PaymentHistoryTab({ jobs, onOpenJob }) {
+  return <JobsTable jobs={jobs.filter((job) => isPaid(job.invoiceStatus))} invoiceMode onOpenJob={onOpenJob} />;
 }
 
-function TimelineTab({ customer }) {
+function TimelineTab({ customer, onOpenJob }) {
   return (
     <div className="space-y-3">
       {customer.jobs.map((job) => (
         <div key={job.id} className="rounded-xl border border-slate-200 p-4">
-          <p className="font-bold text-slate-950">{job.date || "No date"} - {job.invoiceNumber || "No invoice"}</p>
+          <button type="button" onClick={() => onOpenJob?.(job.id)} className="min-h-11 text-left font-bold text-blue-700 underline underline-offset-4">{job.date || "No date"} - {job.invoiceNumber || "No invoice"}</button>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
             <JobStatusBadge status={job.status} />
             <span>at {job.location || "unknown location"}</span>
@@ -361,7 +362,7 @@ function TimelineTab({ customer }) {
   );
 }
 
-function JobsTable({ jobs, invoiceMode = false }) {
+function JobsTable({ jobs, invoiceMode = false, onOpenJob }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-slate-200">
       <table className="min-w-[900px] table-auto whitespace-nowrap text-left text-sm">
@@ -377,7 +378,7 @@ function JobsTable({ jobs, invoiceMode = false }) {
             <tr key={job.id} className="border-t border-slate-200">
               {invoiceMode ? (
                 <>
-                  <td className="px-4 py-3 font-bold">{job.invoiceNumber || "No invoice"}</td>
+                  <td className="px-4 py-3 font-bold"><button type="button" onClick={() => onOpenJob?.(job.id)} className="min-h-11 text-blue-700 underline underline-offset-4">{job.invoiceNumber || job.id || "No invoice"}</button></td>
                   <td className="px-4 py-3">{job.date || "No date"}</td>
                   <td className="px-4 py-3">{job.location || "No location"}</td>
                   <td className="px-4 py-3"><InvoiceStatusBadge status={job.invoiceStatus} /></td>
@@ -388,7 +389,7 @@ function JobsTable({ jobs, invoiceMode = false }) {
               ) : (
                 <>
                   <td className="px-4 py-3">{job.date || "No date"}</td>
-                  <td className="px-4 py-3 font-bold">{job.invoiceNumber || "No invoice"}</td>
+                  <td className="px-4 py-3 font-bold"><button type="button" onClick={() => onOpenJob?.(job.id)} className="min-h-11 text-blue-700 underline underline-offset-4">{job.invoiceNumber || job.id || "No invoice"}</button></td>
                   <td className="px-4 py-3">{job.location || "No location"}</td>
                   <td className="px-4 py-3"><JobStatusBadge status={job.status} /></td>
                   <td className="px-4 py-3">{extractService(job)}</td>

@@ -413,6 +413,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [mobileMoreJobId, setMobileMoreJobId] = useState(null);
   const [mobileFinancialIds, setMobileFinancialIds] = useState([]);
   const [mobileDetailJob, setMobileDetailJob] = useState(null);
+  const [detailsJobId, setDetailsJobId] = useState(() => jobIdFromPath());
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
   const [showAddJobModal, setShowAddJobModal] = useState(false);
@@ -490,6 +491,32 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   useEffect(() => {
     setMobileVisibleCount(50);
   }, [search, statusFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, periodFilter, fromDate, toDate]);
+
+  useEffect(() => {
+    const pendingDetailsId = localStorage.getItem("nttr-open-job-details-id");
+    if (pendingDetailsId) {
+      localStorage.removeItem("nttr-open-job-details-id");
+      openJobDetails(pendingDetailsId);
+    }
+    const onPopState = () => setDetailsJobId(jobIdFromPath());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function openJobDetails(jobOrId) {
+    const jobId = typeof jobOrId === "object" ? jobOrId?.id : jobOrId;
+    if (!jobId) return;
+    setDetailsJobId(String(jobId));
+    if (window.location.pathname !== `/jobs/${jobId}`) {
+      window.history.pushState({ jobDetails: true }, "", `/jobs/${jobId}`);
+    }
+  }
+
+  function closeJobDetails() {
+    setDetailsJobId("");
+    if (window.history.state?.jobDetails) window.history.back();
+    else window.history.replaceState({}, "", "/");
+  }
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -2121,11 +2148,11 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 const financialOpen = mobileFinancialIds.includes(String(job.id));
                 const moreOpen = mobileMoreJobId === job.id;
                 return (
-                  <article key={job.id} onClick={() => setMobileDetailJob(job)} className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${job.rowFlag === "Problem" || job.status === "Dry Run" ? "border-red-400/60 bg-red-500/10" : "border-white/10 bg-[#0f1c2e]"}`}>
+                  <article key={job.id} onClick={() => openJobDetails(job)} className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${job.rowFlag === "Problem" || job.status === "Dry Run" ? "border-red-400/60 bg-red-500/10" : "border-white/10 bg-[#0f1c2e]"}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-black text-white">#{index + 1}</span>
+                          <button type="button" onClick={(event) => { event.stopPropagation(); openJobDetails(job); }} className="flex min-h-11 items-center rounded-lg px-1 text-sm font-black text-blue-300 underline decoration-blue-400/50 underline-offset-4">{job.reference || `#${index + 1}`}</button>
                           <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${job.rowFlag === "Problem" ? "bg-red-500 text-white" : "bg-white/10 text-slate-300"}`}>{job.rowFlag || "Normal"}</span>
                         </div>
                         <p className="mt-2 text-xs font-semibold text-slate-400">{job.date || "No date"} · {job.time || "No time"}</p>
@@ -2226,9 +2253,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       }`}
                     >
                       <Td>
-                        <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-slate-200">
-                          #{index + 1}
-                        </span>
+                        <button type="button" onClick={() => openJobDetails(job)} className="inline-flex min-h-9 items-center rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-blue-200 underline decoration-blue-400/40 underline-offset-4 hover:bg-blue-500/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400">
+                          {job.reference || `#${index + 1}`}
+                        </button>
                       </Td>
 
                       <Td>
@@ -2541,6 +2568,23 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 onUpdate={() => { setUpdatesJob(mobileDetailJob); setMobileDetailJob(null); }}
                 onAssign={() => { setAssignmentJob(mobileDetailJob); setMobileDetailJob(null); }}
                 onMap={() => handleJobContextAction("maps", mobileDetailJob)}
+              />
+            )}
+
+            {detailsJobId && (
+              <JobDetailsDrawer
+                jobId={detailsJobId}
+                role={normalizedUserRole}
+                currentUserName={currentUserName}
+                onClose={closeJobDetails}
+                onEdit={(job) => { closeJobDetails(); setUpdatesJob(job); }}
+                onUpdate={(job) => { closeJobDetails(); setUpdatesJob(job); }}
+                onAssign={(job) => { closeJobDetails(); setAssignmentJob(job); }}
+                onFiles={(job) => { closeJobDetails(); setDocumentsJob(job); }}
+                onFlatRate={() => { closeJobDetails(); onOpenFlatRate(); }}
+                onParts={() => { closeJobDetails(); onOpenParts(); }}
+                onDelete={(job) => { closeJobDetails(); requestDelete(job); }}
+                onChangeStatus={(job, status) => updateJob(job.id, "status", status)}
               />
             )}
 
@@ -3763,6 +3807,182 @@ function MobileJobDetailSheet({ job, onClose, onUpdate, onAssign, onMap }) {
     </div>
   );
 }
+
+function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpdate, onAssign, onFiles, onFlatRate, onParts, onDelete, onChangeStatus }) {
+  const [details, setDetails] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [updateNotice, setUpdateNotice] = useState("");
+  const isAdmin = role === "admin";
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadDetails(showSkeleton = true) {
+      if (showSkeleton) setLoading(true);
+      setError("");
+      const { data: rawJob, error: jobError } = await supabase.from("jobs").select("*").eq("id", jobId).single();
+      if (!mounted) return;
+      if (jobError || !rawJob) {
+        setError(jobError?.message || "Job not found.");
+        setLoading(false);
+        return;
+      }
+      const normalizedJob = { ...fromDbJob(rawJob), raw: rawJob };
+      const related = await Promise.all([
+        loadJobRelation("change_logs", "job_id", jobId),
+        loadJobRelation("activity_log", "entity_id", jobId),
+        loadJobRelation("job_labor_operations", "job_id", jobId),
+        loadJobRelation("job_parts", "job_id", jobId),
+        loadJobRelation("job_files", "job_id", jobId),
+        rawJob.technician_id ? loadSingleRelation("technicians", rawJob.technician_id) : Promise.resolve(null),
+        rawJob.customer_id ? loadSingleRelation("customers", rawJob.customer_id) : Promise.resolve(null),
+      ]);
+      if (!mounted) return;
+      const [changeLogs, activity, labor, parts, files, technician, customer] = related;
+      setDetails({ job: normalizedJob, changeLogs, activity, labor, parts, files, technician, customer });
+      setLoading(false);
+    }
+    loadDetails();
+    const channel = supabase.channel(`job-details-${jobId}`).on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "jobs", filter: `id=eq.${jobId}` },
+      async () => {
+        await loadDetails(false);
+        const latestChanges = await loadJobRelation("change_logs", "job_id", jobId);
+        const editor = latestChanges.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0]?.user_name;
+        if (mounted) setUpdateNotice(`This job was updated by ${editor || "another user"}.`);
+      }
+    ).subscribe();
+    return () => { mounted = false; supabase.removeChannel(channel); };
+  }, [jobId]);
+
+  const job = details?.job;
+  const raw = job?.raw || {};
+  const customer = details?.customer || {};
+  const technician = details?.technician || {};
+  const phone = valueFrom(customer.phone, raw.customer_phone, customerPhoneFromJob(job));
+  const email = valueFrom(customer.email, raw.customer_email);
+  const address = valueFrom(raw.breakdown_location, raw.location, job?.location);
+  const locationParts = parseLocation(address);
+  const timeline = buildJobDetailsTimeline(details);
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/55" onClick={onClose}>
+      <aside className="ml-auto flex h-[100dvh] w-full max-w-[720px] flex-col overflow-hidden bg-[#081421] text-slate-100 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <header className="border-b border-white/10 bg-[#0b1b2d] p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0"><p className="text-xs font-black uppercase tracking-[0.18em] text-blue-300">Job Details</p><h2 className="mt-1 truncate text-2xl font-black text-white">{job?.reference || job?.id || "Loading job"}</h2><p className="mt-1 truncate text-sm text-slate-400">{job?.company || "Complete operational record"}</p></div>
+            <button type="button" onClick={onClose} className="min-h-11 shrink-0 rounded-xl bg-white/10 px-4 font-bold text-white hover:bg-white/15">Close</button>
+          </div>
+          {updateNotice && <div className="mt-3 rounded-xl border border-blue-400/30 bg-blue-500/10 px-3 py-2 text-sm font-bold text-blue-100">{updateNotice}</div>}
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          {loading && <JobDetailsSkeleton />}
+          {error && <div className="rounded-2xl border border-red-400/30 bg-red-500/10 p-5 font-bold text-red-100">Unable to load job details: {error}</div>}
+          {!loading && job && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2 rounded-2xl border border-white/10 bg-white/5 p-3">
+                <DetailAction label="Edit Job" onClick={() => onEdit(job)} />
+                <DetailAction label="Add Update" onClick={() => onUpdate(job)} />
+                <DetailAction label="Assign Technician" onClick={() => onAssign(job)} />
+                <DetailAction label="Add Labor" onClick={onFlatRate} />
+                <DetailAction label="Add Parts" onClick={onParts} />
+                <DetailAction label="Upload File" onClick={() => onFiles(job)} />
+                <DetailAction label="Print" onClick={() => window.print()} />
+                <DetailAction label="Delete Job" danger onClick={() => onDelete(job)} />
+              </div>
+
+              <DetailSection title="Job Identification">
+                <DetailGrid items={[
+                  ["Internal job number", job.id], ["Invoice number", job.reference], ["Reference number", valueFrom(raw.reference, raw.reference_number, raw.po_number)],
+                  ["Created", valueFrom(raw.created_at, `${job.date || ""} ${job.time || ""}`)], ["Last modified", raw.updated_at], ["Status", job.status],
+                  ["Priority", job.rowFlag], ["Job source", valueFrom(raw.job_source, raw.source, "Dispatch Live")],
+                ]} />
+                <label className="mt-3 grid gap-1 text-xs font-black uppercase text-slate-400">Change Status<select value={job.status} onChange={(event) => onChangeStatus(job, event.target.value)} className={`${darkSelectClass} min-h-11 px-3 text-sm font-bold`}>{jobStatusOptions.map((status) => <option key={status} value={status} style={darkOptionStyle}>{jobStatusLabel(status)}</option>)}</select></label>
+              </DetailSection>
+
+              <DetailSection title="Customer Information">
+                <DetailGrid items={[["Company", valueFrom(customer.company_name, customer.name, job.company)], ["Contact", valueFrom(customer.contact_name, raw.contact_name)], ["Phone", phone], ["Email", email], ["Customer ID", valueFrom(raw.customer_id, customer.id)], ["Preferred payment", valueFrom(customer.preferred_payment_method, job.paymentMethod)]]} />
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"><ContactLink label="Call" href={phone ? `tel:${phone}` : ""} /><ContactLink label="Text" href={phone ? `sms:${phone}` : ""} /><ContactLink label="WhatsApp" href={phone ? `https://wa.me/${phone.replace(/\D/g, "")}` : customerWhatsAppLink(job)} external /><ContactLink label="Email" href={email ? `mailto:${email}` : ""} /></div>
+              </DetailSection>
+
+              <DetailSection title="Location Information">
+                <DetailGrid items={[["Breakdown location", address], ["City", valueFrom(raw.city, locationParts.city)], ["State", valueFrom(raw.state, locationParts.state)], ["ZIP", valueFrom(raw.zip_code, raw.zip)], ["Latitude", raw.latitude], ["Longitude", raw.longitude], ["Location notes", raw.location_notes]]} />
+                <div className="mt-3 grid grid-cols-3 gap-2"><DetailAction label="Open Map" onClick={() => window.open(mapLink(address), "_blank", "noopener,noreferrer")} /><DetailAction label="Copy Address" onClick={() => navigator.clipboard?.writeText(address || "")} /><DetailAction label="Share Location" onClick={() => shareJobLocation(address)} /></div>
+              </DetailSection>
+
+              <DetailSection title="Unit Information"><DetailGrid items={[["Unit type", valueFrom(raw.unit_type, raw.vehicle_type)], ["Truck number", valueFrom(raw.truck_number, raw.truck_unit)], ["Trailer number", raw.trailer_number], ["VIN", raw.vin], ["Year", raw.year], ["Make", raw.make], ["Model", raw.model], ["Engine", raw.engine], ["License plate", raw.license_plate], ["Mileage", raw.mileage], ["Complaint", valueFrom(raw.complaint, complaintFromUpdates(job.updates))]]} /></DetailSection>
+
+              <DetailSection title="Dispatch Information"><DetailGrid items={[["Created by", valueFrom(raw.created_by_name, raw.created_by)], ["Dispatcher", job.dispatch], ["Supervisor", raw.supervisor], ["Technician", valueFrom(technician.full_name, job.tech)], ["Technician phone", technician.phone], ["Technician company", valueFrom(technician.company, technician.company_name)], ["Technician city", technician.city], ["Dispatch time", valueFrom(raw.dispatch_time, job.time)], ["Assigned time", valueFrom(raw.assigned_at, job.assignedAt)], ["En route", raw.en_route_at], ["On site", raw.on_site_at], ["Completed", raw.completed_at], ["Actual ETA", valueFrom(raw.manual_eta, extractEta(job.updates))]]} /></DetailSection>
+
+              <DetailSection title="Status and Timeline">{timeline.length ? <div className="space-y-3">{timeline.map((entry, index) => <div key={`${entry.time}-${index}`} className="border-l-2 border-blue-500 pl-3"><p className="text-sm font-black text-white">{entry.action}</p><p className="text-xs text-slate-400">{formatDetailDate(entry.time)} · {entry.user || "System"}</p>{(entry.oldValue || entry.newValue) && <p className="mt-1 text-xs text-slate-300">{entry.oldValue || "—"} → {entry.newValue || "—"}</p>}{entry.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{entry.notes}</p>}</div>)}</div> : <EmptyDetail label="No timeline entries recorded." />}</DetailSection>
+
+              <DetailSection title="Updates and Notes"><DetailGrid items={[["Dispatcher updates", job.updates], ["Technician updates", raw.technician_updates], ["Internal notes", raw.internal_notes], ["Customer notes", raw.customer_notes], ["Cancellation reason", raw.cancellation_reason], ["Dry-run reason", raw.dry_run_reason]]} preserveText /></DetailSection>
+
+              <DetailSection title="Labor Information">{details.labor.length ? <div className="space-y-2">{details.labor.map((item) => <div key={item.id} className="rounded-xl bg-white/5 p-3"><p className="font-bold text-white">{item.operation_name || "Labor operation"}</p><DetailGrid items={[["Hours", item.hours], ["Quantity", item.quantity], ...(isAdmin ? [["Labor rate", money(item.labor_rate)], ["Labor total", money(item.labor_total)]] : []), ["Added by", item.created_by], ["Added", item.created_at]]} /></div>)}</div> : <EmptyDetail label="No labor operations recorded." />}</DetailSection>
+
+              <DetailSection title="Parts Information">{details.parts.length ? <div className="space-y-2">{details.parts.map((item) => <div key={item.id} className="rounded-xl bg-white/5 p-3"><p className="font-bold text-white">{item.part_name_snapshot || item.part_name || "Part"}</p><DetailGrid items={[["Part number", item.part_number_snapshot || item.part_number], ["Brand", item.brand_name], ["Quantity", item.quantity], ["Unit price", money(item.unit_selling_price)], ["Core charge", money(item.core_charge)], ["Extended total", money(item.extended_total)], ["Supplier", item.supplier_name], ["Availability", item.availability_status], ["Added by", item.created_by]]} /></div>)}</div> : <EmptyDetail label="No parts recorded." />}</DetailSection>
+
+              {isAdmin && <DetailSection title="Financial Information" accent><DetailGrid items={[["Total bill", money(job.totalBill)], ["Parts cost", money(job.parts)], ["Tech labor", money(job.techLabor)], ["Other costs", money(raw.other_costs)], ["Service call", money(raw.service_call)], ["Mileage", money(raw.mileage_fee)], ["After-hours fees", money(raw.after_hours_fee)], ["Tax", money(raw.tax)], ["Discount", money(raw.discount)], ["Gross profit", money(Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0))], ["Profit margin", profitMargin(job)], ["Tech payment", money(raw.tech_payment)], ["Payment status", job.techPaymentStatus]]} /></DetailSection>}
+
+              <DetailSection title="Invoice and Payment"><DetailGrid items={[["Invoice status", job.invoice], ["Payment method", job.paymentMethod], ["Payment state", job.invoice === "Paid" ? "Paid" : job.invoice === "Cancelled" ? "Cancelled" : "Pending"], ["Payment reference", valueFrom(raw.payment_reference, job.techPaymentReference)], ["Payment date", valueFrom(raw.payment_date, job.techPaidDate)], ["Received by", job.paymentReceiver]]} /></DetailSection>
+
+              <DetailSection title="Files and Photos">{details.files.length || job.photo_url ? <div className="grid gap-2 sm:grid-cols-2">{[...details.files, ...(job.photo_url ? [{ id: "job-photo", file_url: job.photo_url, file_name: "Job photo" }] : [])].map((file) => { const url = valueFrom(file.file_url, file.public_url, file.url); return <a key={file.id || url} href={url} target="_blank" rel="noreferrer" className="min-w-0 rounded-xl border border-white/10 bg-white/5 p-3 hover:bg-white/10"><p className="truncate font-bold text-blue-200">{file.file_name || file.name || file.document_type || "Attachment"}</p><p className="mt-1 text-xs text-slate-400">Preview / Download / Full Screen</p></a>; })}</div> : <EmptyDetail label="No files uploaded." />}</DetailSection>
+
+              {isAdmin && <DetailSection title="Audit Information"><DetailGrid items={[["Created by", valueFrom(raw.created_by_name, raw.created_by)], ["Last edited by", valueFrom(raw.updated_by_name, raw.updated_by)], ["Current viewer", currentUserName]]} />{timeline.length ? <p className="mt-3 text-sm text-slate-300">{timeline.length} recorded history events, including status, invoice, payment, and blocked deletion activity when available.</p> : <EmptyDetail label="No audit entries available." />}</DetailSection>}
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DetailSection({ title, children, accent = false }) {
+  return <section className={`rounded-2xl border p-4 ${accent ? "border-emerald-400/30 bg-emerald-500/10" : "border-white/10 bg-white/[0.035]"}`}><h3 className="mb-3 text-sm font-black uppercase tracking-[0.14em] text-blue-200">{title}</h3>{children}</section>;
+}
+
+function DetailGrid({ items, preserveText = false }) {
+  return <dl className="grid gap-x-4 gap-y-3 sm:grid-cols-2">{items.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</dt><dd className={`${preserveText ? "whitespace-pre-wrap" : "break-words"} mt-1 text-sm font-semibold text-slate-200`}>{value === 0 ? 0 : value || "Not recorded"}</dd></div>)}</dl>;
+}
+
+function DetailAction({ label, onClick, danger = false }) {
+  return <button type="button" onClick={onClick} className={`min-h-11 rounded-xl px-3 text-xs font-bold ${danger ? "bg-red-500/15 text-red-200 hover:bg-red-500/25" : "bg-white/10 text-white hover:bg-white/15"}`}>{label}</button>;
+}
+
+function ContactLink({ label, href, external = false }) {
+  return <a href={href || undefined} target={external && href ? "_blank" : undefined} rel={external ? "noreferrer" : undefined} aria-disabled={!href} className={`flex min-h-11 items-center justify-center rounded-xl px-3 text-xs font-bold ${href ? "bg-blue-600 text-white" : "pointer-events-none bg-white/5 text-slate-600"}`}>{label}</a>;
+}
+
+function EmptyDetail({ label }) { return <p className="text-sm font-semibold text-slate-500">{label}</p>; }
+function JobDetailsSkeleton() { return <div className="space-y-4">{[1, 2, 3, 4].map((item) => <div key={item} className="h-32 animate-pulse rounded-2xl bg-white/5" />)}</div>; }
+
+async function loadJobRelation(table, field, value) {
+  const { data, error } = await supabase.from(table).select("*").eq(field, value);
+  if (error) return [];
+  return Array.isArray(data) ? data : [];
+}
+
+async function loadSingleRelation(table, id) {
+  const { data, error } = await supabase.from(table).select("*").eq("id", id).single();
+  return error ? null : data;
+}
+
+function buildJobDetailsTimeline(details) {
+  if (!details) return [];
+  return [
+    ...details.changeLogs.map((entry) => ({ time: entry.created_at, user: entry.user_name, action: entry.action || titleFromText(entry.field_name), oldValue: entry.old_value, newValue: entry.new_value, notes: entry.notes })),
+    ...details.activity.map((entry) => ({ time: entry.created_at, user: entry.created_by, action: entry.action, notes: entry.description })),
+  ].filter((entry) => entry.time).sort((a, b) => new Date(a.time) - new Date(b.time));
+}
+
+function valueFrom(...values) { return values.find((value) => value !== undefined && value !== null && String(value).trim() !== "") || ""; }
+function formatDetailDate(value) { if (!value) return "Unknown time"; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(); }
+function complaintFromUpdates(updates) { return String(updates || "").match(/complaint\s*:\s*([^\n\r]+)/i)?.[1]?.trim() || ""; }
+function profitMargin(job) { const bill = Number(job?.totalBill || 0); if (!bill) return "0%"; return `${(((bill - Number(job.parts || 0) - Number(job.techLabor || 0)) / bill) * 100).toFixed(1)}%`; }
+function shareJobLocation(address) { if (navigator.share) navigator.share({ title: "Dispatch Live Job Location", text: address || "", url: mapLink(address) }).catch(() => {}); else navigator.clipboard?.writeText(mapLink(address)); }
+function jobIdFromPath() { return window.location.pathname.match(/^\/jobs\/([^/]+)$/)?.[1] || ""; }
 
 function jobPartsLocation(job) {
   const exactLocation = String(job?.location || "").trim();
