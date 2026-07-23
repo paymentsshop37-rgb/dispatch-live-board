@@ -159,6 +159,7 @@ export default function TechnicianCenter({ currentUser }) {
   const canApproveTechnicians = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
   const canEditDirectoryTechnicians = canApproveTechnicians;
+  console.log("Rendering technicians:", technicians);
   const knownColumns = useMemo(() => getKnownColumns(technicians).filter((column) => !missingColumns.includes(column)), [missingColumns, technicians]);
   const missingDirectoryColumns = useMemo(() => missingColumns, [missingColumns]);
   const registrationLink = buildRegistrationLink();

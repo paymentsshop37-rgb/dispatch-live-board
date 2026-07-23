@@ -123,8 +123,10 @@ export async function loadTechnicians({ includeInactive = false } = {}) {
 
   if (!includeInactive) query = query.eq("is_active", true);
 
-  const { data, error } = await query.order("assigned_number", { ascending: true, nullsFirst: false });
-  console.log("Supabase Error:", error);
+  const { data, error } = await query.order("full_name", { ascending: true });
+  console.log("Technicians returned:", data);
+  console.log("Count:", data?.length);
+  console.log("Error:", error);
 
   if (error) {
     console.error("Technician load error:", error);
@@ -132,7 +134,7 @@ export async function loadTechnicians({ includeInactive = false } = {}) {
   }
 
   const technicians = sortTechniciansByAssignedNumber((data || []).map(normalizeTechnician));
-  return includeInactive ? technicians : technicians.filter((technician) => technician.isActive);
+  return technicians;
 }
 
 export async function loadTechnicianColumnSupport() {

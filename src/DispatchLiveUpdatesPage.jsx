@@ -478,6 +478,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
+  console.log("Rendering technicians:", dispatchTechnicians);
 
   function syncDispatchScroll(source, target) {
     if (horizontalSyncLockRef.current || !source.current || !target.current) return;
