@@ -169,10 +169,24 @@ export default function TechnicianCenter({ currentUser }) {
     setInviteError("");
 
     try {
-      const [nextTechnicians, columnSupport] = await Promise.all([
-        loadTechnicians({ includeInactive: canApproveTechnicians }),
+      const [activeTechnicians, columnSupport] = await Promise.all([
+        loadTechnicians(),
         loadTechnicianColumnSupport(),
       ]);
+      console.log("Role:", currentUser?.role || currentUserRole);
+      console.log("Technicians:", activeTechnicians.length);
+      let nextTechnicians = activeTechnicians;
+      if (canApproveTechnicians) {
+        try {
+          const allTechnicians = await loadTechnicians({ includeInactive: true });
+          nextTechnicians = [
+            ...activeTechnicians,
+            ...allTechnicians.filter((technician) => !technician.isActive),
+          ];
+        } catch (inactiveLoadError) {
+          console.error("Inactive technician load error:", inactiveLoadError);
+        }
+      }
       setTechnicians(nextTechnicians);
       setMissingColumns(columnSupport.missing);
     } catch (loadError) {
@@ -196,10 +210,7 @@ export default function TechnicianCenter({ currentUser }) {
     return subscribeToTechnicians(refreshTechnicians);
   }, []);
 
-  const safeTechnicians = useMemo(() => {
-    if (canViewPrivateTechnicianData) return technicians;
-    return technicians.filter((technician) => technician.isActive);
-  }, [canViewPrivateTechnicianData, technicians]);
+  const safeTechnicians = technicians;
 
   const visibleTabs = useMemo(
     () => canApproveTechnicians ? tabs : tabs.filter((tab) => tab !== "Inactive Technicians"),

@@ -50,7 +50,6 @@ export function rankTechnicians(technicians, job) {
   const requestedService = job.requestedService || job.service || job.updates || "";
 
   return technicians
-    .filter((technician) => technician.availability === "Available")
     .filter((technician) => coverageMatches(technician, city))
     .filter((technician) => serviceMatches(technician, requestedService))
     .map((technician) => ({

@@ -123,14 +123,15 @@ export async function loadTechnicians({ includeInactive = false } = {}) {
 
   if (!includeInactive) query = query.eq("is_active", true);
 
-  const { data, error } = await query.order("full_name", { ascending: true });
+  const { data, error } = await query.order("assigned_number", { ascending: true, nullsFirst: false });
+  console.log("Supabase Error:", error);
 
   if (error) {
     console.error("Technician load error:", error);
     throw error;
   }
 
-  const technicians = (data || []).map(normalizeTechnician);
+  const technicians = sortTechniciansByAssignedNumber((data || []).map(normalizeTechnician));
   return includeInactive ? technicians : technicians.filter((technician) => technician.isActive);
 }
 
@@ -349,7 +350,6 @@ export async function getAvailableTechnicians(city, service) {
 
     return (
       technician.isActive &&
-      technician.status === "Approved" &&
       technician.availability === "Available" &&
       cityMatches &&
       serviceMatches

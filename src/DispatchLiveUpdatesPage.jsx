@@ -700,6 +700,8 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     setTechnicianLoadError("");
     try {
       const technicians = await loadTechnicians();
+      console.log("Role:", currentUser?.role || currentUserRole);
+      console.log("Technicians:", technicians.length);
       setDispatchTechnicians(technicians);
     } catch (error) {
       console.error("Technician load error:", error);
@@ -1000,9 +1002,8 @@ profit: filteredJobs.reduce(
   }, [filteredJobs]);
 
   const assignmentTechnicians = useMemo(() => {
-    const jobLocation = parseLocation(assignmentJob?.location);
-    const city = (assignmentFilters.city || jobLocation.city).trim().toLowerCase();
-    const state = (assignmentFilters.state || jobLocation.state).trim().toLowerCase();
+    const city = assignmentFilters.city.trim().toLowerCase();
+    const state = assignmentFilters.state.trim().toLowerCase();
     const service = assignmentFilters.service.trim().toLowerCase();
 
     return dispatchTechnicians
@@ -1023,7 +1024,7 @@ profit: filteredJobs.reduce(
       return matchesLocation && matchesService;
     })
       .sort(compareTechniciansByAssignedNumber);
-  }, [assignmentFilters, assignmentJob, dispatchTechnicians]);
+  }, [assignmentFilters, dispatchTechnicians]);
 
   async function addJob(e) {
     e.preventDefault();
