@@ -22,6 +22,9 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "../activity";
+import CitiesWithoutJobsPanel from "../coverage/CitiesWithoutJobsPanel";
+import { buildCitiesWithoutJobs, loadCoverageCities, setCoverageCityActive } from "../coverage/coverageCityService";
+import { loadTechnicians } from "../technicians/technicianService";
 import {
   techPaymentControlStyle,
   techPaymentLabel,
@@ -87,7 +90,7 @@ const activityIconMap = {
   "Login Failure": ShieldAlert,
 };
 
-export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
+export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTechnicians }) {
   const [jobs, setJobs] = useState([]);
   const [activityRows, setActivityRows] = useState([]);
   const [warnings, setWarnings] = useState([]);
@@ -95,6 +98,9 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
   const [lastSync, setLastSync] = useState(null);
   const [filterMode, setFilterMode] = useState(defaultFilterMode);
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
+  const [coverageCities, setCoverageCities] = useState([]);
+  const [technicians, setTechnicians] = useState([]);
+  const [citiesWithoutJobsOpen, setCitiesWithoutJobsOpen] = useState(false);
 
   useEffect(() => {
     loadDashboard();
@@ -102,9 +108,11 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
 
   async function loadDashboard() {
     setLoading(true);
-    const [{ data, error }, recentActivity] = await Promise.all([
+    const [{ data, error }, recentActivity, coverageResult, technicianResult] = await Promise.all([
       supabase.from("jobs").select("*"),
       getRecentActivity({ limit: 100 }),
+      loadCoverageCities({ includeInactive: true }).then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
+      loadTechnicians().then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
     ]);
 
     const nextWarnings = [];
@@ -116,6 +124,10 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
       const rows = data || [];
       setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
     }
+    if (coverageResult.error) nextWarnings.push(`Coverage cities unavailable: ${coverageResult.error.message}`);
+    else setCoverageCities(coverageResult.rows);
+    if (technicianResult.error) nextWarnings.push(`Active technicians unavailable: ${technicianResult.error.message}`);
+    else setTechnicians(technicianResult.rows);
 
     setActivityRows(normalizeActivity(recentActivity || []));
     setWarnings(nextWarnings);
@@ -137,6 +149,10 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
     [filteredJobs]
   );
   const activityFeed = useMemo(() => activityRows.slice(0, 15), [activityRows]);
+  const missingCityMetric = useMemo(
+    () => buildCitiesWithoutJobs({ coverageCities, jobs, technicians, range: dateRange, includeCancelled: false, includeDryRuns: false }),
+    [coverageCities, dateRange, jobs, technicians]
+  );
 
   function exportCsv() {
     const headers = ["Date", "Invoice #", "Company", "City", "Status", "Dispatcher", "Technician", "Payment Method", "Invoice Status", "Tech Payment", "Total Bill", "Parts", "Tech Labor", "Profit"];
@@ -194,13 +210,14 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
           </div>
         )}
 
-        <section className="executive-kpi-grid grid gap-4 lg:grid-cols-3 2xl:grid-cols-6">
+        <section className="executive-kpi-grid grid gap-4 lg:grid-cols-3 2xl:grid-cols-7">
           <KpiCard title="Revenue" value={money(analytics.revenue)} detail="Today's trend" icon={CircleDollarSign} tone="blue" trend={analytics.todayRevenue} />
           <KpiCard title="Expenses" value={money(analytics.expenses)} detail="Parts + labor" icon={TrendingDown} tone="orange" trend={analytics.todayExpenses} />
           <KpiCard title="Profit" value={money(analytics.profit)} detail={`${analytics.profitMargin.toFixed(1)}% margin`} icon={TrendingUp} tone="green" trend={analytics.todayProfit} />
           <KpiCard title="Total Jobs" value={analytics.totalJobs} detail="Filtered range" icon={Truck} tone="purple" trend={analytics.jobsToday} suffix="today" />
           <KpiCard title="Open Invoices" value={analytics.openInvoices} detail="Not paid/cancelled" icon={FileText} tone="orange" trend={analytics.needReviewInvoices} suffix="need review" />
           <KpiCard title="Average ETA" value={`${analytics.averageEta} min`} detail="Operational estimate" icon={Clock} tone="cyan" trend={analytics.jobsWaitingEta} suffix="waiting ETA" />
+          <KpiCard title="Cities Without Jobs" value={missingCityMetric.summary.withoutJobs} detail="Click to review coverage" icon={MapPin} tone="orange" onClick={() => setCitiesWithoutJobsOpen(true)} />
         </section>
 
         <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_500px]">
@@ -272,6 +289,35 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob }) {
             </Panel>
           </aside>
         </div>
+        {citiesWithoutJobsOpen && (
+          <CitiesWithoutJobsPanel
+            coverageCities={coverageCities}
+            jobs={jobs}
+            technicians={technicians}
+            range={dateRange}
+            rangeLabel={filterMode}
+            isAdmin
+            onClose={() => setCitiesWithoutJobsOpen(false)}
+            onOpenTechnicians={(city) => {
+              setCitiesWithoutJobsOpen(false);
+              if (city) localStorage.setItem("nttr-technician-city-filter", city.city || city.normalizedCity);
+              onOpenTechnicians?.();
+            }}
+            onPreviousJobs={(city) => {
+              setCitiesWithoutJobsOpen(false);
+              const matchingJob = jobs.find((job) => String(job.city || "").toUpperCase().includes(city.normalizedCity));
+              if (matchingJob && onOpenJob) onOpenJob(matchingJob.id);
+            }}
+            onToggleCity={async (city, active) => {
+              try {
+                await setCoverageCityActive(city.id, active);
+                setCoverageCities(await loadCoverageCities({ includeInactive: true }));
+              } catch (error) {
+                setWarnings((current) => [...current, `Unable to update coverage city: ${error.message}`]);
+              }
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -337,7 +383,7 @@ function ExecutiveHeader({ loading, lastSync, filterMode, customRange, onRefresh
   );
 }
 
-function KpiCard({ title, value, detail, icon: Icon, tone, trend, suffix }) {
+function KpiCard({ title, value, detail, icon: Icon, tone, trend, suffix, onClick }) {
   const tones = {
     blue: "border-blue-400/20 from-blue-500/20 text-blue-300",
     green: "border-emerald-400/20 from-emerald-500/20 text-emerald-300",
@@ -346,8 +392,9 @@ function KpiCard({ title, value, detail, icon: Icon, tone, trend, suffix }) {
     cyan: "border-cyan-400/20 from-cyan-500/20 text-cyan-300",
   };
 
+  const Component = onClick ? "button" : "article";
   return (
-    <article className={`group rounded-3xl border bg-gradient-to-br to-[#0b1728] p-5 shadow-xl shadow-blue-950/15 transition duration-200 hover:-translate-y-1 hover:shadow-2xl ${tones[tone] || tones.blue}`}>
+    <Component type={onClick ? "button" : undefined} onClick={onClick} className={`group rounded-3xl border bg-gradient-to-br to-[#0b1728] p-5 text-left shadow-xl shadow-blue-950/15 transition duration-200 hover:-translate-y-1 hover:shadow-2xl ${onClick ? "cursor-pointer" : ""} ${tones[tone] || tones.blue}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">{title}</p>
@@ -364,7 +411,7 @@ function KpiCard({ title, value, detail, icon: Icon, tone, trend, suffix }) {
         </div>
         <Sparkline />
       </div>
-    </article>
+    </Component>
   );
 }
 

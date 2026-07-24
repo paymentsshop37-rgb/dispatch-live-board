@@ -43,6 +43,8 @@ import {
   techPaymentStatusOptions,
   techPaymentVisual,
 } from "./utils/techPaymentStatus";
+import CitiesWithoutJobsPanel from "./modules/coverage/CitiesWithoutJobsPanel";
+import { dateRangeForMode, loadCoverageCities, setCoverageCityActive } from "./modules/coverage/coverageCityService";
 
 const normalizeText = (value) => {
   return String(value || "")
@@ -397,7 +399,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, onLogout, onOpenFlatRate, onOpenParts }) {
+export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
   const formRef = useRef(null);
   const searchInputRef = useRef(null);
   const tableScrollRef = useRef(null);
@@ -465,6 +467,9 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [supportsActivityLog, setSupportsActivityLog] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [technicianLoadError, setTechnicianLoadError] = useState("");
+  const [coverageCities, setCoverageCities] = useState([]);
+  const [coverageCitiesError, setCoverageCitiesError] = useState("");
+  const [citiesWithoutJobsOpen, setCitiesWithoutJobsOpen] = useState(false);
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -582,6 +587,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
 
     loadJobs();
     loadDispatchTechnicians();
+    loadDispatchCoverageCities();
     checkJobAssignmentSupport();
 
     const channel = supabase
@@ -707,6 +713,16 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     } catch (error) {
       console.error("Technician load error:", error);
       setTechnicianLoadError(error?.message || "Unable to load technicians.");
+    }
+  }
+
+  async function loadDispatchCoverageCities() {
+    setCoverageCitiesError("");
+    try {
+      setCoverageCities(await loadCoverageCities({ includeInactive: isAdmin }));
+    } catch (error) {
+      console.error("Coverage cities load error:", error);
+      setCoverageCitiesError(error?.message || "Unable to load coverage cities.");
     }
   }
 
@@ -854,6 +870,10 @@ const isLastYear =
 
 const matchesPeriod =
   periodFilter === "All"
+    ? true
+    : periodFilter === "Today"
+    ? job.date === new Date().toISOString().slice(0, 10)
+    : periodFilter === "Custom Range" || periodFilter === "CustomRange"
     ? true
     : periodFilter === "This Week" || periodFilter === "ThisWeek"
     ? isThisWeek
@@ -1026,6 +1046,13 @@ profit: filteredJobs.reduce(
     })
       .sort(compareTechniciansByAssignedNumber);
   }, [assignmentFilters, dispatchTechnicians]);
+  const coverageDateRange = useMemo(
+    () => dateRangeForMode(periodFilter, fromDate, toDate),
+    [fromDate, periodFilter, toDate]
+  );
+  const coverageRangeLabel = fromDate || toDate
+    ? `Custom Range: ${fromDate || "Start"} to ${toDate || "Today"}`
+    : String(periodFilter || "All").replace(/([a-z])([A-Z])/g, "$1 $2");
 
   async function addJob(e) {
     e.preventDefault();
@@ -1656,10 +1683,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 onChange={(e) => setPeriodFilter(e.target.value)}
               >
                 <option style={darkOptionStyle} value="ThisWeek">This Week</option>
+                <option style={darkOptionStyle} value="Today">Today</option>
                 <option style={darkOptionStyle} value="LastWeek">Last Week</option>
                 <option style={darkOptionStyle} value="ThisMonth">This Month</option>
                 <option style={darkOptionStyle} value="LastMonth">Last Month</option>
                 <option style={darkOptionStyle} value="ThisYear">This Year</option>
+                <option style={darkOptionStyle} value="CustomRange">Custom Range</option>
                 <option style={darkOptionStyle} value="All">All</option>
               </select>
               <button type="button" onClick={() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" })} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-white/15">
@@ -1969,10 +1998,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     onChange={(e) => setPeriodFilter(e.target.value)}
                   >
                     <option style={darkOptionStyle} value="ThisWeek">This Week</option>
+                    <option style={darkOptionStyle} value="Today">Today</option>
                     <option style={darkOptionStyle} value="LastWeek">Last Week</option>
                     <option style={darkOptionStyle} value="ThisMonth">This Month</option>
                     <option style={darkOptionStyle} value="LastMonth">Last Month</option>
                     <option style={darkOptionStyle} value="ThisYear">This Year</option>
+                    <option style={darkOptionStyle} value="CustomRange">Custom Range</option>
                     <option style={darkOptionStyle} value="LastYear">Last Year</option>
                     <option style={darkOptionStyle} value="All">All</option>
                   </select>
@@ -2215,12 +2246,24 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 >
                   Reset
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setCitiesWithoutJobsOpen(true)}
+                  className="h-9 whitespace-nowrap rounded-lg bg-amber-500 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-400"
+                >
+                  Cities Without Jobs
+                </button>
               </div>
             </div>
 
             {technicianLoadError && (
               <div className="mb-3 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100">
                 Technician load error: {technicianLoadError}
+              </div>
+            )}
+            {coverageCitiesError && (
+              <div className="mb-3 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm font-bold text-red-100">
+                Coverage cities load error: {coverageCitiesError}
               </div>
             )}
 
@@ -2661,6 +2704,40 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   </div>
                 </div>
               </div>
+            )}
+
+            {citiesWithoutJobsOpen && (
+              <CitiesWithoutJobsPanel
+                coverageCities={coverageCities}
+                jobs={jobs}
+                technicians={dispatchTechnicians}
+                range={coverageDateRange}
+                rangeLabel={coverageRangeLabel}
+                isAdmin={isAdmin}
+                onClose={() => setCitiesWithoutJobsOpen(false)}
+                onOpenTechnicians={(city) => {
+                  setCitiesWithoutJobsOpen(false);
+                  if (city) localStorage.setItem("nttr-technician-city-filter", city.city || city.normalizedCity);
+                  onOpenTechnicians?.();
+                }}
+                onPreviousJobs={(city) => {
+                  setCitiesWithoutJobsOpen(false);
+                  setSearch(city.normalizedCity);
+                  setPeriodFilter("All");
+                  setFromDate("");
+                  setToDate("");
+                  window.setTimeout(() => document.getElementById("live-jobs-table")?.scrollIntoView({ behavior: "smooth" }), 0);
+                }}
+                onToggleCity={async (city, active) => {
+                  try {
+                    await setCoverageCityActive(city.id, active);
+                    await loadDispatchCoverageCities();
+                  } catch (error) {
+                    console.error("Coverage city update error:", error);
+                    setCoverageCitiesError(error?.message || "Unable to update coverage city.");
+                  }
+                }}
+              />
             )}
 
             {mobileDetailJob && (

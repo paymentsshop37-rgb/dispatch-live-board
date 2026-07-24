@@ -565,8 +565,8 @@ export default function App() {
         />
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
-        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} />}
+        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} /> : <DispatcherDashboard />)}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}

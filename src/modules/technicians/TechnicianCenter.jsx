@@ -207,6 +207,12 @@ export default function TechnicianCenter({ currentUser }) {
   }
 
   useEffect(() => {
+    const cityFilterRequest = localStorage.getItem("nttr-technician-city-filter");
+    if (cityFilterRequest) {
+      localStorage.removeItem("nttr-technician-city-filter");
+      setSearch(cityFilterRequest);
+      setActiveTab("Directory");
+    }
     refreshTechnicians();
     return subscribeToTechnicians(refreshTechnicians);
   }, []);
