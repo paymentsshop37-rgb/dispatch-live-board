@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -23,7 +23,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "../activity";
 import CitiesWithoutJobsPanel from "../coverage/CitiesWithoutJobsPanel";
-import { buildCitiesWithoutJobs, loadCoverageCities, setCoverageCityActive } from "../coverage/coverageCityService";
+import { buildCitiesWithoutJobs, loadCoverageCities, normalizeCoverageCity, normalizeState, setCoverageCityActive } from "../coverage/coverageCityService";
 import { loadTechnicians } from "../technicians/technicianService";
 import {
   techPaymentControlStyle,
@@ -101,6 +101,7 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
   const [coverageCities, setCoverageCities] = useState([]);
   const [technicians, setTechnicians] = useState([]);
   const [citiesWithoutJobsOpen, setCitiesWithoutJobsOpen] = useState(false);
+  const [cityJobDrilldown, setCityJobDrilldown] = useState(null);
 
   useEffect(() => {
     loadDashboard();
@@ -138,7 +139,8 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
   const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange]);
   const filteredJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, dateRange)), [jobs, dateRange]);
   const analytics = useMemo(() => buildAnalytics(filteredJobs), [filteredJobs]);
-  const cityRows = useMemo(() => groupJobs(filteredJobs, (job) => job.city || "Unknown").slice(0, 10), [filteredJobs]);
+  const cityStatusRows = useMemo(() => buildCityStatusRows(filteredJobs), [filteredJobs]);
+  const cityRows = useMemo(() => cityStatusRows.slice(0, 10).map((row) => ({ label: `${row.city}, ${row.state}`, value: row.total })), [cityStatusRows]);
   const dispatcherRows = useMemo(() => buildDispatcherRows(filteredJobs), [filteredJobs]);
   const technicianRows = useMemo(() => buildTechnicianRows(filteredJobs), [filteredJobs]);
   const techPaymentSummary = useMemo(
@@ -249,7 +251,7 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
             </section>
 
             <section className="executive-chart-grid grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              <Panel title="Jobs by City" subtitle="Top 10 service markets" icon={MapPin}>
+              <Panel title="Top 10 Cities by Jobs" subtitle="Chart view for readability" icon={MapPin}>
                 <HorizontalBars rows={cityRows} emptyLabel="No city data yet." />
               </Panel>
               <Panel title="Invoice Center" subtitle="Invoice workflow summary" icon={FileText}>
@@ -271,6 +273,10 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
                 </div>
               </Panel>
             </section>
+
+            <Panel title="All Cities — Status Breakdown" subtitle="Every city with jobs in the selected date range" icon={MapPin}>
+              <CityStatusBreakdown rows={cityStatusRows} onDrilldown={setCityJobDrilldown} />
+            </Panel>
           </main>
 
           <aside className="space-y-6">
@@ -316,6 +322,13 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
                 setWarnings((current) => [...current, `Unable to update coverage city: ${error.message}`]);
               }
             }}
+          />
+        )}
+        {cityJobDrilldown && (
+          <CityJobsDrilldown
+            selection={cityJobDrilldown}
+            onClose={() => setCityJobDrilldown(null)}
+            onOpenJob={onOpenJob}
           />
         )}
       </div>
@@ -541,6 +554,119 @@ function HorizontalBars({ rows, emptyLabel }) {
   );
 }
 
+const cityStatusColumns = [
+  ["total", "Total Jobs"],
+  ["completed", "Completed"],
+  ["cancelled", "Cancelled"],
+  ["dryRuns", "Dry Runs"],
+  ["active", "Active"],
+  ["pending", "Pending"],
+  ["inProgress", "In Progress"],
+  ["other", "Other / Unknown"],
+];
+
+function CityStatusBreakdown({ rows, onDrilldown }) {
+  const [search, setSearch] = useState("");
+  const [stateFilter, setStateFilter] = useState("All");
+  const [sortBy, setSortBy] = useState("total");
+  const [pageSize, setPageSize] = useState("25");
+  const [page, setPage] = useState(1);
+  const topScrollRef = useRef(null);
+  const tableScrollRef = useRef(null);
+  const tableRef = useRef(null);
+  const syncLockRef = useRef(false);
+  const [tableWidth, setTableWidth] = useState(1200);
+  const states = useMemo(() => ["All", ...new Set(rows.map((row) => row.state).filter(Boolean))].sort(), [rows]);
+  const filteredRows = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return rows
+      .filter((row) => stateFilter === "All" || row.state === stateFilter)
+      .filter((row) => !needle || `${row.city} ${row.state}`.toLowerCase().includes(needle))
+      .sort((a, b) => b[sortBy] - a[sortBy] || b.total - a.total || a.city.localeCompare(b.city));
+  }, [rows, search, sortBy, stateFilter]);
+  const numericPageSize = pageSize === "All" ? filteredRows.length || 1 : Number(pageSize);
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / numericPageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = pageSize === "All" ? filteredRows : filteredRows.slice((safePage - 1) * numericPageSize, safePage * numericPageSize);
+  const totals = useMemo(() => cityStatusColumns.reduce((result, [key]) => ({ ...result, [key]: filteredRows.reduce((sum, row) => sum + row[key], 0) }), {}), [filteredRows]);
+
+  useEffect(() => setPage(1), [pageSize, search, sortBy, stateFilter]);
+  useEffect(() => {
+    const measure = () => setTableWidth(Math.max(tableRef.current?.scrollWidth || 0, tableScrollRef.current?.clientWidth || 0, 1200));
+    measure();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (tableRef.current) observer?.observe(tableRef.current);
+    if (tableScrollRef.current) observer?.observe(tableScrollRef.current);
+    window.addEventListener("resize", measure);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", measure); };
+  }, [pageRows.length]);
+
+  function sync(source, target) {
+    if (syncLockRef.current || !source.current || !target.current) return;
+    syncLockRef.current = true;
+    target.current.scrollLeft = source.current.scrollLeft;
+    requestAnimationFrame(() => { syncLockRef.current = false; });
+  }
+
+  function exportCsv() {
+    const headers = ["City", "State", ...cityStatusColumns.map(([, label]) => label)];
+    const data = filteredRows.map((row) => [row.city, row.state, ...cityStatusColumns.map(([key]) => row[key])]);
+    downloadCityFile([headers, ...data].map((line) => line.map(csvCell).join(",")).join("\n"), "jobs-by-city-status.csv", "text/csv;charset=utf-8");
+  }
+
+  function exportPdf() {
+    const popup = window.open("", "_blank");
+    if (!popup) return;
+    popup.document.write(`<html><head><title>All Cities — Status Breakdown</title><style>body{font-family:Arial;padding:24px;color:#172033}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #ccd4df;padding:6px;text-align:right}th:first-child,td:first-child{text-align:left}th:nth-child(2),td:nth-child(2){text-align:left}th{background:#edf2f7}</style></head><body><h1>All Cities — Status Breakdown</h1><table><thead><tr>${["City", "State", ...cityStatusColumns.map(([, label]) => label)].map((label) => `<th>${escapeCityHtml(label)}</th>`).join("")}</tr></thead><tbody>${filteredRows.map((row) => `<tr><td>${escapeCityHtml(row.city)}</td><td>${escapeCityHtml(row.state)}</td>${cityStatusColumns.map(([key]) => `<td>${row[key]}</td>`).join("")}</tr>`).join("")}<tr><th>TOTAL</th><th></th>${cityStatusColumns.map(([key]) => `<th>${totals[key]}</th>`).join("")}</tr></tbody></table><script>window.print()</script></body></html>`);
+    popup.document.close();
+  }
+
+  return (
+    <div>
+      <div className="mb-4 grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_140px_170px_110px_auto_auto]">
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search city" className="min-h-11 rounded-xl border border-white/10 bg-[#111f33] px-3 text-white outline-none" />
+        <select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)} className="min-h-11 rounded-xl border border-white/10 bg-[#111f33] px-3 font-bold text-white">{states.map((state) => <option key={state}>{state}</option>)}</select>
+        <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="min-h-11 rounded-xl border border-white/10 bg-[#111f33] px-3 font-bold text-white"><option value="total">Sort by Total</option><option value="completed">Sort by Completed</option><option value="cancelled">Sort by Cancelled</option><option value="dryRuns">Sort by Dry Runs</option></select>
+        <select value={pageSize} onChange={(event) => setPageSize(event.target.value)} className="min-h-11 rounded-xl border border-white/10 bg-[#111f33] px-3 font-bold text-white">{["25", "50", "100", "All"].map((size) => <option key={size}>{size}</option>)}</select>
+        <button type="button" onClick={exportCsv} className="min-h-11 rounded-xl bg-blue-500 px-4 font-black text-white">Export CSV</button>
+        <button type="button" onClick={exportPdf} className="min-h-11 rounded-xl bg-white/10 px-4 font-black text-white">Export PDF</button>
+      </div>
+
+      <div className="grid gap-3 lg:hidden">
+        {pageRows.map((row) => <CityStatusCard key={row.key} row={row} onDrilldown={onDrilldown} />)}
+        <TotalsCard totals={totals} />
+      </div>
+
+      <div className="hidden lg:block">
+        <div ref={topScrollRef} onScroll={() => sync(topScrollRef, tableScrollRef)} className="dispatch-top-scrollbar w-full overflow-x-auto overflow-y-hidden rounded-t-xl bg-[#111f33]"><div style={{ width: tableWidth, height: 1 }} /></div>
+        <div ref={tableScrollRef} onScroll={() => sync(tableScrollRef, topScrollRef)} className="dispatch-table-scroll max-h-[520px] overflow-auto rounded-b-xl border border-white/10">
+          <table ref={tableRef} className="min-w-[1200px] w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-[#11233a] text-xs uppercase text-slate-300"><tr><th className="px-3 py-3">City</th><th className="px-3 py-3">State</th>{cityStatusColumns.map(([, label]) => <th key={label} className="px-3 py-3 text-right">{label}</th>)}</tr></thead>
+            <tbody>
+              {pageRows.map((row) => <tr key={row.key} className="border-t border-white/10 odd:bg-white/[0.025]"><td className="px-3 py-2.5 font-black text-white">{row.city}</td><td className="px-3 py-2.5 font-bold text-slate-300">{row.state}</td>{cityStatusColumns.map(([key]) => <td key={key} className="px-3 py-2.5 text-right"><CountButton value={row[key]} onClick={() => onDrilldown({ row, bucket: key })} /></td>)}</tr>)}
+            </tbody>
+            <tfoot className="sticky bottom-0 bg-[#11233a] font-black"><tr><td className="px-3 py-3">TOTAL</td><td></td>{cityStatusColumns.map(([key]) => <td key={key} className="px-3 py-3 text-right">{totals[key]}</td>)}</tr></tfoot>
+          </table>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3 text-sm font-bold text-slate-400"><span>{filteredRows.length} cities</span>{pageSize !== "All" && <div className="flex items-center gap-2"><button type="button" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-lg bg-white/10 px-3 disabled:opacity-40">Previous</button><span>Page {safePage} of {pageCount}</span><button type="button" disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-lg bg-white/10 px-3 disabled:opacity-40">Next</button></div>}</div>
+    </div>
+  );
+}
+
+function CityStatusCard({ row, onDrilldown }) {
+  return <article className="rounded-2xl border border-white/10 bg-white/5 p-4"><h3 className="font-black text-white">{row.city}, {row.state}</h3><div className="mt-3 grid grid-cols-2 gap-2">{cityStatusColumns.map(([key, label]) => <button key={key} type="button" onClick={() => onDrilldown({ row, bucket: key })} className="min-h-11 rounded-xl bg-white/5 p-2 text-left"><span className="block text-[10px] font-black uppercase text-slate-500">{label}</span><span className="mt-1 block text-xl font-black text-blue-300">{row[key]}</span></button>)}</div></article>;
+}
+function TotalsCard({ totals }) { return <article className="rounded-2xl border border-blue-400/30 bg-blue-500/10 p-4"><h3 className="font-black">TOTAL</h3><div className="mt-3 grid grid-cols-2 gap-2">{cityStatusColumns.map(([key, label]) => <div key={key}><p className="text-[10px] font-black uppercase text-slate-400">{label}</p><p className="text-xl font-black">{totals[key]}</p></div>)}</div></article>; }
+function CountButton({ value, onClick }) { return <button type="button" onClick={onClick} className="min-h-9 min-w-10 rounded-lg bg-blue-500/10 px-2 font-black text-blue-300 hover:bg-blue-500/20">{value}</button>; }
+
+function CityJobsDrilldown({ selection, onClose, onOpenJob }) {
+  const { row, bucket } = selection;
+  const jobs = bucket === "total" ? row.jobs : row.jobs.filter((job) => cityStatusBucket(job.status) === bucket);
+  const label = cityStatusColumns.find(([key]) => key === bucket)?.[1] || "Jobs";
+  return <div className="fixed inset-0 z-[120] bg-black/70 p-0 md:p-4" onClick={onClose}><section className="ml-auto flex h-full w-full max-w-2xl flex-col bg-[#091827] text-white md:rounded-3xl md:border md:border-white/10" onClick={(event) => event.stopPropagation()}><header className="flex items-start justify-between border-b border-white/10 p-5"><div><p className="text-xs font-black uppercase text-blue-300">{label}</p><h2 className="mt-1 text-2xl font-black">{row.city}, {row.state}</h2><p className="mt-1 text-sm text-slate-400">{jobs.length} matching jobs in the selected dashboard period</p></div><button type="button" onClick={onClose} className="min-h-11 rounded-xl bg-white/10 px-4 font-bold">Close</button></header><div className="flex-1 space-y-2 overflow-y-auto p-4">{jobs.map((job) => <button key={job.id} type="button" onClick={() => onOpenJob?.(job.id)} className="grid min-h-16 w-full grid-cols-[1fr_auto] gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"><span><strong className="block text-blue-200">{job.invoiceNumber || `Job ${job.id}`}</strong><span className="mt-1 block text-sm text-slate-400">{job.company} · {job.date}</span></span><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black">{job.status}</span></button>)}{!jobs.length && <div className="p-10 text-center font-bold text-slate-400">No matching jobs.</div>}</div></section></div>;
+}
+
 function InvoiceTile({ item }) {
   const tones = {
     Pending: "border-amber-400/20 bg-amber-400/10 text-amber-200",
@@ -733,7 +859,7 @@ function normalizeJob(row) {
     company: stringValue(readAlias(row, columnAliases.company)) || "Unknown Company",
     location,
     city: city || "Unknown",
-    state: stringValue(readAlias(row, columnAliases.state)),
+    state: stringValue(readAlias(row, columnAliases.state)) || stateFromLocation(location),
     status: titleCase(stringValue(readAlias(row, columnAliases.status)) || "Pending"),
     dispatch: stringValue(readAlias(row, columnAliases.dispatch)) || "Unassigned",
     technician: stringValue(readAlias(row, columnAliases.technician)) || "Unassigned",
@@ -813,6 +939,45 @@ function groupJobs(rows, labelGetter) {
   return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 }
 
+function buildCityStatusRows(jobs) {
+  const grouped = new Map();
+  jobs.forEach((job) => {
+    let state = normalizeState(job.state || stateFromLocation(job.location));
+    let city = normalizeCoverageCity(job.city || cityFromLocation(job.location) || "Unknown");
+    if (!state) {
+      const stateSuffix = city.match(/\s([A-Z]{2})$/);
+      if (stateSuffix) {
+        state = stateSuffix[1];
+        city = city.slice(0, -3).trim();
+      }
+    }
+    if (state && city.endsWith(` ${state}`)) city = city.slice(0, -(state.length + 1)).trim();
+    city = city.replace(/\bODESA\b/g, "ODESSA").replace(/\bODESSAA\b/g, "ODESSA");
+    const key = `${city}|${state}`;
+    if (!grouped.has(key)) {
+      grouped.set(key, { key, city, state: state || "Unknown", total: 0, completed: 0, cancelled: 0, dryRuns: 0, active: 0, pending: 0, inProgress: 0, other: 0, jobs: [] });
+    }
+    const row = grouped.get(key);
+    const bucket = cityStatusBucket(job.status);
+    row.total += 1;
+    row[bucket] += 1;
+    row.jobs.push(job);
+  });
+  return Array.from(grouped.values()).sort((a, b) => b.total - a.total || a.city.localeCompare(b.city));
+}
+
+function cityStatusBucket(status) {
+  const value = normalized(status).replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const compact = value.replace(/\s+/g, "");
+  if (["completed", "complete", "terminado", "finished"].includes(value)) return "completed";
+  if (["cancelled", "canceled", "cancelado"].includes(value)) return "cancelled";
+  if (compact === "dryrun") return "dryRuns";
+  if (["active", "activo"].includes(value)) return "active";
+  if (value === "pending") return "pending";
+  if (["in progress", "working"].includes(value)) return "inProgress";
+  return "other";
+}
+
 function groupJobRows(rows, labelGetter) {
   const grouped = new Map();
   rows.forEach((row) => {
@@ -870,6 +1035,13 @@ function cityFromLocation(location) {
   return location.split(",")[0]?.trim() || "";
 }
 
+function stateFromLocation(location) {
+  if (!location) return "";
+  const parts = String(location).split(",").map((part) => part.trim()).filter(Boolean);
+  const candidate = parts[1] || "";
+  return normalizeState(candidate);
+}
+
 function cleanLabel(value) {
   const label = stringValue(value);
   return label || "Unknown";
@@ -902,8 +1074,12 @@ function isPaid(status) {
 }
 
 function normalized(value) {
-  return String(value || "").toLowerCase();
+  return String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
+
+function csvCell(value) { return `"${String(value ?? "").replace(/"/g, '""')}"`; }
+function downloadCityFile(content, filename, type) { const url = URL.createObjectURL(new Blob([content], { type })); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
+function escapeCityHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character])); }
 
 function extractEtaMinutes(value) {
   const match = String(value || "").match(/eta[^0-9]*(\d{1,3})/i);
