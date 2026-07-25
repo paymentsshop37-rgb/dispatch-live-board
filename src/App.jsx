@@ -35,6 +35,7 @@ import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/techni
 import { UserManagement } from "./modules/users";
 import { FlatRateGuide } from "./modules/flat-rate";
 import { PartsIntelligence } from "./modules/parts";
+import AddJobRoute from "./modules/jobs/AddJobRoute";
 import DispatcherCoverageSummary from "./modules/coverage/DispatcherCoverageSummary";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 import { supabase } from "./lib/supabase";
@@ -104,6 +105,8 @@ export default function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [addJobRequest, setAddJobRequest] = useState(0);
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const [routeToast, setRouteToast] = useState("");
   const [jobSearchRequest, setJobSearchRequest] = useState(0);
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
   const [networkLocked, setNetworkLocked] = useState(() => !navigator.onLine);
@@ -131,6 +134,28 @@ export default function App() {
     if (window.location.pathname !== "/login") {
       window.history.replaceState({}, "", "/login");
     }
+  }, []);
+
+  const navigateToAddJob = useCallback(() => {
+    window.history.pushState({ addJob: true }, "", "/dispatch/jobs/new");
+    setCurrentPath("/dispatch/jobs/new");
+  }, []);
+
+  const navigateToDispatchBoard = useCallback((message = "") => {
+    console.trace("[Navigate to Dispatch Board]");
+    window.history.pushState({ view: "dispatch" }, "", "/dispatch-board");
+    setCurrentPath("/dispatch-board");
+    setActiveView("dispatch");
+    if (message) {
+      setRouteToast(message);
+      window.setTimeout(() => setRouteToast(""), 4000);
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = () => setCurrentPath(window.location.pathname);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const handleLogout = useCallback(async (reason = "manual_logout", message = "", broadcast = true) => {
@@ -190,7 +215,10 @@ export default function App() {
           const verifiedSession = profileToSession(profile, authSession);
           setSession(verifiedSession);
           void startSessionAudit(verifiedSession);
-          if (window.location.pathname === "/login") window.history.replaceState({}, "", "/");
+          if (window.location.pathname === "/login") {
+            window.history.replaceState({}, "", "/dispatch-board");
+            setCurrentPath("/dispatch-board");
+          }
         }
       } catch {
         if (mounted) await handleLogout("session_invalid", "Unable to verify your account profile.");
@@ -200,7 +228,7 @@ export default function App() {
     }
     supabase.auth.getSession().then(({ data }) => validate(data?.session));
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (import.meta.env.DEV) console.debug("[auth] event", event);
+      console.log("[AuthEvent]", event);
       if (event === "SIGNED_OUT") {
         manualLogout.current = true;
         clearCustomAuthStorage();
@@ -301,10 +329,8 @@ export default function App() {
       if (isAuthenticated) setNetworkLocked(true);
     };
     const onOnline = () => {
-      if (connectionLost && isAuthenticated) {
-        handleLogout("internet_connection_lost", "Your connection was restored. Please sign in again.");
-      }
       connectionLost = false;
+      setNetworkLocked(false);
     };
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
     const onConnectionChange = () => {
@@ -434,6 +460,16 @@ export default function App() {
     return <LoginScreen message={authMessage} onMessage={setAuthMessage} onLoginStarted={beginLogin} />;
   }
 
+  if (currentPath === "/dispatch/jobs/new") {
+    return (
+      <AddJobRoute
+        currentUser={session}
+        onBack={() => navigateToDispatchBoard()}
+        onSaved={() => navigateToDispatchBoard("Job created successfully.")}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       {networkLocked && (
@@ -446,6 +482,7 @@ export default function App() {
           </div>
         </div>
       )}
+      {routeToast && <div className="fixed right-4 top-4 z-[130] rounded-xl bg-emerald-600 px-5 py-3 font-bold text-white shadow-2xl">{routeToast}</div>}
 
       {sessionWarningOpen && !networkLocked && (
         <div className="fixed inset-0 z-[115] flex items-center justify-center bg-black/60 p-4">
@@ -572,14 +609,14 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} isAddJobOpen={isAddJobOpen} onAddJobOpenChange={setIsAddJobOpen} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} isAddJobOpen={isAddJobOpen} onAddJobOpenChange={setIsAddJobOpen} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
         {canAccessActiveView && activeView === "activity" && <ActivityLogPage role={role} />}
-        {canAccessActiveView && activeView === "flat-rate" && <FlatRateGuide session={session} role={role} onCreateJob={() => { localStorage.setItem("flat-rate-create-job", "1"); setActiveView("dispatch"); }} />}
+        {canAccessActiveView && activeView === "flat-rate" && <FlatRateGuide session={session} role={role} onCreateJob={navigateToAddJob} />}
         {canAccessActiveView && activeView === "parts-intelligence" && <PartsIntelligence session={session} role={role} />}
       </main>
 
@@ -603,7 +640,7 @@ export default function App() {
 
       <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-[70] grid h-20 grid-cols-5 border-t border-slate-700 bg-[#08111f]/95 px-1 pb-[env(safe-area-inset-bottom)] text-white backdrop-blur lg:hidden">
         <MobileNavButton icon={ClipboardList} label="Board" active={activeView === "dispatch"} onClick={() => setActiveView("dispatch")} />
-        <MobileNavButton icon={Plus} label="Add Job" onClick={() => { setActiveView("dispatch"); setIsAddJobOpen(true); setAddJobRequest((value) => value + 1); }} />
+        <MobileNavButton icon={Plus} label="Add Job" onClick={navigateToAddJob} />
         <MobileNavButton icon={Users} label="Technicians" active={activeView === "technicians"} onClick={() => setActiveView("technicians")} />
         <MobileNavButton icon={Search} label="Search" onClick={() => { setActiveView("dispatch"); setJobSearchRequest((value) => value + 1); }} />
         <MobileNavButton icon={Menu} label="More" onClick={() => setMobileMenuOpen(true)} />

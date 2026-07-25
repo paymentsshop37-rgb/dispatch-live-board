@@ -435,7 +435,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, isAddJobOpen = false, onAddJobOpenChange = () => {}, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
+export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, isAddJobOpen = false, onAddJobOpenChange = () => {}, onOpenAddJob, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
   const formRef = useRef(null);
   const mobileFormScrollRef = useRef(null);
   const desktopFormScrollRef = useRef(null);
@@ -594,6 +594,10 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   }, []);
 
   const openAddJob = useCallback(({ reset = false } = {}) => {
+    if (onOpenAddJob) {
+      onOpenAddJob();
+      return;
+    }
     if (reset) {
       setForm(emptyForm());
       setMobileJobStep(1);
@@ -602,7 +606,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     }
     setShowAddJobModal(true);
     activeAddJobSessions.add(draftKey);
-  }, [draftKey]);
+  }, [draftKey, onOpenAddJob]);
 
   function requestDiscardAddJob(action = "close") {
     if (action === "close" && !hasUnfinishedJobData(formStateRef.current)) {
