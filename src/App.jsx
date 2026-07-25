@@ -103,6 +103,7 @@ export default function App() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [addJobRequest, setAddJobRequest] = useState(0);
+  const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [jobSearchRequest, setJobSearchRequest] = useState(0);
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
   const [networkLocked, setNetworkLocked] = useState(() => !navigator.onLine);
@@ -122,6 +123,7 @@ export default function App() {
     setActiveView("dispatch");
     setAlertJobs([]);
     setAlertsOpen(false);
+    setIsAddJobOpen(false);
     setAuthLoading(false);
   }, []);
 
@@ -198,6 +200,7 @@ export default function App() {
     }
     supabase.auth.getSession().then(({ data }) => validate(data?.session));
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (import.meta.env.DEV) console.debug("[auth] event", event);
       if (event === "SIGNED_OUT") {
         manualLogout.current = true;
         clearCustomAuthStorage();
@@ -569,7 +572,7 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} isAddJobOpen={isAddJobOpen} onAddJobOpenChange={setIsAddJobOpen} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
@@ -600,7 +603,7 @@ export default function App() {
 
       <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-[70] grid h-20 grid-cols-5 border-t border-slate-700 bg-[#08111f]/95 px-1 pb-[env(safe-area-inset-bottom)] text-white backdrop-blur lg:hidden">
         <MobileNavButton icon={ClipboardList} label="Board" active={activeView === "dispatch"} onClick={() => setActiveView("dispatch")} />
-        <MobileNavButton icon={Plus} label="Add Job" onClick={() => { setActiveView("dispatch"); setAddJobRequest((value) => value + 1); }} />
+        <MobileNavButton icon={Plus} label="Add Job" onClick={() => { setActiveView("dispatch"); setIsAddJobOpen(true); setAddJobRequest((value) => value + 1); }} />
         <MobileNavButton icon={Users} label="Technicians" active={activeView === "technicians"} onClick={() => setActiveView("technicians")} />
         <MobileNavButton icon={Search} label="Search" onClick={() => { setActiveView("dispatch"); setJobSearchRequest((value) => value + 1); }} />
         <MobileNavButton icon={Menu} label="More" onClick={() => setMobileMenuOpen(true)} />

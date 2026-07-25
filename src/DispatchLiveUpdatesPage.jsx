@@ -101,11 +101,25 @@ const activeAddJobSessions = new Set();
 
 function addJobDraftKey(currentUser) {
   const userId = currentUser?.authUserId || currentUser?.id || currentUser?.user_id || "anonymous";
-  return `dispatch_add_job_draft_${userId}`;
+  return `dispatch_add_job_session_${userId}`;
 }
 
 function addJobFieldName(label) {
   return `add_job_${String(label || "field").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`;
+}
+
+function hasUnfinishedJobData(form) {
+  const textFields = [
+    "time", "reference", "jobReference", "company", "customerPhone", "dispatch",
+    "tech", "location", "city", "state", "poNumber", "truckUnit", "complaint",
+    "updates", "parts", "totalBill", "techLabor",
+  ];
+  if (textFields.some((field) => String(form?.[field] ?? "").trim())) return true;
+  return form?.status !== "New"
+    || form?.rowFlag !== "Normal"
+    || form?.invoice !== "Pending"
+    || form?.paymentMethod !== "Pending"
+    || form?.paymentReceiver !== "A";
 }
 
 const invoiceStatusOptions = ["Pending", "Sent", "Paid", "Need Review", "Cancelled"];
@@ -421,7 +435,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
+export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, isAddJobOpen = false, onAddJobOpenChange = () => {}, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
   const formRef = useRef(null);
   const mobileFormScrollRef = useRef(null);
   const desktopFormScrollRef = useRef(null);
@@ -466,7 +480,8 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [jobDetailsOpen, setJobDetailsOpen] = useState(Boolean(initialDetailsJobId));
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
-  const [showAddJobModal, setShowAddJobModal] = useState(false);
+  const showAddJobModal = isAddJobOpen;
+  const setShowAddJobModal = onAddJobOpenChange;
   const [mobileJobStep, setMobileJobStep] = useState(1);
   const [discardAddJobAction, setDiscardAddJobAction] = useState("");
   const [updatesJob, setUpdatesJob] = useState(null);
@@ -521,28 +536,46 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   mobileJobStepRef.current = mobileJobStep;
   console.log("Rendering technicians:", dispatchTechnicians);
 
+  useEffect(() => {
+    if (!showAddJobModal) return undefined;
+    if (import.meta.env.DEV) console.debug("[add-job] modal mounted");
+    return () => {
+      if (import.meta.env.DEV) console.debug("[add-job] modal unmounted");
+    };
+  }, [showAddJobModal]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) console.debug("[add-job] open state changed", showAddJobModal);
+  }, [showAddJobModal]);
+
   const saveAddJobDraft = useCallback(() => {
     if (!addJobOpenRef.current || !formStateRef.current) return;
     const draft = {
-      isAddJobOpen: true,
-      formValues: formStateRef.current,
+      isOpen: true,
+      formData: formStateRef.current,
+      scrollPosition: window.innerWidth < 1024
+        ? scrollPositionRef.current.mobile
+        : scrollPositionRef.current.desktop,
       currentStep: mobileJobStepRef.current,
-      scrollPosition: scrollPositionRef.current,
-      lastFocusedFieldName: lastFocusedFieldRef.current,
-      lastUpdatedTimestamp: new Date().toISOString(),
+      responsiveScrollPosition: scrollPositionRef.current,
+      lastFocusedField: lastFocusedFieldRef.current || null,
+      updatedAt: new Date().toISOString(),
     };
-    localStorage.setItem(draftKey, JSON.stringify(draft));
+    sessionStorage.setItem(draftKey, JSON.stringify(draft));
     activeAddJobSessions.add(draftKey);
   }, [draftKey]);
 
   const clearAddJobDraft = useCallback(() => {
-    localStorage.removeItem(draftKey);
+    sessionStorage.removeItem(draftKey);
     localStorage.removeItem("nttr-mobile-job-draft");
     activeAddJobSessions.delete(draftKey);
   }, [draftKey]);
 
   const restoreAddJobPosition = useCallback((draft) => {
-    const positions = draft?.scrollPosition || {};
+    const positions = draft?.responsiveScrollPosition || {
+      mobile: draft?.scrollPosition || 0,
+      desktop: draft?.scrollPosition || 0,
+    };
     scrollPositionRef.current = {
       mobile: Number(positions.mobile || 0),
       desktop: Number(positions.desktop || 0),
@@ -550,7 +583,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     window.setTimeout(() => {
       if (mobileFormScrollRef.current) mobileFormScrollRef.current.scrollTop = scrollPositionRef.current.mobile;
       if (desktopFormScrollRef.current) desktopFormScrollRef.current.scrollTop = scrollPositionRef.current.desktop;
-      const fieldName = draft?.lastFocusedFieldName;
+      const fieldName = draft?.lastFocusedField;
       if (fieldName && formRef.current) {
         const safeName = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(fieldName) : fieldName.replace(/["\\]/g, "");
         const fields = [...formRef.current.querySelectorAll(`[name="${safeName}"]`)];
@@ -572,6 +605,11 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   }, [draftKey]);
 
   function requestDiscardAddJob(action = "close") {
+    if (action === "close" && !hasUnfinishedJobData(formStateRef.current)) {
+      clearAddJobDraft();
+      setShowAddJobModal(false);
+      return;
+    }
     setDiscardAddJobAction(action);
   }
 
@@ -623,25 +661,20 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     draftRestoredRef.current = true;
     let savedDraft = null;
     try {
-      savedDraft = JSON.parse(localStorage.getItem(draftKey) || "null");
+      savedDraft = JSON.parse(sessionStorage.getItem(draftKey) || "null");
     } catch {
-      localStorage.removeItem(draftKey);
+      sessionStorage.removeItem(draftKey);
     }
-    if (!savedDraft?.isAddJobOpen || !savedDraft.formValues) return;
+    if (!savedDraft?.isOpen || !savedDraft.formData) return;
 
     const restore = () => {
-      setForm((current) => ({ ...current, ...savedDraft.formValues }));
+      setForm((current) => ({ ...current, ...savedDraft.formData }));
       setMobileJobStep(Number(savedDraft.currentStep || 1));
       setShowAddJobModal(true);
       activeAddJobSessions.add(draftKey);
       restoreAddJobPosition(savedDraft);
     };
-
-    if (activeAddJobSessions.has(draftKey)) {
-      restore();
-      return;
-    }
-    if (window.confirm("Recover unfinished job?")) restore();
+    restore();
   }, [draftKey, restoreAddJobPosition]);
 
   useEffect(() => {
@@ -652,6 +685,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
 
   useEffect(() => {
     function saveWhenHidden() {
+      if (import.meta.env.DEV) console.debug("[add-job] visibilitychange", document.visibilityState);
       if (document.visibilityState === "hidden") saveAddJobDraft();
     }
     function saveBeforeUnload() {
@@ -660,21 +694,30 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     function restoreWhenVisible() {
       if (document.visibilityState !== "visible" || !addJobOpenRef.current) return;
       const draft = {
-        scrollPosition: scrollPositionRef.current,
-        lastFocusedFieldName: lastFocusedFieldRef.current,
+        responsiveScrollPosition: scrollPositionRef.current,
+        lastFocusedField: lastFocusedFieldRef.current,
       };
       restoreAddJobPosition(draft);
+    }
+    function restoreOnFocus() {
+      if (!addJobOpenRef.current) return;
+      restoreAddJobPosition({
+        responsiveScrollPosition: scrollPositionRef.current,
+        lastFocusedField: lastFocusedFieldRef.current,
+      });
     }
 
     document.addEventListener("visibilitychange", saveWhenHidden);
     window.addEventListener("blur", saveAddJobDraft);
     window.addEventListener("beforeunload", saveBeforeUnload);
+    window.addEventListener("focus", restoreOnFocus);
     document.addEventListener("visibilitychange", restoreWhenVisible);
     return () => {
       saveAddJobDraft();
       document.removeEventListener("visibilitychange", saveWhenHidden);
       window.removeEventListener("blur", saveAddJobDraft);
       window.removeEventListener("beforeunload", saveBeforeUnload);
+      window.removeEventListener("focus", restoreOnFocus);
       document.removeEventListener("visibilitychange", restoreWhenVisible);
     };
   }, [restoreAddJobPosition, saveAddJobDraft]);
@@ -919,6 +962,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   }
 
   async function loadJobs() {
+    if (import.meta.env.DEV) console.debug("[dispatch] dashboard refresh");
     const { data, error } = await supabase
       .from("jobs")
       .select("*")
