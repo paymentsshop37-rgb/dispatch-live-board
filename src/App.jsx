@@ -103,8 +103,6 @@ export default function App() {
   const [alertJobs, setAlertJobs] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [addJobRequest, setAddJobRequest] = useState(0);
-  const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const currentPathRef = useRef(currentPath);
   currentPathRef.current = currentPath;
@@ -119,12 +117,44 @@ export default function App() {
   const logoutChannel = useRef(null);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isAuthenticated = Boolean(session.isAuthenticated);
+  const isAddJobRoute = window.location.pathname === "/dispatch/jobs/new";
   const isAuthenticatedRef = useRef(isAuthenticated);
   isAuthenticatedRef.current = isAuthenticated;
 
-  useEffect(() => {
-    console.trace("currentPath changed", currentPath);
-  }, [currentPath]);
+  const navigateAwayFromAddJob = useCallback((nextPath, reason) => {
+    const addJobIsActive =
+      currentPathRef.current === "/dispatch/jobs/new" ||
+      window.location.pathname === "/dispatch/jobs/new";
+    const allowedReasons = ["save-success", "discard-confirmed", "signed-out"];
+    if (addJobIsActive && nextPath !== "/dispatch/jobs/new" && !allowedReasons.includes(reason)) {
+      console.warn("[AddJobRoute] blocked navigation", nextPath, reason);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const updateCurrentPath = useCallback((nextPath, reason, options = {}) => {
+    console.trace("[currentPath change]", {
+      from: currentPathRef.current,
+      to: nextPath,
+      reason,
+    });
+    if (!navigateAwayFromAddJob(nextPath, reason)) {
+      if (window.location.pathname !== "/dispatch/jobs/new") {
+        window.history.replaceState({ addJob: true, guarded: true }, "", "/dispatch/jobs/new");
+      }
+      currentPathRef.current = "/dispatch/jobs/new";
+      setCurrentPath("/dispatch/jobs/new");
+      return false;
+    }
+    if (!options.historyAlreadyChanged) {
+      const method = options.replace ? "replaceState" : "pushState";
+      window.history[method]({}, "", nextPath);
+    }
+    currentPathRef.current = nextPath;
+    setCurrentPath(nextPath);
+    return true;
+  }, [navigateAwayFromAddJob]);
 
   const resetApplicationState = useCallback(() => {
     authValidationId.current += 1;
@@ -132,45 +162,37 @@ export default function App() {
     setActiveView("dispatch");
     setAlertJobs([]);
     setAlertsOpen(false);
-    setIsAddJobOpen(false);
     setAuthLoading(false);
   }, []);
 
-  const redirectToLogin = useCallback(() => {
-    if (window.location.pathname !== "/login") {
-      window.history.replaceState({}, "", "/login");
-    }
-  }, []);
+  const redirectToLogin = useCallback((reason = "signed-out") => {
+    if (window.location.pathname !== "/login") updateCurrentPath("/login", reason, { replace: true });
+  }, [updateCurrentPath]);
 
   const navigateToAddJob = useCallback(() => {
-    window.history.pushState({ addJob: true }, "", "/dispatch/jobs/new");
-    setCurrentPath("/dispatch/jobs/new");
-  }, []);
+    updateCurrentPath("/dispatch/jobs/new", "user-open");
+  }, [updateCurrentPath]);
 
-  const navigateToDispatchBoard = useCallback((message = "") => {
+  const navigateToDispatchBoard = useCallback((message = "", reason = "automatic") => {
     console.trace("[Navigate to Dispatch Board]");
-    window.history.pushState({ view: "dispatch" }, "", "/dispatch-board");
-    setCurrentPath("/dispatch-board");
+    if (!updateCurrentPath("/dispatch-board", reason)) return;
     setActiveView("dispatch");
     if (message) {
       setRouteToast(message);
       window.setTimeout(() => setRouteToast(""), 4000);
     }
-  }, []);
+  }, [updateCurrentPath]);
 
   useEffect(() => {
     const onPopState = () => {
-      if (currentPath === "/dispatch/jobs/new" && window.location.pathname !== "/dispatch/jobs/new") {
-        window.history.pushState({ addJob: true, guarded: true }, "", "/dispatch/jobs/new");
-        setCurrentPath("/dispatch/jobs/new");
+      const changed = updateCurrentPath(window.location.pathname, "browser-history", { historyAlreadyChanged: true });
+      if (!changed) {
         window.dispatchEvent(new CustomEvent("add-job-route-exit-request"));
-        return;
       }
-      setCurrentPath(window.location.pathname);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, [currentPath]);
+  }, [updateCurrentPath]);
 
   useEffect(() => {
     if (!isAuthenticated || currentPath === "/dispatch/jobs/new") return;
@@ -178,12 +200,11 @@ export default function App() {
       const id = session.authUserId || session.auth_user_id || session.user_id || session.id || session.email || "anonymous";
       const draft = JSON.parse(sessionStorage.getItem(`dispatch_add_job_draft_${id}`) || "null");
       if (!draft?.isOpen) return;
-      window.history.replaceState({ addJob: true, recovered: true }, "", "/dispatch/jobs/new");
-      setCurrentPath("/dispatch/jobs/new");
+      updateCurrentPath("/dispatch/jobs/new", "draft-recovery", { replace: true });
     } catch {
       // A malformed draft must not break application routing.
     }
-  }, [currentPath, isAuthenticated, session]);
+  }, [currentPath, isAuthenticated, session, updateCurrentPath]);
 
   const handleLogout = useCallback(async (reason = "manual_logout", message = "", broadcast = true) => {
     if (logoutInProgress.current) return;
@@ -224,7 +245,7 @@ export default function App() {
       if (!authSession?.user) {
         if (mounted) {
           resetApplicationState();
-          redirectToLogin();
+          redirectToLogin("initial-session");
         }
         return;
       }
@@ -243,8 +264,7 @@ export default function App() {
           setSession(verifiedSession);
           void startSessionAudit(verifiedSession);
           if (window.location.pathname === "/login" && currentPathRef.current !== "/dispatch/jobs/new") {
-            window.history.replaceState({}, "", "/dispatch-board");
-            setCurrentPath("/dispatch-board");
+            updateCurrentPath("/dispatch-board", "signed-in", { replace: true });
           }
         }
       } catch {
@@ -261,7 +281,6 @@ export default function App() {
         clearCustomAuthStorage();
         resetApplicationState();
         redirectToLogin();
-        setCurrentPath("/login");
         return;
       }
       if (!nextSession?.user) {
@@ -272,7 +291,7 @@ export default function App() {
       window.setTimeout(() => validate(nextSession), 0);
     });
     return () => { mounted = false; data?.subscription?.unsubscribe(); };
-  }, [handleLogout, redirectToLogin, resetApplicationState]);
+  }, [handleLogout, redirectToLogin, resetApplicationState, updateCurrentPath]);
 
   useEffect(() => {
     const authUserId = session.authUserId || session.id;
@@ -492,12 +511,12 @@ export default function App() {
     return <LoginScreen message={authMessage} onMessage={setAuthMessage} onLoginStarted={beginLogin} />;
   }
 
-  if (currentPath === "/dispatch/jobs/new") {
+  if (isAddJobRoute) {
     return (
       <AddJobRoute
         currentUser={session}
-        onBack={() => navigateToDispatchBoard()}
-        onSaved={() => navigateToDispatchBoard("Job created successfully.")}
+        onBack={() => navigateToDispatchBoard("", "discard-confirmed")}
+        onSaved={() => navigateToDispatchBoard("Job created successfully.", "save-success")}
       />
     );
   }
@@ -641,7 +660,7 @@ export default function App() {
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
         {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} /> : <DispatcherDashboard />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} addJobRequest={addJobRequest} jobSearchRequest={jobSearchRequest} isAddJobOpen={isAddJobOpen} onAddJobOpenChange={setIsAddJobOpen} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} jobSearchRequest={jobSearchRequest} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard />}

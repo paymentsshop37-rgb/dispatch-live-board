@@ -435,7 +435,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, isAddJobOpen = false, onAddJobOpenChange = () => {}, onOpenAddJob, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
+export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest = 0, onOpenAddJob, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
   const formRef = useRef(null);
   const mobileFormScrollRef = useRef(null);
   const desktopFormScrollRef = useRef(null);
@@ -480,8 +480,8 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [jobDetailsOpen, setJobDetailsOpen] = useState(Boolean(initialDetailsJobId));
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
-  const showAddJobModal = isAddJobOpen;
-  const setShowAddJobModal = onAddJobOpenChange;
+  const showAddJobModal = false;
+  const setShowAddJobModal = () => {};
   const [mobileJobStep, setMobileJobStep] = useState(1);
   const [discardAddJobAction, setDiscardAddJobAction] = useState("");
   const [updatesJob, setUpdatesJob] = useState(null);
@@ -611,7 +611,6 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   function requestDiscardAddJob(action = "close") {
     if (action === "close" && !hasUnfinishedJobData(formStateRef.current)) {
       clearAddJobDraft();
-      setShowAddJobModal(false);
       return;
     }
     setDiscardAddJobAction(action);
@@ -623,7 +622,6 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     setMobileJobStep(1);
     scrollPositionRef.current = { mobile: 0, desktop: 0 };
     lastFocusedFieldRef.current = "";
-    if (discardAddJobAction === "close") setShowAddJobModal(false);
     setDiscardAddJobAction("");
   }
 
@@ -736,12 +734,6 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
       openAddJob({ reset: true });
     }
   }, [openAddJob]);
-
-  useEffect(() => {
-    if (addJobRequest > 0) {
-      openAddJob({ reset: !addJobOpenRef.current });
-    }
-  }, [addJobRequest, openAddJob]);
 
   useEffect(() => {
     if (jobSearchRequest > 0) {
@@ -1288,7 +1280,6 @@ profit: filteredJobs.reduce(
       clearAddJobDraft();
       setForm(emptyForm());
       setMobileJobStep(1);
-      setShowAddJobModal(false);
       setActivityLogs((logs) => [
         {
           id: Date.now(),
