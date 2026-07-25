@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState, useEffect } from "react";
+import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import {
   Search,
   Menu,
@@ -96,6 +96,17 @@ const invoiceStyles = {
   Cancelled: "bg-red-100 text-red-800 border-red-300",
   "Need Review": "bg-orange-100 text-orange-700",
 };
+
+const activeAddJobSessions = new Set();
+
+function addJobDraftKey(currentUser) {
+  const userId = currentUser?.authUserId || currentUser?.id || currentUser?.user_id || "anonymous";
+  return `dispatch_add_job_draft_${userId}`;
+}
+
+function addJobFieldName(label) {
+  return `add_job_${String(label || "field").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`;
+}
 
 const invoiceStatusOptions = ["Pending", "Sent", "Paid", "Need Review", "Cancelled"];
 const paymentMethods = ["EFS", "Comcheck", "Zelle", "Card", "Cash", "ACH", "Wire", "Pending"];
@@ -412,6 +423,14 @@ function emptyForm() {
 
 export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0, jobSearchRequest = 0, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
   const formRef = useRef(null);
+  const mobileFormScrollRef = useRef(null);
+  const desktopFormScrollRef = useRef(null);
+  const formStateRef = useRef(null);
+  const addJobOpenRef = useRef(false);
+  const mobileJobStepRef = useRef(1);
+  const lastFocusedFieldRef = useRef("");
+  const scrollPositionRef = useRef({ mobile: 0, desktop: 0 });
+  const draftRestoredRef = useRef(false);
   const searchInputRef = useRef(null);
   const tableScrollRef = useRef(null);
   const topScrollRef = useRef(null);
@@ -449,6 +468,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [assignmentJob, setAssignmentJob] = useState(null);
   const [showAddJobModal, setShowAddJobModal] = useState(false);
   const [mobileJobStep, setMobileJobStep] = useState(1);
+  const [discardAddJobAction, setDiscardAddJobAction] = useState("");
   const [updatesJob, setUpdatesJob] = useState(null);
   const [documentsJob, setDocumentsJob] = useState(null);
   const [techPaymentJob, setTechPaymentJob] = useState(null);
@@ -495,7 +515,75 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
+  const draftKey = useMemo(() => addJobDraftKey(currentUser), [currentUser]);
+  formStateRef.current = form;
+  addJobOpenRef.current = showAddJobModal;
+  mobileJobStepRef.current = mobileJobStep;
   console.log("Rendering technicians:", dispatchTechnicians);
+
+  const saveAddJobDraft = useCallback(() => {
+    if (!addJobOpenRef.current || !formStateRef.current) return;
+    const draft = {
+      isAddJobOpen: true,
+      formValues: formStateRef.current,
+      currentStep: mobileJobStepRef.current,
+      scrollPosition: scrollPositionRef.current,
+      lastFocusedFieldName: lastFocusedFieldRef.current,
+      lastUpdatedTimestamp: new Date().toISOString(),
+    };
+    localStorage.setItem(draftKey, JSON.stringify(draft));
+    activeAddJobSessions.add(draftKey);
+  }, [draftKey]);
+
+  const clearAddJobDraft = useCallback(() => {
+    localStorage.removeItem(draftKey);
+    localStorage.removeItem("nttr-mobile-job-draft");
+    activeAddJobSessions.delete(draftKey);
+  }, [draftKey]);
+
+  const restoreAddJobPosition = useCallback((draft) => {
+    const positions = draft?.scrollPosition || {};
+    scrollPositionRef.current = {
+      mobile: Number(positions.mobile || 0),
+      desktop: Number(positions.desktop || 0),
+    };
+    window.setTimeout(() => {
+      if (mobileFormScrollRef.current) mobileFormScrollRef.current.scrollTop = scrollPositionRef.current.mobile;
+      if (desktopFormScrollRef.current) desktopFormScrollRef.current.scrollTop = scrollPositionRef.current.desktop;
+      const fieldName = draft?.lastFocusedFieldName;
+      if (fieldName && formRef.current) {
+        const safeName = typeof CSS !== "undefined" && CSS.escape ? CSS.escape(fieldName) : fieldName.replace(/["\\]/g, "");
+        const fields = [...formRef.current.querySelectorAll(`[name="${safeName}"]`)];
+        const field = fields.find((candidate) => candidate.offsetParent !== null) || fields[0];
+        field?.focus({ preventScroll: true });
+      }
+    }, 0);
+  }, []);
+
+  const openAddJob = useCallback(({ reset = false } = {}) => {
+    if (reset) {
+      setForm(emptyForm());
+      setMobileJobStep(1);
+      scrollPositionRef.current = { mobile: 0, desktop: 0 };
+      lastFocusedFieldRef.current = "";
+    }
+    setShowAddJobModal(true);
+    activeAddJobSessions.add(draftKey);
+  }, [draftKey]);
+
+  function requestDiscardAddJob(action = "close") {
+    setDiscardAddJobAction(action);
+  }
+
+  function discardAddJob() {
+    clearAddJobDraft();
+    setForm(emptyForm());
+    setMobileJobStep(1);
+    scrollPositionRef.current = { mobile: 0, desktop: 0 };
+    lastFocusedFieldRef.current = "";
+    if (discardAddJobAction === "close") setShowAddJobModal(false);
+    setDiscardAddJobAction("");
+  }
 
   function syncDispatchScroll(source, target) {
     if (horizontalSyncLockRef.current || !source.current || !target.current) return;
@@ -531,25 +619,78 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   }, [canEditJobFinancial, dispatchViewMode]);
 
   useEffect(() => {
+    if (draftRestoredRef.current) return;
+    draftRestoredRef.current = true;
+    let savedDraft = null;
+    try {
+      savedDraft = JSON.parse(localStorage.getItem(draftKey) || "null");
+    } catch {
+      localStorage.removeItem(draftKey);
+    }
+    if (!savedDraft?.isAddJobOpen || !savedDraft.formValues) return;
+
+    const restore = () => {
+      setForm((current) => ({ ...current, ...savedDraft.formValues }));
+      setMobileJobStep(Number(savedDraft.currentStep || 1));
+      setShowAddJobModal(true);
+      activeAddJobSessions.add(draftKey);
+      restoreAddJobPosition(savedDraft);
+    };
+
+    if (activeAddJobSessions.has(draftKey)) {
+      restore();
+      return;
+    }
+    if (window.confirm("Recover unfinished job?")) restore();
+  }, [draftKey, restoreAddJobPosition]);
+
+  useEffect(() => {
+    if (!showAddJobModal) return undefined;
+    const timer = window.setTimeout(saveAddJobDraft, 250);
+    return () => window.clearTimeout(timer);
+  }, [form, mobileJobStep, saveAddJobDraft, showAddJobModal]);
+
+  useEffect(() => {
+    function saveWhenHidden() {
+      if (document.visibilityState === "hidden") saveAddJobDraft();
+    }
+    function saveBeforeUnload() {
+      saveAddJobDraft();
+    }
+    function restoreWhenVisible() {
+      if (document.visibilityState !== "visible" || !addJobOpenRef.current) return;
+      const draft = {
+        scrollPosition: scrollPositionRef.current,
+        lastFocusedFieldName: lastFocusedFieldRef.current,
+      };
+      restoreAddJobPosition(draft);
+    }
+
+    document.addEventListener("visibilitychange", saveWhenHidden);
+    window.addEventListener("blur", saveAddJobDraft);
+    window.addEventListener("beforeunload", saveBeforeUnload);
+    document.addEventListener("visibilitychange", restoreWhenVisible);
+    return () => {
+      saveAddJobDraft();
+      document.removeEventListener("visibilitychange", saveWhenHidden);
+      window.removeEventListener("blur", saveAddJobDraft);
+      window.removeEventListener("beforeunload", saveBeforeUnload);
+      document.removeEventListener("visibilitychange", restoreWhenVisible);
+    };
+  }, [restoreAddJobPosition, saveAddJobDraft]);
+
+  useEffect(() => {
     if (localStorage.getItem("flat-rate-create-job") === "1") {
       localStorage.removeItem("flat-rate-create-job");
-      setForm(emptyForm());
-      setShowAddJobModal(true);
+      openAddJob({ reset: true });
     }
-  }, []);
+  }, [openAddJob]);
 
   useEffect(() => {
     if (addJobRequest > 0) {
-      try {
-        const savedDraft = JSON.parse(localStorage.getItem("nttr-mobile-job-draft") || "null");
-        if (savedDraft) setForm((current) => ({ ...current, ...savedDraft }));
-      } catch {
-        localStorage.removeItem("nttr-mobile-job-draft");
-      }
-      setMobileJobStep(1);
-      setShowAddJobModal(true);
+      openAddJob({ reset: !addJobOpenRef.current });
     }
-  }, [addJobRequest]);
+  }, [addJobRequest, openAddJob]);
 
   useEffect(() => {
     if (jobSearchRequest > 0) {
@@ -674,8 +815,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
       const key = event.key.toLowerCase();
       if (key === "n") {
         event.preventDefault();
-        setForm(emptyForm());
-        setShowAddJobModal(true);
+        openAddJob({ reset: true });
       }
       if (key === "s") {
         event.preventDefault();
@@ -703,7 +843,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
       window.removeEventListener("keydown", handleKeyboard);
       window.removeEventListener("click", closeContextMenu);
     };
-  }, [accessGranted]);
+  }, [accessGranted, openAddJob, showAddJobModal]);
 
   useEffect(() => {
     if (!accessGranted || jobs.length === 0) return;
@@ -1093,8 +1233,9 @@ profit: filteredJobs.reduce(
 
     if (data) {
       setJobs((currentJobs) => [fromDbJob(data), ...currentJobs]);
+      clearAddJobDraft();
       setForm(emptyForm());
-      localStorage.removeItem("nttr-mobile-job-draft");
+      setMobileJobStep(1);
       setShowAddJobModal(false);
       setActivityLogs((logs) => [
         {
@@ -1745,7 +1886,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 <Filter className="mr-2 inline h-4 w-4" />
                 Filters
               </button>
-              <button type="button" onClick={() => setShowAddJobModal(true)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">
+              <button type="button" onClick={() => openAddJob()} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-500">
                 <Plus className="mr-2 inline h-4 w-4" />
                 Add Job
               </button>
@@ -1971,32 +2112,39 @@ setActivityLogs((logs) => [newActivity, ...logs]);
         <div className="grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
           {showAddJobModal && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
-          <form ref={formRef} onSubmit={addJob} className="flex h-[100dvh] w-full max-w-[1000px] flex-col overflow-hidden bg-[#0b1628] p-4 shadow-2xl shadow-black/40 md:max-h-[92vh] md:h-auto md:rounded-2xl md:border md:border-white/10">
+          <form
+            ref={formRef}
+            onSubmit={addJob}
+            onFocusCapture={(event) => {
+              if (event.target?.name) lastFocusedFieldRef.current = event.target.name;
+            }}
+            className="flex h-[100dvh] w-full max-w-[1000px] flex-col overflow-hidden bg-[#0b1628] p-4 shadow-2xl shadow-black/40 md:max-h-[92vh] md:h-auto md:rounded-2xl md:border md:border-white/10"
+          >
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-black text-white">Add New Job</h2>
                 <p className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Dispatch intake</p>
               </div>
-              <button type="button" onClick={() => setShowAddJobModal(false)} className="min-h-11 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-white/15">
+              <button type="button" onClick={() => requestDiscardAddJob("close")} className="min-h-11 rounded-lg bg-white/10 px-3 py-2 text-xs font-bold text-slate-100 hover:bg-white/15">
                 Close
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto pb-24 lg:hidden">
+            <div ref={mobileFormScrollRef} onScroll={(event) => { scrollPositionRef.current.mobile = event.currentTarget.scrollTop; }} className="flex-1 overflow-y-auto pb-24 lg:hidden">
               <div className="mb-4 flex gap-2" aria-label={`Step ${mobileJobStep} of 5`}>
                 {[1, 2, 3, 4, 5].map((step) => <span key={step} className={`h-2 flex-1 rounded-full ${step <= mobileJobStep ? "bg-blue-500" : "bg-white/10"}`} />)}
               </div>
               <p className="mb-4 text-sm font-black uppercase tracking-wide text-blue-300">Step {mobileJobStep} of 5 · {mobileJobStep === 1 ? "Customer" : mobileJobStep === 2 ? "Job Details" : mobileJobStep === 3 ? "Assignment" : mobileJobStep === 4 ? "Costs & Notes" : "Review"}</p>
               <div className="grid gap-4">
                 {mobileJobStep === 1 && <><Input label="Invoice #" value={form.reference} onChange={(value) => setForm({ ...form, reference: value })} /><Input label="Reference #" value={form.jobReference || ""} onChange={(value) => setForm({ ...form, jobReference: value })} /><Input label="Company" value={form.company} onChange={(value) => setForm({ ...form, company: value })} /><Input label="Phone" type="tel" value={form.customerPhone || ""} onChange={(value) => setForm({ ...form, customerPhone: value })} /></>}
-                {mobileJobStep === 2 && <><Input label="Location / Address" value={form.location} onChange={updateFormLocation} />{isAdmin && <><Input label="Parsed City (optional correction)" value={form.city} onChange={(value) => setForm({ ...form, city: value })} /><Input label="Parsed State (optional correction)" value={form.state} onChange={(value) => setForm({ ...form, state: value.toUpperCase().slice(0, 2) })} /></>}<Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
+                {mobileJobStep === 2 && <><Input label="Location / Address" value={form.location} onChange={updateFormLocation} />{isAdmin && <><Input label="Parsed City (optional correction)" value={form.city} onChange={(value) => setForm({ ...form, city: value })} /><Input label="Parsed State (optional correction)" value={form.state} onChange={(value) => setForm({ ...form, state: value.toUpperCase().slice(0, 2) })} /></>}<Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea name="add_job_complaint" className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
                 {mobileJobStep === 3 && <><Input label="Technician" list="technician-suggestions" value={form.tech} onChange={(value) => setForm({ ...form, tech: value })} /><Input label="Dispatcher" list="dispatcher-suggestions" value={form.dispatch} onChange={(value) => setForm({ ...form, dispatch: value })} /><Select label="Priority" value={form.rowFlag} onChange={(value) => setForm({ ...form, rowFlag: value })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} /><Select label="Status" value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={jobStatusOptions} /></>}
-                {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.updates} onChange={(event) => setForm({ ...form, updates: event.target.value })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
+                {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea name="add_job_updates" className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.updates} onChange={(event) => setForm({ ...form, updates: event.target.value })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
                 {mobileJobStep === 5 && <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MobileJobField label="Reference #" value={form.jobReference || "Not assigned"} /><MobileJobField label="Invoice #" value={form.reference || "Not assigned"} /><MobileJobField label="Company" value={form.company || "Not provided"} /><MobileJobField label="Location" value={form.location || "Not provided"} /><MobileJobField label="Technician" value={form.tech || "Unassigned"} /><MobileJobField label="Dispatcher" value={form.dispatch || "Unassigned"} /><MobileJobField label="Priority" value={form.rowFlag} /><MobileJobField label="Notes" value={form.updates || form.complaint || "No notes"} lines={2} /></div>}
               </div>
             </div>
 
-            <div className="hidden gap-3 overflow-y-auto lg:grid lg:grid-cols-2 xl:grid-cols-4">
+            <div ref={desktopFormScrollRef} onScroll={(event) => { scrollPositionRef.current.desktop = event.currentTarget.scrollTop; }} className="hidden gap-3 overflow-y-auto lg:grid lg:grid-cols-2 xl:grid-cols-4">
               <Input label="Date" type="date" value={form.date} onChange={(v) => setForm({ ...form, date: v })} />
               <Input label="Time" placeholder="10:45 AM" value={form.time} onChange={(v) => setForm({ ...form, time: v })} />
               <Input label="Invoice #" value={form.reference} onChange={(v) => setForm({ ...form, reference: v })} />
@@ -2018,6 +2166,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300 md:col-span-2 xl:col-span-4">
                 <span>Updates / Notes</span>
                 <textarea
+                  name="add_job_updates"
                   className="h-16 w-full resize-none rounded-lg border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
                   placeholder="Example: Driver called. Tech ETA 35 minutes..."
                   value={form.updates}
@@ -2080,7 +2229,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <div className="flex flex-wrap justify-end gap-2 md:col-span-2 xl:col-span-4">
                 <button
                   type="button"
-                  onClick={() => setForm(emptyForm())}
+                  onClick={() => requestDiscardAddJob("clear")}
                   className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15"
                 >
                   Clear
@@ -2108,6 +2257,18 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           </form>
           </div>
           )}
+          {discardAddJobAction && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 p-4">
+              <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#0b1628] p-5 text-white shadow-2xl">
+                <h3 className="text-lg font-black">Discard this unfinished job?</h3>
+                <p className="mt-2 text-sm font-semibold text-slate-400">Your saved Add Job draft will be deleted.</p>
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <button type="button" onClick={() => setDiscardAddJobAction("")} className="min-h-11 rounded-xl bg-white/10 px-4 font-black text-white">Keep Editing</button>
+                  <button type="button" onClick={discardAddJob} className="min-h-11 rounded-xl bg-red-600 px-4 font-black text-white">Discard Job</button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <DispatchRightPanel
             isAdmin={isAdmin}
@@ -2116,7 +2277,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             technicians={dispatchTechnicians}
             activeTechniciansCount={activeTechniciansCount}
             activityLogs={activityLogs}
-            onAddJob={() => setShowAddJobModal(true)}
+            onAddJob={() => openAddJob()}
             onAssign={() => {
               setAssignmentJob(filteredJobs[0] || null);
             }}
@@ -2395,7 +2556,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               {mobileVisibleCount < filteredJobs.length && <button type="button" onClick={() => setMobileVisibleCount((count) => count + 50)} className="min-h-11 rounded-xl bg-blue-600 px-4 font-bold text-white">Load 50 More Jobs</button>}
             </div>
             <div className="sticky bottom-0 -mx-4 mt-auto grid grid-cols-3 gap-2 border-t border-white/10 bg-[#0b1628] p-4 lg:hidden">
-              <button type="button" onClick={() => { localStorage.setItem("nttr-mobile-job-draft", JSON.stringify(form)); setToastMessage("Job draft saved"); }} className="min-h-12 rounded-xl bg-white/10 px-2 text-xs font-bold text-slate-100">Save Draft</button>
+              <button type="button" onClick={() => { saveAddJobDraft(); setToastMessage("Job draft saved"); }} className="min-h-12 rounded-xl bg-white/10 px-2 text-xs font-bold text-slate-100">Save Draft</button>
               <button type="button" disabled={mobileJobStep === 1} onClick={() => setMobileJobStep((step) => Math.max(1, step - 1))} className="min-h-12 rounded-xl border border-white/10 px-2 text-sm font-bold text-white disabled:opacity-40">Previous</button>
               {mobileJobStep < 5 ? <button type="button" onClick={() => setMobileJobStep((step) => Math.min(5, step + 1))} className="min-h-12 rounded-xl bg-blue-600 px-2 text-sm font-bold text-white">Next</button> : <button type="submit" className="min-h-12 rounded-xl bg-emerald-600 px-2 text-sm font-bold text-white">Save Job</button>}
             </div>
@@ -3561,11 +3722,12 @@ function JobContextMenu({ x, y, job, onAction }) {
   );
 }
 
-function Input({ label, value, onChange, type = "text", placeholder = "", list = "" }) {
+function Input({ label, value, onChange, type = "text", placeholder = "", list = "", name = "" }) {
   return (
     <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300">
       <span>{label}</span>
       <input
+        name={name || addJobFieldName(label)}
         type={type}
         className="min-h-11 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 text-base font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400 md:min-h-9 md:text-sm"
         placeholder={placeholder}
@@ -3577,12 +3739,13 @@ function Input({ label, value, onChange, type = "text", placeholder = "", list =
   );
 }
 
-function Select({ label, value, onChange, options }) {
+function Select({ label, value, onChange, options, name = "" }) {
   const isJobStatus = label === "Status";
   return (
     <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300">
       <span>{label}</span>
       <select
+        name={name || addJobFieldName(label)}
         className={`${darkSelectClass} min-h-11 w-full px-3 text-base font-semibold md:min-h-9 md:text-sm`}
         style={isJobStatus ? jobStatusControlStyle(value) : undefined}
         value={value}

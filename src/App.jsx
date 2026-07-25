@@ -113,6 +113,8 @@ export default function App() {
   const logoutChannel = useRef(null);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isAuthenticated = Boolean(session.isAuthenticated);
+  const isAuthenticatedRef = useRef(isAuthenticated);
+  isAuthenticatedRef.current = isAuthenticated;
 
   const resetApplicationState = useCallback(() => {
     authValidationId.current += 1;
@@ -203,7 +205,7 @@ export default function App() {
         redirectToLogin();
         return;
       }
-      if (nextSession?.user) setAuthLoading(true);
+      if (nextSession?.user && !isAuthenticatedRef.current) setAuthLoading(true);
       window.setTimeout(() => validate(nextSession), 0);
     });
     return () => { mounted = false; data?.subscription?.unsubscribe(); };
