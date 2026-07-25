@@ -480,6 +480,8 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const [jobDetailsOpen, setJobDetailsOpen] = useState(Boolean(initialDetailsJobId));
   const [nearbyPartsJob, setNearbyPartsJob] = useState(null);
   const [assignmentJob, setAssignmentJob] = useState(null);
+  // Legacy modal is permanently disabled. Add Job is rendered only by
+  // App.jsx at the /dispatch/jobs/new route.
   const showAddJobModal = false;
   const setShowAddJobModal = () => {};
   const [mobileJobStep, setMobileJobStep] = useState(1);

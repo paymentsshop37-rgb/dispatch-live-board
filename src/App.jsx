@@ -117,14 +117,16 @@ export default function App() {
   const logoutChannel = useRef(null);
   const isPublicRegistration = window.location.pathname === "/technician-registration";
   const isAuthenticated = Boolean(session.isAuthenticated);
-  const isAddJobRoute = window.location.pathname === "/dispatch/jobs/new";
+  const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
+  const isAddJobRoute = normalizedPath === "/dispatch/jobs/new";
   const isAuthenticatedRef = useRef(isAuthenticated);
   isAuthenticatedRef.current = isAuthenticated;
 
   const navigateAwayFromAddJob = useCallback((nextPath, reason) => {
+    const activePath = window.location.pathname.replace(/\/+$/, "") || "/";
     const addJobIsActive =
       currentPathRef.current === "/dispatch/jobs/new" ||
-      window.location.pathname === "/dispatch/jobs/new";
+      activePath === "/dispatch/jobs/new";
     const allowedReasons = ["save-success", "discard-confirmed", "signed-out"];
     if (addJobIsActive && nextPath !== "/dispatch/jobs/new" && !allowedReasons.includes(reason)) {
       console.warn("[AddJobRoute] blocked navigation", nextPath, reason);
