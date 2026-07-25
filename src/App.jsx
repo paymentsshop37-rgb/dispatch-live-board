@@ -174,7 +174,7 @@ export default function App() {
   }, [updateCurrentPath]);
 
   const navigateToDispatchBoard = useCallback((message = "", reason = "automatic") => {
-    console.trace("[Navigate to Dispatch Board]");
+    console.trace("[Navigate to Dispatch Board]", { reason, pathname: window.location.pathname });
     if (!updateCurrentPath("/dispatch-board", reason)) return;
     setActiveView("dispatch");
     if (message) {
@@ -207,6 +207,13 @@ export default function App() {
   }, [currentPath, isAuthenticated, session, updateCurrentPath]);
 
   const handleLogout = useCallback(async (reason = "manual_logout", message = "", broadcast = true) => {
+    if (
+      currentPathRef.current === "/dispatch/jobs/new" &&
+      !["manual_logout", "admin_forced_logout"].includes(reason)
+    ) {
+      console.warn("[AddJobRoute] blocked non-sign-out session reset", reason);
+      return;
+    }
     if (logoutInProgress.current) return;
     logoutInProgress.current = true;
     manualLogout.current = true;
@@ -240,7 +247,7 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    async function validate(authSession) {
+    async function validate(authSession, sourceEvent = "INITIAL_LOAD") {
       const validationId = ++authValidationId.current;
       if (!authSession?.user) {
         if (mounted) {
@@ -252,11 +259,19 @@ export default function App() {
       try {
         const profile = await loadCurrentProfile(authSession.user.id);
         if (profile.status !== "Active") {
-          if (mounted) await handleLogout("session_invalid", "Your account is inactive. Contact an administrator.");
+          if (mounted && !isAuthenticatedRef.current) {
+            await handleLogout("session_invalid", "Your account is inactive. Contact an administrator.");
+          } else {
+            console.warn("[AuthEvent] profile validation ignored while Add Job session remains active", sourceEvent);
+          }
           return;
         }
         if (!["admin", "dispatcher", "supervisor"].includes(String(profile.role).toLowerCase())) {
-          if (mounted) await handleLogout("session_invalid", "You do not have permission to access this application.");
+          if (mounted && !isAuthenticatedRef.current) {
+            await handleLogout("session_invalid", "You do not have permission to access this application.");
+          } else {
+            console.warn("[AuthEvent] role validation ignored during authenticated refresh", sourceEvent);
+          }
           return;
         }
         if (mounted && !manualLogout.current && validationId === authValidationId.current) {
@@ -268,12 +283,16 @@ export default function App() {
           }
         }
       } catch {
-        if (mounted) await handleLogout("session_invalid", "Unable to verify your account profile.");
+        if (mounted && !isAuthenticatedRef.current) {
+          await handleLogout("session_invalid", "Unable to verify your account profile.");
+        } else {
+          console.warn("[AuthEvent] transient profile refresh failure ignored", sourceEvent);
+        }
       } finally {
         if (mounted && validationId === authValidationId.current) setAuthLoading(false);
       }
     }
-    supabase.auth.getSession().then(({ data }) => validate(data?.session));
+    supabase.auth.getSession().then(({ data }) => validate(data?.session, "INITIAL_LOAD"));
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       console.log("[AuthEvent]", event);
       if (event === "SIGNED_OUT") {
@@ -287,8 +306,12 @@ export default function App() {
         console.log("[AuthEvent] ignored missing session", event);
         return;
       }
+      if (isAuthenticatedRef.current) {
+        console.log("[AuthEvent] preserved active route", event, window.location.pathname);
+        return;
+      }
       if (nextSession?.user && !isAuthenticatedRef.current) setAuthLoading(true);
-      window.setTimeout(() => validate(nextSession), 0);
+      window.setTimeout(() => validate(nextSession, event), 0);
     });
     return () => { mounted = false; data?.subscription?.unsubscribe(); };
   }, [handleLogout, redirectToLogin, resetApplicationState, updateCurrentPath]);

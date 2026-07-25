@@ -133,7 +133,10 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
     restorePosition();
     return () => {
       if (!clearedRef.current) saveDraft();
-      console.log("[AddJobRoute] unmounted");
+      console.trace("[AddJobRoute] unmounted", {
+        pathname: window.location.pathname,
+        draftCleared: clearedRef.current,
+      });
     };
   }, [restorePosition, saveDraft]);
 
@@ -182,6 +185,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
   }
 
   function requestClose() {
+    console.trace("[AddJobRoute] close requested", { hasData: hasDraftData(form) });
     if (!hasDraftData(form)) {
       clearedRef.current = true;
       sessionStorage.removeItem(storageKey);
@@ -190,6 +194,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
   }
 
   function discard() {
+    console.trace("[AddJobRoute] discard confirmed");
     clearedRef.current = true;
     sessionStorage.removeItem(storageKey);
     setForm(initialForm());
@@ -206,11 +211,13 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
     saveDraft();
     const { data, error: insertError } = await supabase.from("jobs").insert([toDbJob(form)]).select().single();
     if (insertError) {
+      console.trace("[AddJobRoute] save failed; route preserved", insertError.message);
       setError(insertError.message || "Unable to save job.");
       setSaving(false);
       saveDraft();
       return;
     }
+    console.trace("[AddJobRoute] save succeeded; navigating to Dispatch Board");
     clearedRef.current = true;
     sessionStorage.removeItem(storageKey);
     onSaved(data);
