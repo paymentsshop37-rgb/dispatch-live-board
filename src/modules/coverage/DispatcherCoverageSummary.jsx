@@ -40,8 +40,6 @@ function DispatcherJobs({ selection, onClose }) {
 function bucket(status) { const value = String(status || "").toLowerCase().replace(/\s+/g, " ").trim(); if (["completed", "complete", "finished", "terminado"].includes(value)) return "completed"; if (["cancelled", "canceled", "cancelado"].includes(value)) return "cancelled"; if (value.replace(/\s/g, "") === "dryrun") return "dryRuns"; if (["active", "activo"].includes(value)) return "active"; if (value === "pending") return "pending"; if (["in progress", "working", "on site"].includes(value)) return "inProgress"; return "other"; }
 
 function normalize(row) {
-  const location = String(row.location || row.address || "");
-  const parts = location.split(",").map((part) => part.trim());
   const latitude = row.latitude === null || row.latitude === undefined ? null : Number(row.latitude);
   const longitude = row.longitude === null || row.longitude === undefined ? null : Number(row.longitude);
   return {
@@ -49,8 +47,8 @@ function normalize(row) {
     id: row.id,
     date: String(row.job_date || row.date || row.created_at || "").slice(0, 10),
     invoiceNumber: row.invoice_number || row.reference || "",
-    city: row.job_city || row.city || parts[0] || "",
-    state: row.job_state || row.state || parts[1] || "",
+    city: row.job_city || "",
+    state: row.job_state || "",
     status: row.status || "Pending",
     totalBill: Number(row.total_bill || row.amount || 0),
     parts: Number(row.parts || row.parts_cost || 0),

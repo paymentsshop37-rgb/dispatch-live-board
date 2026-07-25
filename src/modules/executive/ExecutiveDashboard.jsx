@@ -42,8 +42,8 @@ const columnAliases = {
   reference: ["reference", "reference_number", "po_number"],
   company: ["company", "company_name", "customer"],
   location: ["location", "address", "service_location"],
-  city: ["job_city", "city", "service_city"],
-  state: ["job_state", "state", "service_state"],
+  city: ["job_city"],
+  state: ["job_state"],
   status: ["status", "job_status"],
   dispatch: ["dispatch", "dispatcher", "dispatcher_name", "assigned_by"],
   technician: ["tech", "technician", "technician_name"],
@@ -873,7 +873,7 @@ function buildTechnicianRows(rows) {
 function normalizeJob(row) {
   const date = dateOnly(readAlias(row, columnAliases.date));
   const location = stringValue(readAlias(row, columnAliases.location));
-  const city = stringValue(readAlias(row, columnAliases.city)) || cityFromLocation(location);
+  const city = stringValue(readAlias(row, columnAliases.city));
   const totalBill = numberValue(readAlias(row, columnAliases.totalBill));
   const parts = numberValue(readAlias(row, columnAliases.parts));
   const techLabor = numberValue(readAlias(row, columnAliases.techLabor));
@@ -888,8 +888,8 @@ function normalizeJob(row) {
     reference: stringValue(readAlias(row, columnAliases.reference)),
     company: stringValue(readAlias(row, columnAliases.company)) || "Unknown Company",
     location,
-    city: city || "Unknown",
-    state: stringValue(readAlias(row, columnAliases.state)) || stateFromLocation(location),
+    city: city || "Unknown City",
+    state: stringValue(readAlias(row, columnAliases.state)) || "Unassigned",
     status: titleCase(stringValue(readAlias(row, columnAliases.status)) || "Pending"),
     dispatch: stringValue(readAlias(row, columnAliases.dispatch)) || "Unassigned",
     technician: stringValue(readAlias(row, columnAliases.technician)) || "Unassigned",
@@ -983,8 +983,8 @@ function groupJobs(rows, labelGetter) {
 function buildCityStatusRows(jobs, serviceAreas = [], aliases = []) {
   const grouped = new Map();
   jobs.forEach((job) => {
-    let state = normalizeState(job.state || stateFromLocation(job.location));
-    let city = normalizeCoverageCity(job.city || cityFromLocation(job.location) || "Unknown");
+    let state = job.state === "Unassigned" ? "" : normalizeState(job.state);
+    let city = normalizeCoverageCity(job.city || "Unknown City");
     if (!state) {
       const stateSuffix = city.match(/\s([A-Z]{2})$/);
       if (stateSuffix) {
@@ -996,7 +996,7 @@ function buildCityStatusRows(jobs, serviceAreas = [], aliases = []) {
     city = city.replace(/\bODESA\b/g, "ODESSA").replace(/\bODESSAA\b/g, "ODESSA");
     const key = `${city}|${state}`;
     if (!grouped.has(key)) {
-      grouped.set(key, { key, city, state: state || "Unknown", total: 0, completed: 0, cancelled: 0, dryRuns: 0, active: 0, pending: 0, inProgress: 0, other: 0, jobs: [] });
+      grouped.set(key, { key, city, state: state || "Unassigned", total: 0, completed: 0, cancelled: 0, dryRuns: 0, active: 0, pending: 0, inProgress: 0, other: 0, jobs: [] });
     }
     const row = grouped.get(key);
     const bucket = cityStatusBucket(job.status);

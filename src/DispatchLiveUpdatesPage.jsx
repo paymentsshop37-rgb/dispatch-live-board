@@ -146,6 +146,8 @@ const fieldMap = {
   paymentReceiver: "received",
   totalBill: "total_bill",
   techLabor: "tech_labor",
+  city: "job_city",
+  state: "job_state",
 };
 
 const jobFinancialActivityActions = {
@@ -318,6 +320,8 @@ function fromDbJob(row) {
     previousTechnician: row.previous_technician || "",
     reassignedCount: Number(row.reassigned_count || 0),
     location: row.location || "",
+    city: row.job_city || "",
+    state: row.job_state || "",
     status: row.status || "New",
     rowFlag: row.row_flag || "Normal",
     invoice: row.invoice_status || "Pending",
@@ -346,6 +350,8 @@ function toDbJob(job) {
     company: job.company || "",
     tech: job.tech || "",
     location: job.location || "",
+    job_city: String(job.city || "").trim() || null,
+    job_state: String(job.state || "").trim().toUpperCase() || null,
     status: job.status || "New",
     row_flag: job.rowFlag || "Normal",
     invoice_status: job.invoice || "Pending",
@@ -384,6 +390,8 @@ function emptyForm() {
     company: "",
     tech: "",
     location: "",
+    city: "",
+    state: "",
     status: "New",
     rowFlag: "Normal",
     invoice: "Pending",
@@ -1599,6 +1607,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
         company: job.company || "",
         tech: job.tech || "",
         location: job.location || "",
+        city: job.city || "",
+        state: job.state || "",
         status: "New",
         rowFlag: job.rowFlag || "Normal",
         invoice: job.invoice || "Pending",
@@ -1939,7 +1949,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <p className="mb-4 text-sm font-black uppercase tracking-wide text-blue-300">Step {mobileJobStep} of 5 · {mobileJobStep === 1 ? "Customer" : mobileJobStep === 2 ? "Job Details" : mobileJobStep === 3 ? "Assignment" : mobileJobStep === 4 ? "Costs & Notes" : "Review"}</p>
               <div className="grid gap-4">
                 {mobileJobStep === 1 && <><Input label="Invoice #" value={form.reference} onChange={(value) => setForm({ ...form, reference: value })} /><Input label="Reference #" value={form.jobReference || ""} onChange={(value) => setForm({ ...form, jobReference: value })} /><Input label="Company" value={form.company} onChange={(value) => setForm({ ...form, company: value })} /><Input label="Phone" type="tel" value={form.customerPhone || ""} onChange={(value) => setForm({ ...form, customerPhone: value })} /></>}
-                {mobileJobStep === 2 && <><Input label="Location" value={form.location} onChange={(value) => setForm({ ...form, location: value })} /><Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
+                {mobileJobStep === 2 && <><Input label="Location / Address" value={form.location} onChange={(value) => setForm({ ...form, location: value })} /><Input label="Job City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} /><Input label="Job State" value={form.state} onChange={(value) => setForm({ ...form, state: value.toUpperCase().slice(0, 2) })} /><Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
                 {mobileJobStep === 3 && <><Input label="Technician" list="technician-suggestions" value={form.tech} onChange={(value) => setForm({ ...form, tech: value })} /><Input label="Dispatcher" list="dispatcher-suggestions" value={form.dispatch} onChange={(value) => setForm({ ...form, dispatch: value })} /><Select label="Priority" value={form.rowFlag} onChange={(value) => setForm({ ...form, rowFlag: value })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} /><Select label="Status" value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={jobStatusOptions} /></>}
                 {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.updates} onChange={(event) => setForm({ ...form, updates: event.target.value })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
                 {mobileJobStep === 5 && <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MobileJobField label="Reference #" value={form.jobReference || "Not assigned"} /><MobileJobField label="Invoice #" value={form.reference || "Not assigned"} /><MobileJobField label="Company" value={form.company || "Not provided"} /><MobileJobField label="Location" value={form.location || "Not provided"} /><MobileJobField label="Technician" value={form.tech || "Unassigned"} /><MobileJobField label="Dispatcher" value={form.dispatch || "Unassigned"} /><MobileJobField label="Priority" value={form.rowFlag} /><MobileJobField label="Notes" value={form.updates || form.complaint || "No notes"} lines={2} /></div>}
@@ -1954,6 +1964,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <Input label="Company" list="company-suggestions" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
               <Input label="Tech" list="technician-suggestions" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
               <Input label="Location" list="location-suggestions" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
+              <Input label="Job City" value={form.city} onChange={(v) => setForm({ ...form, city: v })} />
+              <Input label="Job State" value={form.state} onChange={(v) => setForm({ ...form, state: v.toUpperCase().slice(0, 2) })} />
               <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
               <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={jobStatusOptions} />
               <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={invoiceStatusOptions} />
@@ -2807,12 +2819,18 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 canEditTechPayment={canEditJobFinancial}
                 technicianNames={dispatchTechnicians.map((technician) => technician.full_name).filter(Boolean)}
                 onClose={() => setUpdatesJob(null)}
-                onSave={async ({ updates, jobReference, techPaymentStatus, technician }) => {
+                onSave={async ({ updates, jobReference, techPaymentStatus, technician, city, state }) => {
                   if (jobReference !== updatesJob.jobReference) {
                     await updateJob(updatesJob.id, "jobReference", jobReference);
                   }
                   if (technician !== updatesJob.tech) {
                     await updateJob(updatesJob.id, "tech", technician);
+                  }
+                  if (city !== updatesJob.city) {
+                    await updateJob(updatesJob.id, "city", city);
+                  }
+                  if (state !== updatesJob.state) {
+                    await updateJob(updatesJob.id, "state", state);
                   }
                   if (canEditJobFinancial && techPaymentStatus !== updatesJob.techPaymentStatus) {
                     await updateTechPaymentStatus(updatesJob, techPaymentStatus);
@@ -3592,6 +3610,8 @@ function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], o
   const [jobReference, setJobReference] = useState(job.jobReference || "");
   const [techPaymentStatus, setTechPaymentStatus] = useState(job.techPaymentStatus || "Pending");
   const [technician, setTechnician] = useState(job.tech || "");
+  const [city, setCity] = useState(job.city || "");
+  const [state, setState] = useState(job.state || "");
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
@@ -3612,6 +3632,16 @@ function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], o
             placeholder="ABC-12345"
           />
         </label>
+        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_120px]">
+          <label className="grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
+            <span>Job City</span>
+            <input className={`${tableControlClass} min-h-11 px-3 text-base font-semibold`} value={city} onChange={(event) => setCity(event.target.value)} />
+          </label>
+          <label className="grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
+            <span>Job State</span>
+            <input className={`${tableControlClass} min-h-11 px-3 text-base font-semibold uppercase`} maxLength={2} value={state} onChange={(event) => setState(event.target.value.toUpperCase().slice(0, 2))} />
+          </label>
+        </div>
         <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
           <span>Technician</span>
           <input
@@ -3637,7 +3667,7 @@ function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], o
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15">Cancel</button>
-          <button type="button" onClick={() => onSave({ updates: value, jobReference, techPaymentStatus, technician })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
+          <button type="button" onClick={() => onSave({ updates: value, jobReference, techPaymentStatus, technician, city, state })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
         </div>
       </div>
     </div>
@@ -4184,7 +4214,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
               </DetailSection>
 
               <DetailSection title="Location Information">
-                <DetailGrid items={[["Breakdown location", address], ["City", valueFrom(raw.city, locationParts.city)], ["State", valueFrom(raw.state, locationParts.state)], ["ZIP", valueFrom(raw.zip_code, raw.zip)], ["Latitude", raw.latitude], ["Longitude", raw.longitude], ["Location notes", raw.location_notes]]} />
+                <DetailGrid items={[["Breakdown location", address], ["City", valueFrom(raw.job_city, "Unknown City")], ["State", valueFrom(raw.job_state, "Unassigned")], ["ZIP", valueFrom(raw.zip_code, raw.zip)], ["Latitude", raw.latitude], ["Longitude", raw.longitude], ["Location notes", raw.location_notes]]} />
                 <div className="mt-3 grid grid-cols-3 gap-2"><DetailAction label="Open Map" onClick={() => window.open(mapLink(address), "_blank", "noopener,noreferrer")} /><DetailAction label="Copy Address" onClick={() => navigator.clipboard?.writeText(address || "")} /><DetailAction label="Share Location" onClick={() => shareJobLocation(address)} /></div>
               </DetailSection>
 

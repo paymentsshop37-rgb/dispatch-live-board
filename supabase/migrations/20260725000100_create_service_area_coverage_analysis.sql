@@ -34,15 +34,35 @@ create unique index if not exists service_area_alias_city_state_unique
 create index if not exists service_area_alias_area_idx
   on public.service_area_city_aliases (service_area_id);
 
-alter table public.jobs add column if not exists job_city text;
-alter table public.jobs add column if not exists job_state text;
-alter table public.jobs add column if not exists latitude numeric;
-alter table public.jobs add column if not exists longitude numeric;
-alter table public.jobs add column if not exists service_area_id uuid references public.service_areas(id) on delete set null;
-alter table public.jobs add column if not exists service_area_assignment_method text;
-alter table public.jobs add column if not exists service_area_distance_miles numeric;
-alter table public.jobs add column if not exists service_area_assigned_at timestamptz;
-create index if not exists jobs_service_area_idx on public.jobs (service_area_id);
+-- public.jobs in production uses canonical job_city/job_state columns and does not
+-- contain generic city/state columns. Add only the canonical geography fields.
+alter table public.jobs
+  add column if not exists job_city text,
+  add column if not exists job_state text,
+  add column if not exists latitude numeric,
+  add column if not exists longitude numeric,
+  add column if not exists service_area_id uuid,
+  add column if not exists service_area_assignment_method text,
+  add column if not exists service_area_distance_miles numeric,
+  add column if not exists service_area_assigned_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.jobs'::regclass
+      and conname = 'jobs_service_area_id_fkey'
+  ) then
+    alter table public.jobs
+      add constraint jobs_service_area_id_fkey
+      foreign key (service_area_id) references public.service_areas(id) on delete set null;
+  end if;
+end $$;
+
+create index if not exists jobs_job_city_state_idx
+  on public.jobs (job_city, job_state);
+create index if not exists jobs_service_area_id_idx
+  on public.jobs (service_area_id);
 
 create or replace function public.normalize_geo_city(value text)
 returns text language sql immutable as $$
@@ -131,8 +151,8 @@ begin
     return new;
   end if;
 
-  candidate_city := public.normalize_geo_city(coalesce(new.job_city, new.city));
-  candidate_state := upper(trim(coalesce(new.job_state, new.state)));
+  candidate_city := public.normalize_geo_city(new.job_city);
+  candidate_state := upper(trim(coalesce(new.job_state, '')));
 
   select sa.id, 0::numeric as distance, 'alias'::text as method
     into selected_area
@@ -173,7 +193,7 @@ $$;
 
 drop trigger if exists jobs_assign_service_area on public.jobs;
 create trigger jobs_assign_service_area
-before insert or update of job_city, job_state, city, state, latitude, longitude, service_area_id, service_area_assignment_method
+before insert or update of job_city, job_state, latitude, longitude, service_area_id, service_area_assignment_method
 on public.jobs for each row execute function public.assign_job_service_area();
 
 alter table public.service_areas enable row level security;
