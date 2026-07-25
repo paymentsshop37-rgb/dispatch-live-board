@@ -35,6 +35,7 @@ import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/techni
 import { UserManagement } from "./modules/users";
 import { FlatRateGuide } from "./modules/flat-rate";
 import { PartsIntelligence } from "./modules/parts";
+import DispatcherCoverageSummary from "./modules/coverage/DispatcherCoverageSummary";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 import { supabase } from "./lib/supabase";
 import {
@@ -949,6 +950,7 @@ function DispatcherDashboard() {
           <DispatcherCard title="Activity Log" text="Review operational activity without financial details." />
         </div>
       </div>
+      <DispatcherCoverageSummary />
       </div>
     </div>
   );

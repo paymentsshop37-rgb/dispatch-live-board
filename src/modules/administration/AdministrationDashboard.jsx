@@ -1,5 +1,6 @@
 import React from "react";
 import { Database, KeyRound, Lock, Route, ShieldCheck, UserCog } from "lucide-react";
+import CoverageSettings from "../coverage/CoverageSettings";
 
 const accessRules = [
   { label: "Public Registration", value: "/technician-registration", status: "Public route" },
@@ -93,6 +94,7 @@ export default function AdministrationDashboard({ session, role }) {
             </div>
           </div>
         </section>
+        {role === "admin" && <CoverageSettings embedded />}
       </div>
     </div>
   );

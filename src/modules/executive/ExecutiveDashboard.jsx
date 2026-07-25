@@ -24,6 +24,9 @@ import { supabase } from "../../lib/supabase";
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "../activity";
 import CitiesWithoutJobsPanel from "../coverage/CitiesWithoutJobsPanel";
 import { buildCitiesWithoutJobs, loadCoverageCities, normalizeCoverageCity, normalizeState, setCoverageCityActive } from "../coverage/coverageCityService";
+import CoverageSettings from "../coverage/CoverageSettings";
+import GeographicCoverageAnalysis from "../coverage/GeographicCoverageAnalysis";
+import { assignServiceArea, buildServiceAreaRows, loadServiceAreaConfiguration, previousDateRange } from "../coverage/serviceAreaService";
 import { loadTechnicians } from "../technicians/technicianService";
 import {
   techPaymentControlStyle,
@@ -39,8 +42,8 @@ const columnAliases = {
   reference: ["reference", "reference_number", "po_number"],
   company: ["company", "company_name", "customer"],
   location: ["location", "address", "service_location"],
-  city: ["city", "service_city"],
-  state: ["state", "service_state"],
+  city: ["job_city", "city", "service_city"],
+  state: ["job_state", "state", "service_state"],
   status: ["status", "job_status"],
   dispatch: ["dispatch", "dispatcher", "dispatcher_name", "assigned_by"],
   technician: ["tech", "technician", "technician_name"],
@@ -53,7 +56,7 @@ const columnAliases = {
   techPaymentStatus: ["tech_payment_status"],
 };
 
-const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "This Year", "Custom Range"];
+const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"];
 const defaultFilterMode = "This Week";
 
 const importantActivityActions = new Set([
@@ -102,6 +105,9 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
   const [technicians, setTechnicians] = useState([]);
   const [citiesWithoutJobsOpen, setCitiesWithoutJobsOpen] = useState(false);
   const [cityJobDrilldown, setCityJobDrilldown] = useState(null);
+  const [serviceAreas, setServiceAreas] = useState([]);
+  const [serviceAreaAliases, setServiceAreaAliases] = useState([]);
+  const [coverageSettingsOpen, setCoverageSettingsOpen] = useState(false);
 
   useEffect(() => {
     loadDashboard();
@@ -109,11 +115,12 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
 
   async function loadDashboard() {
     setLoading(true);
-    const [{ data, error }, recentActivity, coverageResult, technicianResult] = await Promise.all([
+    const [{ data, error }, recentActivity, coverageResult, technicianResult, serviceAreaResult] = await Promise.all([
       supabase.from("jobs").select("*"),
       getRecentActivity({ limit: 100 }),
       loadCoverageCities({ includeInactive: true }).then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
       loadTechnicians().then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
+      loadServiceAreaConfiguration({ includeInactive: true }).then((value) => ({ value })).catch((loadError) => ({ error: loadError })),
     ]);
 
     const nextWarnings = [];
@@ -129,6 +136,11 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
     else setCoverageCities(coverageResult.rows);
     if (technicianResult.error) nextWarnings.push(`Active technicians unavailable: ${technicianResult.error.message}`);
     else setTechnicians(technicianResult.rows);
+    if (serviceAreaResult.error) nextWarnings.push(`Service-area analysis unavailable until its database migration is applied: ${serviceAreaResult.error.message}`);
+    else {
+      setServiceAreas(serviceAreaResult.value.areas);
+      setServiceAreaAliases(serviceAreaResult.value.aliases);
+    }
 
     setActivityRows(normalizeActivity(recentActivity || []));
     setWarnings(nextWarnings);
@@ -139,7 +151,13 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
   const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange]);
   const filteredJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, dateRange)), [jobs, dateRange]);
   const analytics = useMemo(() => buildAnalytics(filteredJobs), [filteredJobs]);
-  const cityStatusRows = useMemo(() => buildCityStatusRows(filteredJobs), [filteredJobs]);
+  const previousRange = useMemo(() => previousDateRange(dateRange), [dateRange]);
+  const previousJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, previousRange)), [jobs, previousRange]);
+  const cityStatusRows = useMemo(() => buildCityStatusRows(filteredJobs, serviceAreas, serviceAreaAliases), [filteredJobs, serviceAreas, serviceAreaAliases]);
+  const serviceAreaAnalysis = useMemo(
+    () => buildServiceAreaRows({ jobs: filteredJobs, previousJobs, areas: serviceAreas, aliases: serviceAreaAliases, technicians }),
+    [filteredJobs, previousJobs, serviceAreas, serviceAreaAliases, technicians]
+  );
   const cityRows = useMemo(() => cityStatusRows.slice(0, 10).map((row) => ({ label: `${row.city}, ${row.state}`, value: row.total })), [cityStatusRows]);
   const dispatcherRows = useMemo(() => buildDispatcherRows(filteredJobs), [filteredJobs]);
   const technicianRows = useMemo(() => buildTechnicianRows(filteredJobs), [filteredJobs]);
@@ -275,7 +293,17 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
             </section>
 
             <Panel title="All Cities — Status Breakdown" subtitle="Every city with jobs in the selected date range" icon={MapPin}>
-              <CityStatusBreakdown rows={cityStatusRows} onDrilldown={setCityJobDrilldown} />
+              <GeographicCoverageAnalysis
+                exactRows={cityStatusRows}
+                serviceAreaRows={serviceAreaAnalysis.rows}
+                unassignedJobs={serviceAreaAnalysis.unassignedJobs}
+                rangeLabel={filterMode}
+                onExactCities={<CityStatusBreakdown rows={cityStatusRows} onDrilldown={setCityJobDrilldown} />}
+                onDrilldown={setCityJobDrilldown}
+                onOpenSettings={() => setCoverageSettingsOpen(true)}
+                isAdmin
+                onChanged={loadDashboard}
+              />
             </Panel>
           </main>
 
@@ -331,6 +359,7 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
             onOpenJob={onOpenJob}
           />
         )}
+        {coverageSettingsOpen && <CoverageSettings onClose={() => setCoverageSettingsOpen(false)} onChanged={loadDashboard} />}
       </div>
     </div>
   );
@@ -609,8 +638,8 @@ function CityStatusBreakdown({ rows, onDrilldown }) {
   }
 
   function exportCsv() {
-    const headers = ["City", "State", ...cityStatusColumns.map(([, label]) => label)];
-    const data = filteredRows.map((row) => [row.city, row.state, ...cityStatusColumns.map(([key]) => row[key])]);
+    const headers = ["Exact City", "State", ...cityStatusColumns.map(([, label]) => label), "Completion Rate", "Cancellation Rate", "Last Job Date", "Assigned Service Area"];
+    const data = filteredRows.map((row) => [row.city, row.state, ...cityStatusColumns.map(([key]) => row[key]), `${row.completionRate.toFixed(1)}%`, `${row.cancellationRate.toFixed(1)}%`, row.lastJobDate, row.assignedServiceArea]);
     downloadCityFile([headers, ...data].map((line) => line.map(csvCell).join(",")).join("\n"), "jobs-by-city-status.csv", "text/csv;charset=utf-8");
   }
 
@@ -640,10 +669,10 @@ function CityStatusBreakdown({ rows, onDrilldown }) {
       <div className="hidden lg:block">
         <div ref={topScrollRef} onScroll={() => sync(topScrollRef, tableScrollRef)} className="dispatch-top-scrollbar w-full overflow-x-auto overflow-y-hidden rounded-t-xl bg-[#111f33]"><div style={{ width: tableWidth, height: 1 }} /></div>
         <div ref={tableScrollRef} onScroll={() => sync(tableScrollRef, topScrollRef)} className="dispatch-table-scroll max-h-[520px] overflow-auto rounded-b-xl border border-white/10">
-          <table ref={tableRef} className="min-w-[1200px] w-full text-left text-sm">
-            <thead className="sticky top-0 z-10 bg-[#11233a] text-xs uppercase text-slate-300"><tr><th className="px-3 py-3">City</th><th className="px-3 py-3">State</th>{cityStatusColumns.map(([, label]) => <th key={label} className="px-3 py-3 text-right">{label}</th>)}</tr></thead>
+          <table ref={tableRef} className="min-w-[1700px] w-full text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-[#11233a] text-xs uppercase text-slate-300"><tr><th className="px-3 py-3">Exact City</th><th className="px-3 py-3">State</th>{cityStatusColumns.map(([, label]) => <th key={label} className="px-3 py-3 text-right">{label}</th>)}<th className="px-3 py-3 text-right">Completion Rate</th><th className="px-3 py-3 text-right">Cancellation Rate</th><th className="px-3 py-3">Last Job Date</th><th className="px-3 py-3">Assigned Service Area</th></tr></thead>
             <tbody>
-              {pageRows.map((row) => <tr key={row.key} className="border-t border-white/10 odd:bg-white/[0.025]"><td className="px-3 py-2.5 font-black text-white">{row.city}</td><td className="px-3 py-2.5 font-bold text-slate-300">{row.state}</td>{cityStatusColumns.map(([key]) => <td key={key} className="px-3 py-2.5 text-right"><CountButton value={row[key]} onClick={() => onDrilldown({ row, bucket: key })} /></td>)}</tr>)}
+              {pageRows.map((row) => <tr key={row.key} className="border-t border-white/10 odd:bg-white/[0.025]"><td className="px-3 py-2.5 font-black text-white">{row.city}</td><td className="px-3 py-2.5 font-bold text-slate-300">{row.state}</td>{cityStatusColumns.map(([key]) => <td key={key} className="px-3 py-2.5 text-right"><CountButton value={row[key]} onClick={() => onDrilldown({ row, bucket: key })} /></td>)}<td className="px-3 py-2.5 text-right">{row.completionRate.toFixed(1)}%</td><td className="px-3 py-2.5 text-right">{row.cancellationRate.toFixed(1)}%</td><td className="px-3 py-2.5">{row.lastJobDate || "Never"}</td><td className="px-3 py-2.5 font-bold text-blue-200">{row.assignedServiceArea}</td></tr>)}
             </tbody>
             <tfoot className="sticky bottom-0 bg-[#11233a] font-black"><tr><td className="px-3 py-3">TOTAL</td><td></td>{cityStatusColumns.map(([key]) => <td key={key} className="px-3 py-3 text-right">{totals[key]}</td>)}</tr></tfoot>
           </table>
@@ -655,7 +684,7 @@ function CityStatusBreakdown({ rows, onDrilldown }) {
 }
 
 function CityStatusCard({ row, onDrilldown }) {
-  return <article className="rounded-2xl border border-white/10 bg-white/5 p-4"><h3 className="font-black text-white">{row.city}, {row.state}</h3><div className="mt-3 grid grid-cols-2 gap-2">{cityStatusColumns.map(([key, label]) => <button key={key} type="button" onClick={() => onDrilldown({ row, bucket: key })} className="min-h-11 rounded-xl bg-white/5 p-2 text-left"><span className="block text-[10px] font-black uppercase text-slate-500">{label}</span><span className="mt-1 block text-xl font-black text-blue-300">{row[key]}</span></button>)}</div></article>;
+  return <article className="rounded-2xl border border-white/10 bg-white/5 p-4"><h3 className="font-black text-white">{row.city}, {row.state}</h3><p className="mt-1 text-xs font-bold text-blue-200">{row.assignedServiceArea}</p><div className="mt-3 grid grid-cols-2 gap-2">{cityStatusColumns.map(([key, label]) => <button key={key} type="button" onClick={() => onDrilldown({ row, bucket: key })} className="min-h-11 rounded-xl bg-white/5 p-2 text-left"><span className="block text-[10px] font-black uppercase text-slate-500">{label}</span><span className="mt-1 block text-xl font-black text-blue-300">{row[key]}</span></button>)}</div><div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-slate-400"><span>Completion {row.completionRate.toFixed(1)}%</span><span>Cancelled {row.cancellationRate.toFixed(1)}%</span><span>Last job {row.lastJobDate || "Never"}</span></div></article>;
 }
 function TotalsCard({ totals }) { return <article className="rounded-2xl border border-blue-400/30 bg-blue-500/10 p-4"><h3 className="font-black">TOTAL</h3><div className="mt-3 grid grid-cols-2 gap-2">{cityStatusColumns.map(([key, label]) => <div key={key}><p className="text-[10px] font-black uppercase text-slate-400">{label}</p><p className="text-xl font-black">{totals[key]}</p></div>)}</div></article>; }
 function CountButton({ value, onClick }) { return <button type="button" onClick={onClick} className="min-h-9 min-w-10 rounded-lg bg-blue-500/10 px-2 font-black text-blue-300 hover:bg-blue-500/20">{value}</button>; }
@@ -851,6 +880,7 @@ function normalizeJob(row) {
   const updates = stringValue(readAlias(row, columnAliases.updates));
 
   return {
+    raw: row,
     id: readAlias(row, columnAliases.id) || crypto.randomUUID(),
     date,
     time: timeOnly(readAlias(row, columnAliases.time)),
@@ -872,6 +902,11 @@ function normalizeJob(row) {
     updates,
     etaMinutes: extractEtaMinutes(updates),
     techPaymentStatus: titleCase(stringValue(readAlias(row, columnAliases.techPaymentStatus)) || "Pending"),
+    latitude: finiteNumber(row.latitude),
+    longitude: finiteNumber(row.longitude),
+    serviceAreaId: row.service_area_id || null,
+    serviceAreaMethod: row.service_area_assignment_method || "",
+    serviceAreaDistance: row.service_area_distance_miles === null || row.service_area_distance_miles === undefined ? null : Number(row.service_area_distance_miles),
   };
 }
 
@@ -917,6 +952,12 @@ function getDateRange(mode, customRange) {
     const last = new Date(now.getFullYear(), now.getMonth(), 0);
     return { from: localDate(first), to: localDate(last) };
   }
+  if (mode === "Last 30 Days" || mode === "Last 90 Days") {
+    const days = mode === "Last 30 Days" ? 30 : 90;
+    const first = new Date(now);
+    first.setDate(first.getDate() - days + 1);
+    return { from: localDate(first), to: today };
+  }
   if (mode === "This Year") return { from: `${now.getFullYear()}-01-01`, to: today };
 
   return {
@@ -939,7 +980,7 @@ function groupJobs(rows, labelGetter) {
   return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 }
 
-function buildCityStatusRows(jobs) {
+function buildCityStatusRows(jobs, serviceAreas = [], aliases = []) {
   const grouped = new Map();
   jobs.forEach((job) => {
     let state = normalizeState(job.state || stateFromLocation(job.location));
@@ -963,7 +1004,17 @@ function buildCityStatusRows(jobs) {
     row[bucket] += 1;
     row.jobs.push(job);
   });
-  return Array.from(grouped.values()).sort((a, b) => b.total - a.total || a.city.localeCompare(b.city));
+  return Array.from(grouped.values()).map((row) => {
+    const assignmentNames = [...new Set(row.jobs.map((job) => assignServiceArea(job, serviceAreas, aliases).area?.area_name).filter(Boolean))];
+    const lastJobDate = row.jobs.map((job) => job.date).filter(Boolean).sort().at(-1) || "";
+    return {
+      ...row,
+      completionRate: row.total ? (row.completed / row.total) * 100 : 0,
+      cancellationRate: row.total ? (row.cancelled / row.total) * 100 : 0,
+      lastJobDate,
+      assignedServiceArea: assignmentNames.join(", ") || "Outside Coverage / Unassigned",
+    };
+  }).sort((a, b) => b.total - a.total || a.city.localeCompare(b.city));
 }
 
 function cityStatusBucket(status) {
@@ -1001,6 +1052,12 @@ function numberValue(value) {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   const parsed = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function finiteNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function stringValue(value) {
