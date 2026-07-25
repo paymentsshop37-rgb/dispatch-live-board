@@ -29,6 +29,7 @@ function initialForm() {
     rowFlag: "Normal", invoice: "Pending", paymentMethod: "Pending",
     paymentReceiver: "A", jobReference: "", poNumber: "", truckUnit: "", customerPhone: "",
     complaint: "", updates: "", parts: "", totalBill: "", techLabor: "",
+    selectedFlatRateLabor: [], selectedParts: [], fromDate: "", toDate: "", periodFilter: "This Week",
   };
 }
 
@@ -89,7 +90,15 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
   const restored = useMemo(() => {
     try { return JSON.parse(sessionStorage.getItem(storageKey) || "null"); } catch { return null; }
   }, [storageKey]);
-  const [form, setForm] = useState(() => ({ ...initialForm(), ...(restored?.formData || {}) }));
+  const [form, setForm] = useState(() => {
+    const saved = restored?.formData || {};
+    return {
+      ...initialForm(),
+      ...saved,
+      jobCity: saved.jobCity || saved.city || "",
+      jobState: saved.jobState || saved.state || "",
+    };
+  });
   const [step, setStep] = useState(() => Number(restored?.currentStep || 1));
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -144,17 +153,20 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
     const blur = () => saveDraft();
     const focus = () => restorePosition();
     const beforeUnload = () => saveDraft();
+    const requestRouteExit = () => requestClose();
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("blur", blur);
     window.addEventListener("focus", focus);
     window.addEventListener("beforeunload", beforeUnload);
+    window.addEventListener("add-job-route-exit-request", requestRouteExit);
     return () => {
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("blur", blur);
       window.removeEventListener("focus", focus);
       window.removeEventListener("beforeunload", beforeUnload);
+      window.removeEventListener("add-job-route-exit-request", requestRouteExit);
     };
-  }, [restorePosition, saveDraft]);
+  }, [form, restorePosition, saveDraft]);
 
   function update(name, value) {
     setForm((current) => {
@@ -184,7 +196,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
     setStep(1);
     latestRef.current = { form: initialForm(), step: 1, scrollPosition: 0, lastFocusedField: null };
     setConfirmAction("");
-    if (confirmAction === "close") onBack();
+    onBack();
   }
 
   async function submit(event) {

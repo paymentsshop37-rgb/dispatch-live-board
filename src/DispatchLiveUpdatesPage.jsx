@@ -101,7 +101,7 @@ const activeAddJobSessions = new Set();
 
 function addJobDraftKey(currentUser) {
   const userId = currentUser?.authUserId || currentUser?.id || currentUser?.user_id || "anonymous";
-  return `dispatch_add_job_session_${userId}`;
+  return `dispatch_add_job_draft_${userId}`;
 }
 
 function addJobFieldName(label) {
@@ -672,6 +672,10 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     if (!savedDraft?.isOpen || !savedDraft.formData) return;
 
     const restore = () => {
+      if (onOpenAddJob) {
+        onOpenAddJob();
+        return;
+      }
       setForm((current) => ({ ...current, ...savedDraft.formData }));
       setMobileJobStep(Number(savedDraft.currentStep || 1));
       setShowAddJobModal(true);
@@ -679,7 +683,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
       restoreAddJobPosition(savedDraft);
     };
     restore();
-  }, [draftKey, restoreAddJobPosition]);
+  }, [draftKey, onOpenAddJob, restoreAddJobPosition]);
 
   useEffect(() => {
     if (!showAddJobModal) return undefined;

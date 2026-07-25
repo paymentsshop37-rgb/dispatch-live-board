@@ -153,10 +153,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onPopState = () => setCurrentPath(window.location.pathname);
+    const onPopState = () => {
+      if (currentPath === "/dispatch/jobs/new" && window.location.pathname !== "/dispatch/jobs/new") {
+        window.history.pushState({ addJob: true, guarded: true }, "", "/dispatch/jobs/new");
+        setCurrentPath("/dispatch/jobs/new");
+        window.dispatchEvent(new CustomEvent("add-job-route-exit-request"));
+        return;
+      }
+      setCurrentPath(window.location.pathname);
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
-  }, []);
+  }, [currentPath]);
+
+  useEffect(() => {
+    if (!isAuthenticated || currentPath === "/dispatch/jobs/new") return;
+    try {
+      const id = session.authUserId || session.auth_user_id || session.user_id || session.id || session.email || "anonymous";
+      const draft = JSON.parse(sessionStorage.getItem(`dispatch_add_job_draft_${id}`) || "null");
+      if (!draft?.isOpen) return;
+      window.history.replaceState({ addJob: true, recovered: true }, "", "/dispatch/jobs/new");
+      setCurrentPath("/dispatch/jobs/new");
+    } catch {
+      // A malformed draft must not break application routing.
+    }
+  }, [currentPath, isAuthenticated, session]);
 
   const handleLogout = useCallback(async (reason = "manual_logout", message = "", broadcast = true) => {
     if (logoutInProgress.current) return;
