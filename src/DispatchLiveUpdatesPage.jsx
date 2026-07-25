@@ -45,6 +45,7 @@ import {
 } from "./utils/techPaymentStatus";
 import CitiesWithoutJobsPanel from "./modules/coverage/CitiesWithoutJobsPanel";
 import { dateRangeForMode, loadCoverageCities, setCoverageCityActive } from "./modules/coverage/coverageCityService";
+import { loadServiceAreaConfiguration } from "./modules/coverage/serviceAreaService";
 
 const normalizeText = (value) => {
   return String(value || "")
@@ -322,6 +323,8 @@ function fromDbJob(row) {
     location: row.location || "",
     city: row.job_city || "",
     state: row.job_state || "",
+    serviceAreaId: row.service_area_id || "",
+    serviceAreaMethod: row.service_area_assignment_method || "",
     status: row.status || "New",
     rowFlag: row.row_flag || "Normal",
     invoice: row.invoice_status || "Pending",
@@ -477,6 +480,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
   const [technicianLoadError, setTechnicianLoadError] = useState("");
   const [coverageCities, setCoverageCities] = useState([]);
   const [coverageCitiesError, setCoverageCitiesError] = useState("");
+  const [serviceAreas, setServiceAreas] = useState([]);
   const [citiesWithoutJobsOpen, setCitiesWithoutJobsOpen] = useState(false);
   const [changeLogs, setChangeLogs] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
@@ -596,6 +600,9 @@ export default function DispatchLiveUpdatesPage({ currentUser, addJobRequest = 0
     loadJobs();
     loadDispatchTechnicians();
     loadDispatchCoverageCities();
+    loadServiceAreaConfiguration()
+      .then(({ areas }) => setServiceAreas(areas))
+      .catch((error) => console.warn("Service areas unavailable:", error.message));
     checkJobAssignmentSupport();
 
     const channel = supabase
@@ -1284,6 +1291,39 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
     await saveTechPaymentDetails(job.id, { techPaymentStatus: value });
   }
 
+  function updateFormLocation(location) {
+    const parsed = parseLocation(location);
+    setForm((current) => ({
+      ...current,
+      location,
+      city: parsed.city,
+      state: parsed.state,
+    }));
+  }
+
+  async function updateJobLocation(job, location) {
+    const parsed = parseLocation(location);
+    const payload = {
+      location,
+      job_city: parsed.city || null,
+      job_state: parsed.state || null,
+    };
+
+    setJobs((currentJobs) =>
+      currentJobs.map((currentJob) =>
+        currentJob.id === job.id
+          ? { ...currentJob, location, city: parsed.city, state: parsed.state }
+          : currentJob
+      )
+    );
+
+    const { error } = await supabase.from("jobs").update(payload).eq("id", job.id);
+    if (error) {
+      alert("Error updating job location: " + error.message);
+      await loadJobs();
+    }
+  }
+
   async function saveTechPaymentDetails(jobId, details) {
     if (!techPaymentColumns.status) {
       console.error("Tech payment update failed: jobs.tech_payment_status is unavailable.");
@@ -1949,7 +1989,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <p className="mb-4 text-sm font-black uppercase tracking-wide text-blue-300">Step {mobileJobStep} of 5 · {mobileJobStep === 1 ? "Customer" : mobileJobStep === 2 ? "Job Details" : mobileJobStep === 3 ? "Assignment" : mobileJobStep === 4 ? "Costs & Notes" : "Review"}</p>
               <div className="grid gap-4">
                 {mobileJobStep === 1 && <><Input label="Invoice #" value={form.reference} onChange={(value) => setForm({ ...form, reference: value })} /><Input label="Reference #" value={form.jobReference || ""} onChange={(value) => setForm({ ...form, jobReference: value })} /><Input label="Company" value={form.company} onChange={(value) => setForm({ ...form, company: value })} /><Input label="Phone" type="tel" value={form.customerPhone || ""} onChange={(value) => setForm({ ...form, customerPhone: value })} /></>}
-                {mobileJobStep === 2 && <><Input label="Location / Address" value={form.location} onChange={(value) => setForm({ ...form, location: value })} /><Input label="Job City" value={form.city} onChange={(value) => setForm({ ...form, city: value })} /><Input label="Job State" value={form.state} onChange={(value) => setForm({ ...form, state: value.toUpperCase().slice(0, 2) })} /><Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
+                {mobileJobStep === 2 && <><Input label="Location / Address" value={form.location} onChange={updateFormLocation} />{isAdmin && <><Input label="Parsed City (optional correction)" value={form.city} onChange={(value) => setForm({ ...form, city: value })} /><Input label="Parsed State (optional correction)" value={form.state} onChange={(value) => setForm({ ...form, state: value.toUpperCase().slice(0, 2) })} /></>}<Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
                 {mobileJobStep === 3 && <><Input label="Technician" list="technician-suggestions" value={form.tech} onChange={(value) => setForm({ ...form, tech: value })} /><Input label="Dispatcher" list="dispatcher-suggestions" value={form.dispatch} onChange={(value) => setForm({ ...form, dispatch: value })} /><Select label="Priority" value={form.rowFlag} onChange={(value) => setForm({ ...form, rowFlag: value })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} /><Select label="Status" value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={jobStatusOptions} /></>}
                 {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.updates} onChange={(event) => setForm({ ...form, updates: event.target.value })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
                 {mobileJobStep === 5 && <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MobileJobField label="Reference #" value={form.jobReference || "Not assigned"} /><MobileJobField label="Invoice #" value={form.reference || "Not assigned"} /><MobileJobField label="Company" value={form.company || "Not provided"} /><MobileJobField label="Location" value={form.location || "Not provided"} /><MobileJobField label="Technician" value={form.tech || "Unassigned"} /><MobileJobField label="Dispatcher" value={form.dispatch || "Unassigned"} /><MobileJobField label="Priority" value={form.rowFlag} /><MobileJobField label="Notes" value={form.updates || form.complaint || "No notes"} lines={2} /></div>}
@@ -1963,9 +2003,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <Input label="Dispatch" list="dispatcher-suggestions" value={form.dispatch} onChange={(v) => setForm({ ...form, dispatch: v })} />
               <Input label="Company" list="company-suggestions" value={form.company} onChange={(v) => setForm({ ...form, company: v })} />
               <Input label="Tech" list="technician-suggestions" value={form.tech} onChange={(v) => setForm({ ...form, tech: v })} />
-              <Input label="Location" list="location-suggestions" placeholder="City, State" value={form.location} onChange={(v) => setForm({ ...form, location: v })} />
-              <Input label="Job City" value={form.city} onChange={(v) => setForm({ ...form, city: v })} />
-              <Input label="Job State" value={form.state} onChange={(v) => setForm({ ...form, state: v.toUpperCase().slice(0, 2) })} />
+              <Input label="Location" list="location-suggestions" placeholder="City, State" value={form.location} onChange={updateFormLocation} />
+              {isAdmin && <Input label="Parsed City (optional correction)" value={form.city} onChange={(v) => setForm({ ...form, city: v })} />}
+              {isAdmin && <Input label="Parsed State (optional correction)" value={form.state} onChange={(v) => setForm({ ...form, state: v.toUpperCase().slice(0, 2) })} />}
               <Select label="Priority Color" value={form.rowFlag} onChange={(v) => setForm({ ...form, rowFlag: v })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} />
               <Select label="Status" value={form.status} onChange={(v) => setForm({ ...form, status: v })} options={jobStatusOptions} />
               <Select label="Invoice Status" value={form.invoice} onChange={(v) => setForm({ ...form, invoice: v })} options={invoiceStatusOptions} />
@@ -2475,7 +2515,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
                       <Td>
                         <div className="flex items-center gap-2">
-                          <Editable value={job.location} onChange={(v) => updateJob(job.id, "location", v)} />
+                          <Editable value={job.location} onChange={(v) => updateJobLocation(job, v)} />
                           <a
                             href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.location || "")}`}
                             target="_blank"
@@ -2817,20 +2857,32 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               <UpdatesModal
                 job={updatesJob}
                 canEditTechPayment={canEditJobFinancial}
+                canEditGeography={isAdmin}
+                serviceAreas={serviceAreas}
                 technicianNames={dispatchTechnicians.map((technician) => technician.full_name).filter(Boolean)}
                 onClose={() => setUpdatesJob(null)}
-                onSave={async ({ updates, jobReference, techPaymentStatus, technician, city, state }) => {
+                onSave={async ({ updates, jobReference, techPaymentStatus, technician, location, city, state, serviceAreaId }) => {
                   if (jobReference !== updatesJob.jobReference) {
                     await updateJob(updatesJob.id, "jobReference", jobReference);
                   }
                   if (technician !== updatesJob.tech) {
                     await updateJob(updatesJob.id, "tech", technician);
                   }
+                  if (location !== updatesJob.location) {
+                    await updateJobLocation(updatesJob, location);
+                  }
                   if (city !== updatesJob.city) {
                     await updateJob(updatesJob.id, "city", city);
                   }
                   if (state !== updatesJob.state) {
                     await updateJob(updatesJob.id, "state", state);
+                  }
+                  if (isAdmin && serviceAreaId !== updatesJob.serviceAreaId) {
+                    await supabase.from("jobs").update({
+                      service_area_id: serviceAreaId || null,
+                      service_area_assignment_method: serviceAreaId ? "manual" : "unassigned",
+                      service_area_assigned_at: new Date().toISOString(),
+                    }).eq("id", updatesJob.id);
                   }
                   if (canEditJobFinancial && techPaymentStatus !== updatesJob.techPaymentStatus) {
                     await updateTechPaymentStatus(updatesJob, techPaymentStatus);
@@ -3605,13 +3657,22 @@ function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChan
   );
 }
 
-function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], onClose, onSave }) {
+function UpdatesModal({ job, canEditTechPayment = false, canEditGeography = false, serviceAreas = [], technicianNames = [], onClose, onSave }) {
   const [value, setValue] = useState(job.updates || "");
   const [jobReference, setJobReference] = useState(job.jobReference || "");
   const [techPaymentStatus, setTechPaymentStatus] = useState(job.techPaymentStatus || "Pending");
   const [technician, setTechnician] = useState(job.tech || "");
+  const [location, setLocation] = useState(job.location || "");
   const [city, setCity] = useState(job.city || "");
   const [state, setState] = useState(job.state || "");
+  const [serviceAreaId, setServiceAreaId] = useState(job.serviceAreaId || "");
+
+  function handleLocationChange(nextLocation) {
+    const parsed = parseLocation(nextLocation);
+    setLocation(nextLocation);
+    setCity(parsed.city);
+    setState(parsed.state);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
@@ -3632,7 +3693,16 @@ function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], o
             placeholder="ABC-12345"
           />
         </label>
-        <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_120px]">
+        <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
+          <span>Location / Address</span>
+          <input
+            className={`${tableControlClass} min-h-11 px-3 text-base font-semibold`}
+            value={location}
+            onChange={(event) => handleLocationChange(event.target.value)}
+            placeholder="City, State"
+          />
+        </label>
+        {canEditGeography && <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_120px]">
           <label className="grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
             <span>Job City</span>
             <input className={`${tableControlClass} min-h-11 px-3 text-base font-semibold`} value={city} onChange={(event) => setCity(event.target.value)} />
@@ -3641,7 +3711,14 @@ function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], o
             <span>Job State</span>
             <input className={`${tableControlClass} min-h-11 px-3 text-base font-semibold uppercase`} maxLength={2} value={state} onChange={(event) => setState(event.target.value.toUpperCase().slice(0, 2))} />
           </label>
-        </div>
+        </div>}
+        {canEditGeography && <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
+          <span>Assigned Service Area (optional correction)</span>
+          <select className={`${tableControlClass} min-h-11 px-3 text-base font-semibold`} value={serviceAreaId} onChange={(event) => setServiceAreaId(event.target.value)}>
+            <option value="">Outside Coverage / Unassigned</option>
+            {serviceAreas.map((area) => <option key={area.id} value={area.id}>{area.area_name} — {area.primary_city}, {area.state}</option>)}
+          </select>
+        </label>}
         <label className="mt-4 grid gap-1 text-xs font-black uppercase tracking-wide text-slate-300">
           <span>Technician</span>
           <input
@@ -3667,7 +3744,7 @@ function UpdatesModal({ job, canEditTechPayment = false, technicianNames = [], o
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15">Cancel</button>
-          <button type="button" onClick={() => onSave({ updates: value, jobReference, techPaymentStatus, technician, city, state })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
+          <button type="button" onClick={() => onSave({ updates: value, jobReference, techPaymentStatus, technician, location, city, state, serviceAreaId })} className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-500">Save Job</button>
         </div>
       </div>
     </div>
@@ -4472,11 +4549,54 @@ function technicianAvailabilityRank(status) {
 }
 
 function parseLocation(location) {
-  const [city = "", state = ""] = String(location || "")
-    .split(",")
-    .map((part) => part.trim());
+  const value = String(location || "").trim();
+  if (!value) return { city: "", state: "" };
 
-  return { city, state };
+  const stateNames = {
+    TEXAS: "TX", ARIZONA: "AZ", COLORADO: "CO", ILLINOIS: "IL",
+    INDIANA: "IN", LOUISIANA: "LA", "NEW MEXICO": "NM",
+    OKLAHOMA: "OK", TENNESSEE: "TN", MISSISSIPPI: "MS",
+    ARKANSAS: "AR", MISSOURI: "MO", NEVADA: "NV", GEORGIA: "GA",
+  };
+  const statePattern = Object.keys(stateNames).sort((a, b) => b.length - a.length).join("|");
+  const stateMatch = value.match(new RegExp(`(?:,\\s*|\\s+)(${statePattern}|[A-Za-z]{2})(?:\\s+\\d{5}(?:-\\d{4})?)?\\s*$`, "i"));
+  if (!stateMatch) {
+    const cityOnly = !value.includes(",") && /^[A-Za-z.\s]+$/.test(value)
+      ? normalizeJobCity(value)
+      : "";
+    return { city: cityOnly, state: "" };
+  }
+
+  const stateToken = stateMatch[1].toUpperCase().replace(/\s+/g, " ");
+  let state = stateNames[stateToken] || stateToken;
+  const beforeState = value.slice(0, stateMatch.index).replace(/,\s*$/, "").trim();
+  let city = beforeState.split(",").pop()?.trim() || "";
+  if (!beforeState.includes(",")) {
+    city = beforeState.replace(/^.*\bnear\s+/i, "").trim();
+    if (/\d/.test(city) || /\b(?:I-|US-|HWY|HIGHWAY|MM)\b/i.test(city)) city = "";
+  }
+  const normalizedCity = normalizeJobCity(city);
+
+  if (normalizedCity === "JOPLIN" && state === "MS") {
+    state = "MO";
+  }
+  return normalizedCity ? { city: normalizedCity, state } : { city: "", state: "" };
+}
+
+function normalizeJobCity(city) {
+  const normalized = String(city || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[.]/g, "")
+    .replace(/\s+/g, " ");
+  const aliases = {
+    "FT WORTH": "FORT WORTH",
+    "FT STOCKTON": "FORT STOCKTON",
+    ALBURQUERQUE: "ALBUQUERQUE",
+    OKC: "OKLAHOMA CITY",
+    DFW: "DALLAS",
+  };
+  return aliases[normalized] || normalized;
 }
 
 function formatServices(services) {

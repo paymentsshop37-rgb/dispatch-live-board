@@ -888,8 +888,8 @@ function normalizeJob(row) {
     reference: stringValue(readAlias(row, columnAliases.reference)),
     company: stringValue(readAlias(row, columnAliases.company)) || "Unknown Company",
     location,
-    city: city || "Unknown City",
-    state: stringValue(readAlias(row, columnAliases.state)) || "Unassigned",
+    city,
+    state: stringValue(readAlias(row, columnAliases.state)),
     status: titleCase(stringValue(readAlias(row, columnAliases.status)) || "Pending"),
     dispatch: stringValue(readAlias(row, columnAliases.dispatch)) || "Unassigned",
     technician: stringValue(readAlias(row, columnAliases.technician)) || "Unassigned",
@@ -983,8 +983,9 @@ function groupJobs(rows, labelGetter) {
 function buildCityStatusRows(jobs, serviceAreas = [], aliases = []) {
   const grouped = new Map();
   jobs.forEach((job) => {
-    let state = job.state === "Unassigned" ? "" : normalizeState(job.state);
-    let city = normalizeCoverageCity(job.city || "Unknown City");
+    let state = normalizeState(job.state);
+    let city = normalizeCoverageCity(job.city);
+    if (!city || !state) return;
     if (!state) {
       const stateSuffix = city.match(/\s([A-Z]{2})$/);
       if (stateSuffix) {
