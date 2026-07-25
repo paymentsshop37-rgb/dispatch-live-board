@@ -106,6 +106,8 @@ export default function App() {
   const [addJobRequest, setAddJobRequest] = useState(0);
   const [isAddJobOpen, setIsAddJobOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const currentPathRef = useRef(currentPath);
+  currentPathRef.current = currentPath;
   const [routeToast, setRouteToast] = useState("");
   const [jobSearchRequest, setJobSearchRequest] = useState(0);
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
@@ -119,6 +121,10 @@ export default function App() {
   const isAuthenticated = Boolean(session.isAuthenticated);
   const isAuthenticatedRef = useRef(isAuthenticated);
   isAuthenticatedRef.current = isAuthenticated;
+
+  useEffect(() => {
+    console.trace("currentPath changed", currentPath);
+  }, [currentPath]);
 
   const resetApplicationState = useCallback(() => {
     authValidationId.current += 1;
@@ -236,7 +242,7 @@ export default function App() {
           const verifiedSession = profileToSession(profile, authSession);
           setSession(verifiedSession);
           void startSessionAudit(verifiedSession);
-          if (window.location.pathname === "/login") {
+          if (window.location.pathname === "/login" && currentPathRef.current !== "/dispatch/jobs/new") {
             window.history.replaceState({}, "", "/dispatch-board");
             setCurrentPath("/dispatch-board");
           }
@@ -255,6 +261,11 @@ export default function App() {
         clearCustomAuthStorage();
         resetApplicationState();
         redirectToLogin();
+        setCurrentPath("/login");
+        return;
+      }
+      if (!nextSession?.user) {
+        console.log("[AuthEvent] ignored missing session", event);
         return;
       }
       if (nextSession?.user && !isAuthenticatedRef.current) setAuthLoading(true);
