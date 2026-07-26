@@ -260,8 +260,8 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
             </section>
 
             <section className="executive-chart-grid grid gap-6 xl:grid-cols-2">
-              <Panel title="Dispatcher Performance" subtitle="Completion rate and ranking" icon={Users}>
-                <PerformanceTable type="dispatcher" rows={dispatcherRows} />
+              <Panel title="Dispatcher Performance" subtitle="Weighted overall score and ranking" icon={Users}>
+                <PerformanceTable type="dispatcher" rows={dispatcherRows} onDrilldown={setCityJobDrilldown} />
               </Panel>
               <Panel title="Technician Performance" subtitle="Production and average ETA" icon={UserCheck}>
                 <PerformanceTable type="technician" rows={technicianRows} />
@@ -521,8 +521,10 @@ function FinancialBars({ revenue, expenses, profit }) {
   );
 }
 
-function PerformanceTable({ type, rows }) {
+function PerformanceTable({ type, rows, onDrilldown }) {
   const isTech = type === "technician";
+  if (!isTech) return <DispatcherPerformanceTable rows={rows} onDrilldown={onDrilldown} />;
+
   return (
     <div className="overflow-x-auto rounded-2xl border border-white/10">
       <table className="w-full min-w-[620px] text-left text-sm">
@@ -531,7 +533,6 @@ function PerformanceTable({ type, rows }) {
             <th className="px-4 py-3">{isTech ? "Tech" : "Dispatcher"}</th>
             <th className="px-4 py-3">Jobs</th>
             <th className="px-4 py-3">Completed</th>
-            {!isTech && <th className="px-4 py-3">Cancelled</th>}
             <th className="px-4 py-3">{isTech ? "Revenue Produced" : "Completion %"}</th>
             <th className="px-4 py-3">{isTech ? "Average ETA" : "Ranking"}</th>
           </tr>
@@ -542,7 +543,6 @@ function PerformanceTable({ type, rows }) {
               <td className="px-4 py-3 font-black text-white">{row.label}</td>
               <td className="px-4 py-3 font-bold text-slate-300">{row.jobs}</td>
               <td className="px-4 py-3 font-bold text-emerald-300">{row.completed}</td>
-              {!isTech && <td className="px-4 py-3 font-bold text-red-300">{row.cancelled}</td>}
               <td className="px-4 py-3 font-bold text-slate-300">{isTech ? money(row.revenue) : `${row.completionPercent}%`}</td>
               <td className="px-4 py-3 font-bold text-blue-300">{isTech ? `${row.averageEta} min` : `#${index + 1}`}</td>
             </tr>
@@ -556,6 +556,77 @@ function PerformanceTable({ type, rows }) {
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+const dispatcherColumns = [
+  ["jobs", "Jobs", "total"],
+  ["completed", "Completed", "completed"],
+  ["cancelled", "Cancelled", "cancelled"],
+  ["dryRuns", "Dry Runs", "dryRuns"],
+  ["active", "Active", "active"],
+  ["pending", "Pending", "pending"],
+  ["inProgress", "In Progress", "inProgress"],
+];
+
+function DispatcherPerformanceTable({ rows, onDrilldown }) {
+  const totals = useMemo(() => buildDispatcherTotals(rows), [rows]);
+  const openJobs = (row, bucket) => onDrilldown?.({
+    row: { ...row, jobs: row.jobRows, city: row.label, state: "Dispatcher", drilldownType: "dispatcher" },
+    bucket,
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap justify-end gap-2">
+        <button type="button" onClick={() => exportDispatcherExcel(rows, totals)} className="min-h-10 rounded-xl bg-emerald-500/15 px-3 text-xs font-black text-emerald-200 hover:bg-emerald-500/25">Export Excel</button>
+        <button type="button" onClick={() => exportDispatcherPdf(rows, totals)} className="min-h-10 rounded-xl bg-blue-500/15 px-3 text-xs font-black text-blue-200 hover:bg-blue-500/25">Export PDF</button>
+      </div>
+      <div className="overflow-x-auto rounded-2xl border border-white/10">
+        <table className="w-full min-w-[1120px] text-left text-sm">
+          <thead className="bg-[#10213a] text-xs uppercase tracking-wide text-slate-400">
+            <tr>
+              <th className="px-3 py-3">Dispatcher</th>
+              {dispatcherColumns.map(([, label]) => <th key={label} className="px-3 py-3">{label}</th>)}
+              <th className="px-3 py-3">Completion %</th>
+              <th className="px-3 py-3">Ranking / Overall Score</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className="border-t border-white/10">
+                <td className="px-3 py-3 font-black text-white">{row.label}</td>
+                {dispatcherColumns.map(([key, , bucket]) => (
+                  <td key={key} className="px-3 py-3"><CountButton value={row[key]} onClick={() => openJobs(row, bucket)} /></td>
+                ))}
+                <td className="px-3 py-3"><CountButton value={`${row.completionPercent}%`} onClick={() => openJobs(row, "completed")} /></td>
+                <td className="px-3 py-3">
+                  <button type="button" onClick={() => openJobs(row, "total")} className="min-h-9 rounded-lg bg-blue-500/10 px-3 text-left font-black text-blue-200 hover:bg-blue-500/20">
+                    <span className="block">#{row.ranking}</span>
+                    <span className="block text-[10px] uppercase text-slate-400">Overall Score {row.overallScore.toFixed(1)}</span>
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {!rows.length && <tr><td colSpan={10} className="px-4 py-10 text-center font-semibold text-slate-500">No performance data yet.</td></tr>}
+          </tbody>
+          {!!rows.length && (
+            <tfoot className="border-t-2 border-blue-400/30 bg-blue-500/10">
+              <tr>
+                <th className="px-3 py-3 font-black text-white">TOTAL</th>
+                {dispatcherColumns.map(([key, , bucket]) => <td key={key} className="px-3 py-3"><CountButton value={totals[key]} onClick={() => openJobs(totals, bucket)} /></td>)}
+                <td className="px-3 py-3"><CountButton value={`${totals.completionPercent}%`} onClick={() => openJobs(totals, "completed")} /></td>
+                <td className="px-3 py-3">
+                  <button type="button" onClick={() => openJobs(totals, "total")} className="min-h-9 rounded-lg bg-blue-500/10 px-3 font-black text-blue-200 hover:bg-blue-500/20">
+                    Overall Score {totals.overallScore.toFixed(1)}
+                  </button>
+                </td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
     </div>
   );
 }
@@ -693,7 +764,8 @@ function CityJobsDrilldown({ selection, onClose, onOpenJob }) {
   const { row, bucket } = selection;
   const jobs = bucket === "total" ? row.jobs : row.jobs.filter((job) => cityStatusBucket(job.status) === bucket);
   const label = cityStatusColumns.find(([key]) => key === bucket)?.[1] || "Jobs";
-  return <div className="fixed inset-0 z-[120] bg-black/70 p-0 md:p-4" onClick={onClose}><section className="ml-auto flex h-full w-full max-w-2xl flex-col bg-[#091827] text-white md:rounded-3xl md:border md:border-white/10" onClick={(event) => event.stopPropagation()}><header className="flex items-start justify-between border-b border-white/10 p-5"><div><p className="text-xs font-black uppercase text-blue-300">{label}</p><h2 className="mt-1 text-2xl font-black">{row.city}, {row.state}</h2><p className="mt-1 text-sm text-slate-400">{jobs.length} matching jobs in the selected dashboard period</p></div><button type="button" onClick={onClose} className="min-h-11 rounded-xl bg-white/10 px-4 font-bold">Close</button></header><div className="flex-1 space-y-2 overflow-y-auto p-4">{jobs.map((job) => <button key={job.id} type="button" onClick={() => onOpenJob?.(job.id)} className="grid min-h-16 w-full grid-cols-[1fr_auto] gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"><span><strong className="block text-blue-200">{job.invoiceNumber || `Job ${job.id}`}</strong><span className="mt-1 block text-sm text-slate-400">{job.company} · {job.date}</span></span><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black">{job.status}</span></button>)}{!jobs.length && <div className="p-10 text-center font-bold text-slate-400">No matching jobs.</div>}</div></section></div>;
+  const heading = row.drilldownType === "dispatcher" ? row.city : `${row.city}, ${row.state}`;
+  return <div className="fixed inset-0 z-[120] bg-black/70 p-0 md:p-4" onClick={onClose}><section className="ml-auto flex h-full w-full max-w-2xl flex-col bg-[#091827] text-white md:rounded-3xl md:border md:border-white/10" onClick={(event) => event.stopPropagation()}><header className="flex items-start justify-between border-b border-white/10 p-5"><div><p className="text-xs font-black uppercase text-blue-300">{label}</p><h2 className="mt-1 text-2xl font-black">{heading}</h2><p className="mt-1 text-sm text-slate-400">{jobs.length} matching jobs in the selected dashboard period</p></div><button type="button" onClick={onClose} className="min-h-11 rounded-xl bg-white/10 px-4 font-bold">Close</button></header><div className="flex-1 space-y-2 overflow-y-auto p-4">{jobs.map((job) => <button key={job.id} type="button" onClick={() => onOpenJob?.(job.id)} className="grid min-h-16 w-full grid-cols-[1fr_auto] gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left hover:bg-white/10"><span><strong className="block text-blue-200">{job.invoiceNumber || `Job ${job.id}`}</strong><span className="mt-1 block text-sm text-slate-400">{job.company} · {job.date}</span></span><span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black">{job.status}</span></button>)}{!jobs.length && <div className="p-10 text-center font-bold text-slate-400">No matching jobs.</div>}</div></section></div>;
 }
 
 function InvoiceTile({ item }) {
@@ -850,14 +922,109 @@ function buildAnalytics(rows) {
   };
 }
 
+const dispatcherPerformanceWeights = Object.freeze({
+  completed: 0.3,
+  completionRate: 0.25,
+  lowCancelled: 0.15,
+  lowDryRuns: 0.1,
+  workload: 0.2,
+});
+
 function buildDispatcherRows(rows) {
-  return groupJobRows(rows, (job) => job.dispatch || "Unassigned").map((row) => ({
-    label: row.label,
-    jobs: row.jobs.length,
-    completed: row.jobs.filter((job) => isCompleted(job.status)).length,
-    cancelled: row.jobs.filter((job) => isCancelled(job.status)).length,
-    completionPercent: row.jobs.length ? Math.round((row.jobs.filter((job) => isCompleted(job.status)).length / row.jobs.length) * 100) : 0,
-  }));
+  const performanceRows = groupJobRows(rows, (job) => job.dispatch || "Unassigned").map((row) => {
+    const counts = { completed: 0, cancelled: 0, dryRuns: 0, active: 0, pending: 0, inProgress: 0 };
+    row.jobs.forEach((job) => {
+      const bucket = cityStatusBucket(job.status);
+      if (Object.hasOwn(counts, bucket)) counts[bucket] += 1;
+    });
+    return {
+      label: row.label,
+      jobRows: row.jobs,
+      jobs: row.jobs.length,
+      ...counts,
+      completionPercent: row.jobs.length ? Math.round((counts.completed / row.jobs.length) * 1000) / 10 : 0,
+    };
+  });
+
+  const maxima = {
+    completed: Math.max(...performanceRows.map((row) => row.completed), 0),
+    cancelled: Math.max(...performanceRows.map((row) => row.cancelled), 0),
+    dryRuns: Math.max(...performanceRows.map((row) => row.dryRuns), 0),
+    jobs: Math.max(...performanceRows.map((row) => row.jobs), 0),
+  };
+  performanceRows.forEach((row) => {
+    const completedScore = maxima.completed ? (row.completed / maxima.completed) * 100 : 0;
+    const cancelledScore = maxima.cancelled ? 100 - (row.cancelled / maxima.cancelled) * 100 : 100;
+    const dryRunScore = maxima.dryRuns ? 100 - (row.dryRuns / maxima.dryRuns) * 100 : 100;
+    const workloadScore = maxima.jobs ? (row.jobs / maxima.jobs) * 100 : 0;
+    row.overallScore = (
+      completedScore * dispatcherPerformanceWeights.completed
+      + row.completionPercent * dispatcherPerformanceWeights.completionRate
+      + cancelledScore * dispatcherPerformanceWeights.lowCancelled
+      + dryRunScore * dispatcherPerformanceWeights.lowDryRuns
+      + workloadScore * dispatcherPerformanceWeights.workload
+    );
+  });
+  performanceRows.sort((a, b) => b.overallScore - a.overallScore || b.completed - a.completed || b.jobs - a.jobs || a.label.localeCompare(b.label));
+  return performanceRows.map((row, index) => ({ ...row, ranking: index + 1 }));
+}
+
+function buildDispatcherTotals(rows) {
+  const totals = {
+    label: "All Dispatchers",
+    jobRows: rows.flatMap((row) => row.jobRows),
+    jobs: rows.reduce((sum, row) => sum + row.jobs, 0),
+    completed: rows.reduce((sum, row) => sum + row.completed, 0),
+    cancelled: rows.reduce((sum, row) => sum + row.cancelled, 0),
+    dryRuns: rows.reduce((sum, row) => sum + row.dryRuns, 0),
+    active: rows.reduce((sum, row) => sum + row.active, 0),
+    pending: rows.reduce((sum, row) => sum + row.pending, 0),
+    inProgress: rows.reduce((sum, row) => sum + row.inProgress, 0),
+  };
+  totals.completionPercent = totals.jobs ? Math.round((totals.completed / totals.jobs) * 1000) / 10 : 0;
+  totals.overallScore = totals.jobs ? rows.reduce((sum, row) => sum + row.overallScore * row.jobs, 0) / totals.jobs : 0;
+  return totals;
+}
+
+const dispatcherExportHeaders = ["Dispatcher", "Jobs", "Completed", "Cancelled", "Dry Runs", "Active", "Pending", "In Progress", "Completion %", "Ranking", "Overall Score"];
+
+function dispatcherExportRows(rows, totals) {
+  return [...rows.map((row) => [
+    row.label, row.jobs, row.completed, row.cancelled, row.dryRuns, row.active, row.pending,
+    row.inProgress, `${row.completionPercent}%`, `#${row.ranking}`, row.overallScore.toFixed(1),
+  ]), [
+    "TOTAL", totals.jobs, totals.completed, totals.cancelled, totals.dryRuns, totals.active,
+    totals.pending, totals.inProgress, `${totals.completionPercent}%`, "", totals.overallScore.toFixed(1),
+  ]];
+}
+
+function exportDispatcherExcel(rows, totals) {
+  const html = dispatcherExportTable(rows, totals);
+  downloadBlob(new Blob([`\ufeff${html}`], { type: "application/vnd.ms-excel;charset=utf-8" }), `dispatcher-performance-${new Date().toISOString().slice(0, 10)}.xls`);
+}
+
+function exportDispatcherPdf(rows, totals) {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  if (!printWindow) return;
+  printWindow.document.write(`<!doctype html><html><head><title>Dispatcher Performance</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:22px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #bbb;padding:7px;text-align:left}th{background:#e8eef7}tbody tr:last-child{font-weight:700;background:#eef5ff}</style></head><body><h1>Dispatcher Performance</h1><p>Generated ${escapeHtml(new Date().toLocaleString())}</p>${dispatcherExportTable(rows, totals)}<script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.close();
+}
+
+function dispatcherExportTable(rows, totals) {
+  return `<table><thead><tr>${dispatcherExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${dispatcherExportRows(rows, totals).map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
 }
 
 function buildTechnicianRows(rows) {
