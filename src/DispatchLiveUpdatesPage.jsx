@@ -1214,15 +1214,6 @@ profit: filteredJobs.reduce(
  }, [jobs, filteredJobs]);
 
   const roleKpis = useMemo(() => dispatchKpis(stats, isAdmin), [stats, isAdmin]);
-  const activeTechniciansCount = useMemo(
-    () => dispatchTechnicians.filter((technician) => String(technician.availability || "").toLowerCase() === "available").length,
-    [dispatchTechnicians]
-  );
-  const todayJobs = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    return filteredJobs.filter((job) => job.date === today);
-  }, [filteredJobs]);
-
   const assignmentTechnicians = useMemo(() => {
     const city = assignmentFilters.city.trim().toLowerCase();
     const state = assignmentFilters.state.trim().toLowerCase();
@@ -2154,7 +2145,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
         </div>
 
-        <div className="grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="w-full min-w-0">
           {showAddJobModal && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 md:items-center md:p-4">
           <form
@@ -2315,21 +2306,6 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             </div>
           )}
 
-          <DispatchRightPanel
-            isAdmin={isAdmin}
-            stats={stats}
-            todayJobs={todayJobs}
-            technicians={dispatchTechnicians}
-            activeTechniciansCount={activeTechniciansCount}
-            activityLogs={activityLogs}
-            onAddJob={() => openAddJob()}
-            onAssign={() => {
-              setAssignmentJob(filteredJobs[0] || null);
-            }}
-            onMap={() => window.open("https://www.google.com/maps/search/?api=1&query=active%20truck%20roadside%20jobs", "_blank", "noopener,noreferrer")}
-            onReport={() => exportJobsToCSV(filteredJobs)}
-          />
-
           {false && (
             <DispatchCockpit
               jobs={filteredJobs}
@@ -2360,7 +2336,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           )}
 
           {true && (
-          <div id="live-jobs-table" className="order-3 col-span-full w-full max-w-none min-w-0 rounded-2xl border border-white/10 bg-[#0b1628] p-5 shadow-xl shadow-black/10">
+          <div id="live-jobs-table" className="w-full max-w-none min-w-0 rounded-2xl border border-white/10 bg-[#0b1628] p-5 shadow-xl shadow-black/10">
             <div className="mb-5 flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
               <div>
                 <h2 className="text-3xl font-black tracking-tight text-white">Live Jobs</h2>
@@ -3557,112 +3533,6 @@ function DispatchKpiCard({ icon: Icon, label, value, accent = "blue" }) {
       </div>
       <p className="mt-4 text-xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
-    </div>
-  );
-}
-
-function DispatchRightPanel({ isAdmin, stats, todayJobs, technicians, activeTechniciansCount, activityLogs, onAddJob, onAssign, onMap, onReport }) {
-  const completedToday = todayJobs.filter((job) => job.status === "Completed").length;
-  const cancelledToday = todayJobs.filter((job) => ["Canceled", "Cancelled"].includes(job.status)).length;
-  const dryRunsToday = todayJobs.filter((job) => job.status === "Dry Run").length;
-  const inProgressToday = todayJobs.filter((job) => ["In Progress", "Working", "En Route", "On Site"].includes(job.status)).length;
-  const recentActivity = activityLogs.slice(0, 5);
-
-  return (
-    <aside className="order-1 rounded-2xl border border-white/10 bg-[#0b1628] p-5 shadow-xl shadow-black/10 xl:order-none">
-      <h2 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">Quick Actions</h2>
-      <div className="mt-4 grid gap-2">
-        <button type="button" onClick={onAddJob} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white hover:bg-blue-500">
-          <Plus className="h-4 w-4" />
-          Add New Job
-        </button>
-        {isAdmin ? (
-          <>
-            <button type="button" onClick={() => alert("Open Technician Center from the sidebar to add a technician.")} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
-              <Users className="h-4 w-4" />
-              Add Technician
-            </button>
-            <button type="button" onClick={onReport} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
-              <FileSpreadsheet className="h-4 w-4" />
-              Generate Report
-            </button>
-          </>
-        ) : (
-          <>
-            <button type="button" onClick={onAssign} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
-              <Users className="h-4 w-4" />
-              Assign Technician
-            </button>
-            <button type="button" onClick={onMap} className="flex items-center gap-2 rounded-xl bg-white/10 px-4 py-3 text-sm font-black text-slate-100 hover:bg-white/15">
-              <MapPin className="h-4 w-4" />
-              View Live Map
-            </button>
-          </>
-        )}
-      </div>
-
-      <div className="mt-6">
-        <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">{isAdmin ? "System Summary" : "Today's Summary"}</h3>
-        <div className="mt-3 grid gap-2">
-          {isAdmin ? (
-            <>
-              <PanelMetric label="Total Technicians" value={technicians.length} />
-              <PanelMetric label="Active Technicians" value={activeTechniciansCount} />
-              <PanelMetric label="Parts Inventory" value="Ready" />
-              <PanelMetric label="Unread Messages" value="0" />
-              <PanelMetric label="System Uptime" value="Live" />
-            </>
-          ) : (
-            <>
-              <PanelMetric label="Jobs Today" value={todayJobs.length} />
-              <PanelMetric label="In Progress" value={inProgressToday} />
-              <PanelMetric label="Completed" value={completedToday} />
-              <PanelMetric label="Cancelled" value={cancelledToday} />
-              <PanelMetric label="Dry Runs" value={dryRunsToday} />
-            </>
-          )}
-        </div>
-      </div>
-
-      {!isAdmin && (
-        <div className="mt-6">
-          <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">My Assignments</h3>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <PanelMetric label="In Progress" value={stats.inProgress + stats.working + stats.enRoute} />
-            <PanelMetric label="Completed" value={stats.completed} />
-          </div>
-        </div>
-      )}
-
-      {isAdmin && (
-        <div className="mt-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-black uppercase tracking-[0.16em] text-slate-400">Recent Activity</h3>
-            <span className="text-xs font-bold text-blue-300">View all</span>
-          </div>
-          <div className="mt-3 space-y-2">
-            {recentActivity.length === 0 ? (
-              <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm font-semibold text-slate-400">No important activity yet.</div>
-            ) : (
-              recentActivity.map((activity) => (
-                <div key={activity.id} className="rounded-xl border border-white/10 bg-white/5 p-3">
-                  <p className="text-sm font-bold text-slate-100">{activity.message || activity.title}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">{activity.time || "Now"}</p>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </aside>
-  );
-}
-
-function PanelMetric({ label, value }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-      <span className="text-xs font-bold text-slate-400">{label}</span>
-      <span className="text-sm font-black text-white">{value}</span>
     </div>
   );
 }
