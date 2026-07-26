@@ -2373,8 +2373,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             </div>
 
             <div className="mb-3 w-full max-w-none overflow-hidden rounded-xl border border-white/10 bg-white/5 p-2">
-              <div className="grid w-full min-w-0 gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(220px,1fr)_130px_140px_140px_150px_140px_150px_auto_auto] 2xl:items-center">
-                <div className="relative min-w-0">
+              <div className="grid w-full min-w-0 gap-2 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-12 2xl:items-center">
+                <div className="relative min-w-0 md:col-span-2 xl:col-span-4 2xl:col-span-5">
                   <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                   <input
                     id="mobile-job-search"
@@ -2387,7 +2387,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </div>
 
                 <select
-                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold 2xl:col-span-2`}
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
                 >
@@ -2397,7 +2397,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </select>
 
                 <select
-                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold 2xl:col-span-2`}
                   value={dispatchFilter}
                   onChange={(e) => setDispatchFilter(e.target.value)}
                 >
@@ -2408,7 +2408,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </select>
 
                 <select
-                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold 2xl:col-span-3`}
                   value={techFilter}
                   onChange={(e) => setTechFilter(e.target.value)}
                 >
@@ -2419,7 +2419,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </select>
 
                 <select
-                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold 2xl:col-span-2`}
                   value={cityFilter}
                   onChange={(e) => setCityFilter(e.target.value)}
                 >
@@ -2430,7 +2430,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </select>
 
                 <select
-                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold`}
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold 2xl:col-span-2`}
                   value={invoiceFilter}
                   onChange={(e) => setInvoiceFilter(e.target.value)}
                 >
@@ -2445,11 +2445,13 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   value={techPaymentFilter}
                   onChange={setTechPaymentFilter}
                   includeAll
+                  compact
+                  className="2xl:col-span-2"
                 />
 
                 <input
                   type="date"
-                  className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400"
+                  className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400 2xl:col-span-2"
                   value={fromDate}
                   onChange={(e) => setFromDate(e.target.value)}
                 />
@@ -2457,7 +2459,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 <button
                   type="button"
                   onClick={() => exportJobsToCSV(filteredJobs)}
-                  className="h-9 whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700"
+                  className="h-9 w-full whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 2xl:col-span-1"
                 >
                   Export
                 </button>
@@ -2476,14 +2478,14 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     setTechPaymentFilter("All");
                     setPeriodFilter("All");
                   }}
-                  className="h-9 whitespace-nowrap rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15"
+                  className="h-9 w-full whitespace-nowrap rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15 2xl:col-span-1"
                 >
                   Reset
                 </button>
                 <button
                   type="button"
                   onClick={() => setCitiesWithoutJobsOpen(true)}
-                  className="h-9 whitespace-nowrap rounded-lg bg-amber-500 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-400"
+                  className="h-9 w-full whitespace-nowrap rounded-lg bg-amber-500 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-400 xl:col-span-2 2xl:col-span-2"
                 >
                   Cities Without Jobs
                 </button>
@@ -4200,13 +4202,14 @@ function TechPaymentSelect({
   disabled = false,
   includeAll = false,
   compact = false,
+  className = "",
   ariaLabel = "Tech Payment status",
 }) {
   const isAll = value === "All";
   const options = includeAll ? ["All", ...techPaymentStatusOptions] : techPaymentStatusOptions;
 
   return (
-    <div className={`relative z-[5] ${compact ? "w-40" : "w-full"}`} onClick={(event) => event.stopPropagation()}>
+    <div className={`relative z-[5] ${className ? "w-full" : compact ? "w-40" : "w-full"} ${className}`} onClick={(event) => event.stopPropagation()}>
       <select
         aria-label={ariaLabel}
         disabled={disabled}
