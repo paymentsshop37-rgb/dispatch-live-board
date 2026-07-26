@@ -603,11 +603,32 @@ export default function TechnicianCenter({ currentUser }) {
       search.trim() ? `Search: ${search.trim()}` : "",
     ].filter(Boolean).join(" · ") || "All technicians in the current directory";
 
-    const rows = filteredTechnicians.map((technician) => {
+    const printTechnicians = [...filteredTechnicians].sort((a, b) => {
+      const stateComparison = String(a.state || "Unassigned").localeCompare(String(b.state || "Unassigned"), undefined, { sensitivity: "base" });
+      if (stateComparison !== 0) return stateComparison;
+      const cityComparison = String(a.city || "Unassigned").localeCompare(String(b.city || "Unassigned"), undefined, { sensitivity: "base" });
+      if (cityComparison !== 0) return cityComparison;
+      return compareTechniciansByAssignedNumber(a, b);
+    });
+    const groupCounts = printTechnicians.reduce((counts, technician) => {
+      const key = `${technician.state || "Unassigned"}|${technician.city || "Unassigned"}`;
+      counts.set(key, (counts.get(key) || 0) + 1);
+      return counts;
+    }, new Map());
+    let previousGroup = "";
+    const rows = printTechnicians.map((technician) => {
+      const state = technician.state || "Unassigned State";
+      const city = technician.city || "Unassigned City";
+      const groupKey = `${technician.state || "Unassigned"}|${technician.city || "Unassigned"}`;
+      const groupHeading = groupKey === previousGroup ? "" : `
+        <tr class="group-heading">
+          <td colspan="8"><strong>${escapePrintHtml(state)}</strong><span>${escapePrintHtml(city)} · ${groupCounts.get(groupKey)} technician${groupCounts.get(groupKey) === 1 ? "" : "s"}</span></td>
+        </tr>`;
+      previousGroup = groupKey;
       const location = [technician.city, technician.state].filter(Boolean).join(", ") || "Not listed";
       const services = splitServices(technician.services).join(", ") || "Not listed";
       const coverage = technician.coverage || technician.coverage_areas || "Not listed";
-      return `
+      return `${groupHeading}
         <tr>
           <td>${escapePrintHtml(technician.assigned_number || "—")}</td>
           <td><strong>${escapePrintHtml(technician.full_name || "Unnamed technician")}</strong><br><span>${escapePrintHtml(technician.company || "Independent")}</span></td>
@@ -640,6 +661,9 @@ export default function TechnicianCenter({ currentUser }) {
             tbody tr:nth-child(even) { background: #f8fafc; }
             tr { break-inside: avoid; }
             td span { color: #64748b; }
+            .group-heading td { border: 0; border-top: 2px solid #2563eb; background: #dbeafe !important; padding: 8px 10px; color: #1e3a8a; }
+            .group-heading td strong { display: inline-block; min-width: 130px; font-size: 11px; text-transform: uppercase; }
+            .group-heading td span { color: #1d4ed8; font-weight: 700; }
             th:nth-child(1), td:nth-child(1) { width: 5%; text-align: center; }
             th:nth-child(2), td:nth-child(2) { width: 17%; }
             th:nth-child(3), td:nth-child(3) { width: 12%; }
@@ -657,7 +681,7 @@ export default function TechnicianCenter({ currentUser }) {
             <div><h1>Technician Directory</h1><div class="brand">NTTR · National Truck Trailer Repair</div></div>
             <div class="meta">Generated ${escapePrintHtml(new Date().toLocaleString())}<br>${filteredTechnicians.length} technician${filteredTechnicians.length === 1 ? "" : "s"}</div>
           </header>
-          <div class="summary"><span><strong>Current view:</strong> ${escapePrintHtml(filterSummary)}</span><span><strong>Sort:</strong> ${escapePrintHtml(sortBy)}</span></div>
+          <div class="summary"><span><strong>Current view:</strong> ${escapePrintHtml(filterSummary)}</span><span><strong>Grouped by:</strong> State → City</span></div>
           <table>
             <thead><tr><th>#</th><th>Technician / Company</th><th>Phone</th><th>City / State</th><th>Availability</th><th>Status</th><th>Services</th><th>Coverage Areas</th></tr></thead>
             <tbody>${rows || `<tr><td colspan="8" class="empty">No technicians match the current filters.</td></tr>`}</tbody>
