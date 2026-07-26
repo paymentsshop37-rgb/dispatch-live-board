@@ -159,6 +159,41 @@ const tableControlClass =
 const darkSelectClass =
   "rounded-lg border border-[#334155] bg-[#0f172a] text-white outline-none focus:border-[#2563eb] disabled:bg-[#111827] disabled:text-[#e5e7eb] disabled:opacity-100";
 const darkOptionStyle = { backgroundColor: "#0f172a", color: "#ffffff" };
+const dispatchBoardColumnsStorageKey = "dispatch_board_columns_v2";
+const requiredDispatchBoardColumn = "reference_number";
+const defaultDispatchBoardColumns = [
+  "display_number", "row_flag", "job_date", "status", "job_time", requiredDispatchBoardColumn,
+  "invoice_number", "dispatch", "company", "tech", "location", "invoice_status",
+  "payment_method", "received", "updates", "tech_payment_status", "actions",
+];
+
+function migrateDispatchBoardColumnPreferences() {
+  const legacyKeys = ["dispatch_board_columns", "dispatch_board_columns_v1", "dispatch_visible_columns"];
+  let legacyColumns = [];
+  for (const key of legacyKeys) {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || "null");
+      const values = Array.isArray(parsed) ? parsed : parsed?.visibleColumns || parsed?.columns;
+      if (Array.isArray(values)) legacyColumns.push(...values);
+    } catch {
+      // Invalid legacy preferences are safely replaced by the current defaults.
+    }
+  }
+  try {
+    const current = JSON.parse(localStorage.getItem(dispatchBoardColumnsStorageKey) || "null");
+    const currentColumns = Array.isArray(current?.visibleColumns) ? current.visibleColumns : [];
+    const normalized = [...legacyColumns, ...currentColumns].map((column) =>
+      ["jobReference", "reference_no", "referenceNumber", "ref_number"].includes(column)
+        ? requiredDispatchBoardColumn
+        : column
+    );
+    const visibleColumns = [...new Set([...(normalized.length ? normalized : defaultDispatchBoardColumns), requiredDispatchBoardColumn])];
+    localStorage.setItem(dispatchBoardColumnsStorageKey, JSON.stringify({ version: 2, visibleColumns }));
+    return visibleColumns;
+  } catch {
+    return defaultDispatchBoardColumns;
+  }
+}
 
 const fieldMap = {
   photo_url: "photo_url",
@@ -224,7 +259,7 @@ function exportJobsToCSV(jobs) {
   const rows = jobs.map((job) => [
     job.date,
     job.time,
-    job.jobReference,
+    job.jobReference || "—",
     job.reference,
     job.dispatch,
     job.company,
@@ -269,7 +304,7 @@ function exportJobsToPDF(jobs, showProfit = true) {
         <tr>
           <td>${job.date || ""}</td>
           <td>${job.time || ""}</td>
-          <td>${job.jobReference || ""}</td>
+          <td>${job.jobReference || "—"}</td>
           <td>${job.reference || ""}</td>
           <td>${job.company || ""}</td>
           <td>${job.tech || ""}</td>
@@ -335,7 +370,7 @@ function fromDbJob(row) {
     updatedAt: row.updated_at || "",
     date: row.job_date || "",
     time: row.job_time || "",
-    jobReference: row.reference_number || "",
+    jobReference: row.reference_number ?? "",
     reference: row.invoice_number || "",
     dispatch: row.dispatch || "",
     company: row.company || "",
@@ -537,6 +572,10 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   addJobOpenRef.current = showAddJobModal;
   mobileJobStepRef.current = mobileJobStep;
   console.log("Rendering technicians:", dispatchTechnicians);
+
+  useEffect(() => {
+    migrateDispatchBoardColumnPreferences();
+  }, []);
 
   useEffect(() => {
     if (!showAddJobModal) return undefined;
@@ -967,7 +1006,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
     if (import.meta.env.DEV) console.debug("[dispatch] dashboard refresh");
     const { data, error } = await supabase
       .from("jobs")
-      .select("*")
+      .select("*, reference_number")
       .order("job_date", { ascending: true });
 
     if (error) {
@@ -1260,7 +1299,7 @@ profit: filteredJobs.reduce(
     const { data, error } = await supabase
       .from("jobs")
       .insert([toDbJob(newJob)])
-      .select()
+      .select("*, reference_number")
       .single();
 
     if (error) {
@@ -2354,9 +2393,14 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     Export Excel
                   </button>
                 )}
-                <button
-                  type="button"
-                  className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      migrateDispatchBoardColumnPreferences();
+                      setToastMessage("Required columns are enabled. Reference # is always visible.");
+                      window.setTimeout(() => setToastMessage(""), 3000);
+                    }}
+                    className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 hover:bg-slate-50"
                 >
                   <Columns3 className="h-4 w-4" />
                   Columns
@@ -2524,7 +2568,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     </div>
 
                     <div className="mt-4 grid gap-3 text-sm">
-                      <MobileJobField label="Reference #" value={job.jobReference || "Not assigned"} />
+                      <MobileJobField label="Reference #" value={job.jobReference || "—"} />
                       <MobileJobField label="Invoice #" value={job.reference || "Not assigned"} />
                       <MobileJobField label="Company" value={job.company || "Not provided"} />
                       <MobileJobField label="Location" value={job.location || "Not provided"} />
@@ -2683,7 +2727,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       </Td>
 
                       <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
-                      <Td><Editable className="w-36" value={job.jobReference} onChange={(v) => updateJob(job.id, "jobReference", v)} /></Td>
+                      <Td><Editable className="w-36" value={job.jobReference} placeholder="—" onChange={(v) => updateJob(job.id, "jobReference", v)} /></Td>
                       <Td><Editable value={job.reference} onChange={(v) => updateJob(job.id, "reference", v)} /></Td>
                       <Td><Editable value={job.dispatch} onChange={(v) => updateJob(job.id, "dispatch", v)} /></Td>
 
@@ -3250,7 +3294,7 @@ function DispatchCockpit({
               <CockpitDetail label="Location" value={selected.location} />
               <CockpitDetail label="Date / Time" value={[selected.date, selected.time].filter(Boolean).join(" · ")} />
               <CockpitDetail label="Invoice #" value={selected.reference} />
-              <CockpitDetail label="Reference #" value={selected.reference} />
+              <CockpitDetail label="Reference #" value={selected.jobReference || "—"} />
               <CockpitDetail label="Payment Method" value={selected.paymentMethod} />
               <CockpitDetail label="Invoice Status" value={selected.invoice} />
               <CockpitDetail label="Dispatch" value={selected.dispatch} />
@@ -4003,11 +4047,12 @@ function JobDocumentsModal({ job, isAdmin, currentUserName, onUpload, onDeleted,
   );
 }
 
-function Editable({ value, onChange, className = "" }) {
+function Editable({ value, onChange, className = "", placeholder = "" }) {
   return (
     <input
       className={`${tableControlClass} w-32 px-2 py-1 ${className}`}
       value={value}
+      placeholder={placeholder}
       onChange={(e) => onChange(e.target.value)}
     />
   );
@@ -4180,7 +4225,7 @@ function MobileJobField({ label, value, lines = 1 }) {
   return (
     <div className="min-w-0">
       <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`${lines === 2 ? "line-clamp-2" : "truncate"} mt-0.5 font-semibold text-slate-100`} title={String(value || "")}>{value}</p>
+      <p className={`${lines === 2 ? "line-clamp-2" : "truncate"} mt-0.5 font-semibold text-slate-100`} title={String(value || "—")}>{value === 0 ? 0 : value || "—"}</p>
     </div>
   );
 }
@@ -4251,6 +4296,8 @@ function MobileJobDetailSheet({ job, onClose, onUpdate, onAssign, onMap }) {
       <section className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl bg-[#0b1628] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-white" onClick={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase text-blue-300">Job Details</p><h3 className="text-xl font-black">{job.reference || "No Invoice #"}</h3></div><button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10">Close</button></div>
         <div className="mt-5 grid gap-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+          <MobileJobField label="Reference #" value={job.jobReference || "—"} />
+          <MobileJobField label="Invoice #" value={job.reference || "—"} />
           <MobileJobField label="Company" value={job.company || "Not provided"} />
           <MobileJobField label="Location" value={job.location || "Not provided"} />
           <div className="grid grid-cols-2 gap-3"><MobileJobField label="Dispatcher" value={job.dispatch || "Unassigned"} /><MobileJobField label="Technician" value={job.tech || "Unassigned"} /></div>
@@ -4284,7 +4331,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
     async function loadDetails(showSkeleton = true) {
       if (showSkeleton) setLoading(true);
       setError("");
-      const { data: rawJob, error: jobError } = await supabase.from("jobs").select("*").eq("id", jobId).single();
+      const { data: rawJob, error: jobError } = await supabase.from("jobs").select("*, reference_number").eq("id", jobId).single();
       if (!mounted) return;
       if (jobError || !rawJob) {
         setError(jobError?.message || "Job not found.");
@@ -4359,7 +4406,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
 
               <DetailSection title="Job Identification">
                 <DetailGrid items={[
-                  ["Internal job number", job.id], ["Invoice number", job.reference], ["Reference number", job.jobReference],
+                  ["Internal job number", job.id], ["Invoice number", job.reference || "—"], ["Reference number", job.jobReference || "—"],
                   ["Created", valueFrom(raw.created_at, `${job.date || ""} ${job.time || ""}`)], ["Last modified", raw.updated_at], ["Status", job.status],
                   ["Priority", job.rowFlag], ["Job source", valueFrom(raw.job_source, raw.source, "Dispatch Live")],
                 ]} />
@@ -4558,7 +4605,7 @@ function recentValues(jobs, key) {
 
 function formatJobForClipboard(job) {
   return [
-    `Reference #: ${job.jobReference || ""}`,
+    `Reference #: ${job.jobReference || "—"}`,
     `Invoice: ${job.reference || ""}`,
     `Company: ${job.company || ""}`,
     `Location: ${job.location || ""}`,

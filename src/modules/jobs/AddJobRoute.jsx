@@ -209,7 +209,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
     setSaving(true);
     setError("");
     saveDraft();
-    const { data, error: insertError } = await supabase.from("jobs").insert([toDbJob(form)]).select().single();
+    const { data, error: insertError } = await supabase.from("jobs").insert([toDbJob(form)]).select("*, reference_number").single();
     if (insertError) {
       console.trace("[AddJobRoute] save failed; route preserved", insertError.message);
       setError(insertError.message || "Unable to save job.");
