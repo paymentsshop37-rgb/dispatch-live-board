@@ -13,6 +13,7 @@
     "@vitejs/plugin-react": "latest",
     "framer-motion": "latest",
     "lucide-react": "latest",
+    "mapbox-gl": "^3.27.0",
     "react": "latest",
     "react-dom": "latest",
     "read-excel-file": "^9.3.1",

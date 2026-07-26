@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Download, Map, MapPin, Settings2, X } from "lucide-react";
 import { coverageStatusBucket } from "./serviceAreaService";
 import { assignJobServiceArea } from "./serviceAreaService";
+import CoverageRoadMap from "./CoverageRoadMap";
 
 const statusColumns = [
   ["total", "Total Jobs"], ["completed", "Completed"], ["cancelled", "Cancelled"],
@@ -49,7 +50,7 @@ export default function GeographicCoverageAnalysis({
       <div className="p-4 md:p-6">
         {tab === "exact" && onExactCities}
         {tab === "areas" && <ServiceAreasTable rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} isAdmin={isAdmin} onChanged={onChanged} />}
-        {tab === "map" && <CoverageMap rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} isAdmin={isAdmin} />}
+        {tab === "map" && <CoverageRoadMap rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} onExport={() => printAreas(serviceAreaRows)} />}
       </div>
     </section>
   );
