@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Activity,
-  AlertTriangle,
   BarChart3,
   CalendarDays,
-  CheckCircle2,
   CircleDollarSign,
   Clock,
   Download,
@@ -12,16 +9,13 @@ import {
   Filter,
   MapPin,
   RefreshCw,
-  ShieldAlert,
   TrendingDown,
   TrendingUp,
   Truck,
   UserCheck,
   Users,
-  XCircle,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
-import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "../activity";
 import CitiesWithoutJobsPanel from "../coverage/CitiesWithoutJobsPanel";
 import { buildCitiesWithoutJobs, loadCoverageCities, normalizeCoverageCity, normalizeState, setCoverageCityActive } from "../coverage/coverageCityService";
 import CoverageSettings from "../coverage/CoverageSettings";
@@ -59,43 +53,8 @@ const columnAliases = {
 const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"];
 const defaultFilterMode = "This Week";
 
-const importantActivityActions = new Set([
-  ...SYSTEM_ACTIVITY_ACTIONS,
-  "Status Changed",
-  "Invoice Sent",
-  "Tech Assigned",
-  "Dispatcher Updated Notes",
-  "Photo Uploaded",
-  "Delete Job",
-  "Delete Technician",
-]);
-
-const activityIconMap = {
-  "Job Created": Activity,
-  "Job Deleted": XCircle,
-  "Delete Job": XCircle,
-  "Technician Invited": Users,
-  "Technician Registered": UserCheck,
-  "Technician Approved": CheckCircle2,
-  "Technician Deleted": XCircle,
-  "Delete Technician": XCircle,
-  "Invoice Paid": CircleDollarSign,
-  "Invoice Sent": FileText,
-  "Technician Paid": CircleDollarSign,
-  "Tech Payment Paid": CircleDollarSign,
-  "Status Changed": Activity,
-  "Invoice Status changed": FileText,
-  "Tech Assigned": Truck,
-  "Dispatcher Updated Notes": FileText,
-  "Photo Uploaded": FileText,
-  "Smart Alert triggered": AlertTriangle,
-  "Login Success": UserCheck,
-  "Login Failure": ShieldAlert,
-};
-
-export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTechnicians }) {
+export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
   const [jobs, setJobs] = useState([]);
-  const [activityRows, setActivityRows] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastSync, setLastSync] = useState(null);
@@ -115,9 +74,8 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
 
   async function loadDashboard() {
     setLoading(true);
-    const [{ data, error }, recentActivity, coverageResult, technicianResult, serviceAreaResult] = await Promise.all([
+    const [{ data, error }, coverageResult, technicianResult, serviceAreaResult] = await Promise.all([
       supabase.from("jobs").select("*"),
-      getRecentActivity({ limit: 100 }),
       loadCoverageCities({ includeInactive: true }).then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
       loadTechnicians().then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
       loadServiceAreaConfiguration({ includeInactive: true }).then((value) => ({ value })).catch((loadError) => ({ error: loadError })),
@@ -142,7 +100,6 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
       setServiceAreaAliases(serviceAreaResult.value.aliases);
     }
 
-    setActivityRows(normalizeActivity(recentActivity || []));
     setWarnings(nextWarnings);
     setLastSync(new Date());
     setLoading(false);
@@ -168,7 +125,6 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
     })),
     [filteredJobs]
   );
-  const activityFeed = useMemo(() => activityRows.slice(0, 15), [activityRows]);
   const missingCityMetric = useMemo(
     () => buildCitiesWithoutJobs({ coverageCities, jobs, technicians, range: dateRange, includeCancelled: false, includeDryRuns: false }),
     [coverageCities, dateRange, jobs, technicians]
@@ -240,9 +196,9 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
           <KpiCard title="Cities Without Jobs" value={missingCityMetric.summary.withoutJobs} detail="Click to review coverage" icon={MapPin} tone="orange" onClick={() => setCitiesWithoutJobsOpen(true)} />
         </section>
 
-        <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_500px]">
+        <div>
           <main className="space-y-6">
-            <section className="executive-chart-grid grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+            <section className="executive-chart-grid grid gap-6 xl:grid-cols-[minmax(360px,0.82fr)_minmax(0,1.18fr)]">
               <Panel title="Jobs Status" subtitle="Completed, active, cancelled, pending and dry runs" icon={BarChart3}>
                 <div className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)] lg:items-center">
                   <DonutChart segments={analytics.statusSegments} total={analytics.totalJobs} />
@@ -259,7 +215,7 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
               </Panel>
             </section>
 
-            <section className="executive-chart-grid grid gap-6 xl:grid-cols-2">
+            <section className="executive-chart-grid grid gap-6 2xl:grid-cols-[minmax(0,1.45fr)_minmax(380px,0.55fr)]">
               <Panel title="Dispatcher Performance" subtitle="Weighted overall score and ranking" icon={Users}>
                 <PerformanceTable type="dispatcher" rows={dispatcherRows} onDrilldown={setCityJobDrilldown} />
               </Panel>
@@ -268,7 +224,7 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
               </Panel>
             </section>
 
-            <section className="executive-chart-grid grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <section className="executive-chart-grid grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
               <Panel title="Top 10 Cities by Jobs" subtitle="Chart view for readability" icon={MapPin}>
                 <HorizontalBars rows={cityRows} emptyLabel="No city data yet." />
               </Panel>
@@ -307,21 +263,6 @@ export default function ExecutiveDashboard({ onOpenActivity, onOpenJob, onOpenTe
             </Panel>
           </main>
 
-          <aside className="space-y-6">
-            <Panel title="Recent Activity" subtitle="Important events only" icon={Activity}>
-              <div className="max-h-[820px] space-y-3 overflow-y-auto pr-1">
-                {activityFeed.map((item) => (
-                  <ActivityItem key={item.id} item={item} jobs={jobs} onOpenJob={onOpenJob} />
-                ))}
-                {!activityFeed.length && <EmptyState label="No important activity yet." />}
-              </div>
-              {onOpenActivity && (
-                <button type="button" onClick={onOpenActivity} className="mt-4 w-full rounded-xl bg-blue-500 px-4 py-3 text-sm font-black text-white shadow-lg shadow-blue-950/30 transition hover:bg-blue-400">
-                  View Full Activity Log
-                </button>
-              )}
-            </Panel>
-          </aside>
         </div>
         {citiesWithoutJobsOpen && (
           <CitiesWithoutJobsPanel
@@ -784,33 +725,6 @@ function InvoiceTile({ item }) {
   );
 }
 
-function ActivityItem({ item, jobs, onOpenJob }) {
-  const Icon = activityIconMap[item.action] || Activity;
-  const job = jobs.find((candidate) => String(candidate.id) === String(item.entity_id));
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4">
-      <div className="flex gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-blue-500/15 text-blue-300">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-black text-white">{friendlyActivityTitle(item.action)}</p>
-              <p className="mt-1 text-xs font-semibold text-slate-400">{item.created_by || "System"}</p>
-            </div>
-            <span className="shrink-0 text-xs font-black uppercase text-slate-500">{shortTime(item.created_at)}</span>
-          </div>
-          <div className="mt-3 grid gap-2 text-xs font-semibold text-slate-400 sm:grid-cols-2">
-            {item.entity_id && onOpenJob ? <button type="button" onClick={() => onOpenJob(item.entity_id)} className="min-h-11 text-left font-black text-blue-300 underline underline-offset-4">Job #: {job?.invoiceNumber || item.entity_id}</button> : <span>Job #: {job?.invoiceNumber || item.entity_id || "N/A"}</span>}
-            <span>City: {job?.city || "N/A"}</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function MetricBar({ label, value, total, tone }) {
   const percent = total ? Math.round((value / total) * 100) : 0;
   const visual = jobStatusVisual(label);
@@ -1077,16 +991,6 @@ function normalizeJob(row) {
   };
 }
 
-function normalizeActivity(rows) {
-  return rows
-    .filter((item) => {
-      if (importantActivityActions.has(item.action)) return true;
-      const action = normalized(item.action);
-      return action.includes("invoice") || action.includes("payment") || action.includes("assigned") || action.includes("deleted") || action.includes("created") || action.includes("login");
-    })
-    .slice(0, 20);
-}
-
 function readAlias(row, aliases) {
   for (const alias of aliases) {
     if (row && Object.prototype.hasOwnProperty.call(row, alias)) return row[alias];
@@ -1319,21 +1223,6 @@ function formatTrend(value, suffix) {
   if (typeof value === "number" && suffix) return `${value} ${suffix}`;
   if (typeof value === "number") return money(value);
   return value || "0";
-}
-
-function shortTime(value) {
-  if (!value) return "Now";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Recent" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function friendlyActivityTitle(action) {
-  const text = String(action || "Activity");
-  if (text === "Job Deleted") return "Delete Job";
-  if (text === "Technician Deleted") return "Delete Technician";
-  if (text === "Technician Paid") return "Tech Payment Paid";
-  if (text === "Invoice Status changed") return "Status Changed";
-  return text;
 }
 
 const jobStatusVisuals = {
