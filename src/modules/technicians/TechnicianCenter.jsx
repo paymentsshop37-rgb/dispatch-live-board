@@ -13,6 +13,7 @@ import {
   MessageCircle,
   MoreHorizontal,
   Phone,
+  Printer,
   RefreshCw,
   Search,
   Send,
@@ -588,6 +589,86 @@ export default function TechnicianCenter({ currentUser }) {
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   }
 
+  function printTechnicianDirectory() {
+    const printWindow = window.open("", "_blank", "width=1200,height=800");
+    if (!printWindow) {
+      setCopyMessage("Unable to open the PDF preview. Please allow pop-ups and try again.");
+      return;
+    }
+
+    const filterSummary = [
+      activeTab !== "Directory" ? activeTab : "",
+      statusFilter !== "All" ? `Status: ${statusFilter}` : "",
+      serviceFilter !== "All" ? `Service: ${serviceFilter}` : "",
+      search.trim() ? `Search: ${search.trim()}` : "",
+    ].filter(Boolean).join(" · ") || "All technicians in the current directory";
+
+    const rows = filteredTechnicians.map((technician) => {
+      const location = [technician.city, technician.state].filter(Boolean).join(", ") || "Not listed";
+      const services = splitServices(technician.services).join(", ") || "Not listed";
+      const coverage = technician.coverage || technician.coverage_areas || "Not listed";
+      return `
+        <tr>
+          <td>${escapePrintHtml(technician.assigned_number || "—")}</td>
+          <td><strong>${escapePrintHtml(technician.full_name || "Unnamed technician")}</strong><br><span>${escapePrintHtml(technician.company || "Independent")}</span></td>
+          <td>${escapePrintHtml(technician.phone || "Not listed")}</td>
+          <td>${escapePrintHtml(location)}</td>
+          <td>${escapePrintHtml(technician.availability || "Available")}</td>
+          <td>${escapePrintHtml(technician.status || "Approved")}</td>
+          <td>${escapePrintHtml(services)}</td>
+          <td>${escapePrintHtml(coverage)}</td>
+        </tr>`;
+    }).join("");
+
+    printWindow.document.write(`<!doctype html>
+      <html>
+        <head>
+          <title>Technician Directory</title>
+          <style>
+            @page { size: landscape; margin: 0.45in; }
+            * { box-sizing: border-box; }
+            body { margin: 0; color: #172033; font-family: Arial, Helvetica, sans-serif; font-size: 10px; }
+            header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; border-bottom: 3px solid #2563eb; padding-bottom: 12px; margin-bottom: 14px; }
+            h1 { margin: 0; font-size: 24px; color: #0f172a; }
+            .brand { margin-top: 4px; color: #2563eb; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+            .meta { text-align: right; color: #64748b; line-height: 1.5; }
+            .summary { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 12px; border: 1px solid #dbe4f0; border-radius: 8px; background: #f8fafc; padding: 9px 12px; }
+            .summary strong { color: #0f172a; }
+            table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+            th { background: #10213a; color: #fff; padding: 8px 7px; text-align: left; font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+            td { border: 1px solid #dbe4f0; padding: 7px; vertical-align: top; line-height: 1.35; overflow-wrap: anywhere; }
+            tbody tr:nth-child(even) { background: #f8fafc; }
+            tr { break-inside: avoid; }
+            td span { color: #64748b; }
+            th:nth-child(1), td:nth-child(1) { width: 5%; text-align: center; }
+            th:nth-child(2), td:nth-child(2) { width: 17%; }
+            th:nth-child(3), td:nth-child(3) { width: 12%; }
+            th:nth-child(4), td:nth-child(4) { width: 13%; }
+            th:nth-child(5), td:nth-child(5) { width: 10%; }
+            th:nth-child(6), td:nth-child(6) { width: 9%; }
+            th:nth-child(7), td:nth-child(7) { width: 15%; }
+            th:nth-child(8), td:nth-child(8) { width: 19%; }
+            .empty { padding: 40px; text-align: center; color: #64748b; }
+            footer { margin-top: 10px; color: #94a3b8; text-align: right; font-size: 8px; }
+          </style>
+        </head>
+        <body>
+          <header>
+            <div><h1>Technician Directory</h1><div class="brand">NTTR · National Truck Trailer Repair</div></div>
+            <div class="meta">Generated ${escapePrintHtml(new Date().toLocaleString())}<br>${filteredTechnicians.length} technician${filteredTechnicians.length === 1 ? "" : "s"}</div>
+          </header>
+          <div class="summary"><span><strong>Current view:</strong> ${escapePrintHtml(filterSummary)}</span><span><strong>Sort:</strong> ${escapePrintHtml(sortBy)}</span></div>
+          <table>
+            <thead><tr><th>#</th><th>Technician / Company</th><th>Phone</th><th>City / State</th><th>Availability</th><th>Status</th><th>Services</th><th>Coverage Areas</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="8" class="empty">No technicians match the current filters.</td></tr>`}</tbody>
+          </table>
+          <footer>Technician Directory · Internal Operations Report</footer>
+          <script>window.onload = () => { window.focus(); window.print(); };</script>
+        </body>
+      </html>`);
+    printWindow.document.close();
+  }
+
   return (
     <div className="min-h-screen w-full bg-slate-100 p-4 text-slate-900 md:p-6 xl:p-8">
       <div className="mx-auto w-full max-w-none space-y-6">
@@ -615,6 +696,7 @@ export default function TechnicianCenter({ currentUser }) {
               {canApproveTechnicians && <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />}
               {canApproveTechnicians && <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />}
               {canApproveTechnicians && <ActionButton onClick={shareRegistrationBySms} icon={<Smartphone />} label="SMS Invite" tone="blue" />}
+              <ActionButton onClick={printTechnicianDirectory} icon={<Printer />} label="Print / Save PDF" tone="blue" />
               <ActionButton onClick={refreshTechnicians} icon={<RefreshCw className={loading ? "animate-spin" : ""} />} label="Refresh" />
             </div>
           </div>
@@ -2353,6 +2435,16 @@ function technicianDirectoryScore(technician, city, state) {
   if (city && areas.includes(city)) score += 20;
   if (state && areas.includes(state)) score += 10;
   return score;
+}
+
+function escapePrintHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[character]));
 }
 
 function availabilityRank(status) {
