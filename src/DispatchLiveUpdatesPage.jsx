@@ -37,6 +37,7 @@ import { supabase } from "./lib/supabase";
 import { logActivity } from "./modules/activity";
 import { compareTechniciansByAssignedNumber, loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
+import { compareJobsChronologically, normalizeJobDate } from "./utils/jobChronology";
 import {
   techPaymentControlStyle,
   techPaymentLabel,
@@ -503,6 +504,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const [companyFilter, setCompanyFilter] = useState("All");
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [techPaymentFilter, setTechPaymentFilter] = useState("All");
+  const [jobSortOrder, setJobSortOrder] = useState("newest");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [deleteRestrictedOpen, setDeleteRestrictedOpen] = useState(false);
@@ -1041,7 +1043,8 @@ const { data: logsData } = await supabase
         const matchesInvoice = invoiceFilter === "All" || job.invoice === invoiceFilter;
         const matchesTechPayment = techPaymentFilter === "All" || job.techPaymentStatus === techPaymentFilter;
 const today = new Date();
-const jobDate = new Date(job.date + " 00:00:00");
+const normalizedJobDate = normalizeJobDate(job.date);
+const jobDate = normalizedJobDate ? new Date(`${normalizedJobDate}T00:00:00`) : new Date(0);
 
 const startOfWeek = new Date(today);
 startOfWeek.setHours(0, 0, 0, 0);
@@ -1112,7 +1115,7 @@ const matchesPeriod =
   periodFilter === "All"
     ? true
     : periodFilter === "Today"
-    ? job.date === new Date().toISOString().slice(0, 10)
+    ? normalizedJobDate === new Date().toISOString().slice(0, 10)
     : periodFilter === "Custom Range" || periodFilter === "CustomRange"
     ? true
     : periodFilter === "This Week" || periodFilter === "ThisWeek"
@@ -1130,8 +1133,8 @@ const matchesPeriod =
     : true;
 
   const matchesDateRange =
-  (!fromDate || job.date >= fromDate) &&
-  (!toDate || job.date <= toDate);
+  (!fromDate || normalizedJobDate >= fromDate) &&
+  (!toDate || normalizedJobDate <= toDate);
 
 return (
   matchesSearch &&
@@ -1146,14 +1149,13 @@ return (
   matchesPeriod &&
   matchesDateRange
 );
-      })
-      .sort((a, b) => {
-  const dateTimeA = new Date(`${a.date} ${a.time || "00:00"}`);
-  const dateTimeB = new Date(`${b.date} ${b.time || "00:00"}`);
-
-  return dateTimeA - dateTimeB;
-});
+      });
   }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
+
+  const sortedJobs = useMemo(
+    () => [...filteredJobs].sort((a, b) => compareJobsChronologically(a, b, jobSortOrder)),
+    [filteredJobs, jobSortOrder]
+  );
 
   const dates = useMemo(
     () => [...new Set(jobs.map((job) => job.date).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b)),
@@ -2347,8 +2349,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
           {false && (
             <DispatchCockpit
-              jobs={filteredJobs}
-              selectedJob={assignmentJob || filteredJobs[0]}
+              jobs={sortedJobs}
+              selectedJob={assignmentJob || sortedJobs[0]}
               technicians={assignmentTechnicians}
               notifications={notifications}
               activityLogs={activityLogs}
@@ -2386,7 +2388,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 {isAdmin && (
                   <button
                     type="button"
-                    onClick={() => exportJobsToCSV(filteredJobs)}
+                    onClick={() => exportJobsToCSV(sortedJobs)}
                     className="flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700"
                   >
                     <FileSpreadsheet className="h-4 w-4" />
@@ -2502,7 +2504,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
                 <button
                   type="button"
-                  onClick={() => exportJobsToCSV(filteredJobs)}
+                  onClick={() => exportJobsToCSV(sortedJobs)}
                   className="h-9 w-full whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 2xl:col-span-1"
                 >
                   Export
@@ -2521,6 +2523,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     setInvoiceFilter("All");
                     setTechPaymentFilter("All");
                     setPeriodFilter("All");
+                    setJobSortOrder("newest");
                   }}
                   className="h-9 w-full whitespace-nowrap rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15 2xl:col-span-1"
                 >
@@ -2547,8 +2550,24 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </div>
             )}
 
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3 lg:hidden">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Job Order</p>
+                <p className="text-xs font-semibold text-slate-300">Date and time</p>
+              </div>
+              <select
+                aria-label="Sort jobs"
+                value={jobSortOrder}
+                onChange={(event) => setJobSortOrder(event.target.value)}
+                className={`${darkSelectClass} min-h-11 rounded-xl px-3 text-sm font-black`}
+              >
+                <option value="newest" style={darkOptionStyle}>Newest First</option>
+                <option value="oldest" style={darkOptionStyle}>Oldest First</option>
+              </select>
+            </div>
+
             <div className="dispatch-mobile-grid grid gap-3 lg:hidden">
-              {filteredJobs.slice(0, mobileVisibleCount).map((job, index) => {
+              {sortedJobs.slice(0, mobileVisibleCount).map((job, index) => {
                 const eta = job.manualEta || extractEta(job.updates);
                 const financialOpen = mobileFinancialIds.includes(String(job.id));
                 const moreOpen = mobileMoreJobId === job.id;
@@ -2619,8 +2638,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   </article>
                 );
               })}
-              {filteredJobs.length === 0 && <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-400">No live jobs found.</div>}
-              {mobileVisibleCount < filteredJobs.length && <button type="button" onClick={() => setMobileVisibleCount((count) => count + 50)} className="min-h-11 rounded-xl bg-blue-600 px-4 font-bold text-white">Load 50 More Jobs</button>}
+              {sortedJobs.length === 0 && <div className="rounded-2xl border border-white/10 bg-white/5 p-8 text-center text-sm font-bold text-slate-400">No live jobs found.</div>}
+              {mobileVisibleCount < sortedJobs.length && <button type="button" onClick={() => setMobileVisibleCount((count) => count + 50)} className="min-h-11 rounded-xl bg-blue-600 px-4 font-bold text-white">Load 50 More Jobs</button>}
             </div>
             <div className="sticky bottom-0 -mx-4 mt-auto grid grid-cols-3 gap-2 border-t border-white/10 bg-[#0b1628] p-4 lg:hidden">
               <button type="button" onClick={() => { saveAddJobDraft(); setToastMessage("Job draft saved"); }} className="min-h-12 rounded-xl bg-white/10 px-2 text-xs font-bold text-slate-100">Save Draft</button>
@@ -2670,7 +2689,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </thead>
 
                 <tbody>
-                  {filteredJobs.map((job, index) => (
+                  {sortedJobs.map((job, index) => (
                     <tr
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
@@ -2914,7 +2933,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       </Td>
                     </tr>
                   ))}
-                  {filteredJobs.length === 0 && (
+                  {sortedJobs.length === 0 && (
                     <tr>
                       <td colSpan={canEditJobFinancial ? 21 : 17} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
                         No live jobs yet.
@@ -2927,7 +2946,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 
             <div className="mt-4 flex flex-col gap-3 border-t border-white/10 pt-4 text-sm font-semibold text-slate-400 md:flex-row md:items-center md:justify-between">
               <span>
-                Showing {filteredJobs.length ? 1 : 0} to {filteredJobs.length} of {filteredJobs.length} jobs
+                Showing {sortedJobs.length ? 1 : 0} to {sortedJobs.length} of {sortedJobs.length} jobs
               </span>
               <label className="flex items-center gap-2">
                 Rows per page
