@@ -504,7 +504,6 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const [companyFilter, setCompanyFilter] = useState("All");
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [techPaymentFilter, setTechPaymentFilter] = useState("All");
-  const [jobSortOrder, setJobSortOrder] = useState("newest");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [deleteRestrictedOpen, setDeleteRestrictedOpen] = useState(false);
@@ -1153,8 +1152,8 @@ return (
   }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
 
   const sortedJobs = useMemo(
-    () => [...filteredJobs].sort((a, b) => compareJobsChronologically(a, b, jobSortOrder)),
-    [filteredJobs, jobSortOrder]
+    () => [...filteredJobs].sort(compareJobsChronologically),
+    [filteredJobs]
   );
 
   const dates = useMemo(
@@ -2523,7 +2522,6 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     setInvoiceFilter("All");
                     setTechPaymentFilter("All");
                     setPeriodFilter("All");
-                    setJobSortOrder("newest");
                   }}
                   className="h-9 w-full whitespace-nowrap rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15 2xl:col-span-1"
                 >
@@ -2549,22 +2547,6 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 Coverage cities load error: {coverageCitiesError}
               </div>
             )}
-
-            <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 p-3 lg:hidden">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Job Order</p>
-                <p className="text-xs font-semibold text-slate-300">Date and time</p>
-              </div>
-              <select
-                aria-label="Sort jobs"
-                value={jobSortOrder}
-                onChange={(event) => setJobSortOrder(event.target.value)}
-                className={`${darkSelectClass} min-h-11 rounded-xl px-3 text-sm font-black`}
-              >
-                <option value="newest" style={darkOptionStyle}>Newest First</option>
-                <option value="oldest" style={darkOptionStyle}>Oldest First</option>
-              </select>
-            </div>
 
             <div className="dispatch-mobile-grid grid gap-3 lg:hidden">
               {sortedJobs.slice(0, mobileVisibleCount).map((job, index) => {
