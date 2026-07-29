@@ -29,9 +29,9 @@ import {
   compareTechniciansByAssignedNumber,
   deleteOrDeactivateTechnician,
   getKnownColumns,
+  loadTechnicianAuditHistory,
   loadTechnicianColumnSupport,
   loadTechnicians,
-  permanentlyDeleteUnusedTechnician,
   restoreTechnician,
   sortTechniciansByAssignedNumber,
   subscribeToTechnicians,
@@ -68,7 +68,7 @@ const emptyTechnician = {
   notes: "",
 };
 
-const tabs = ["Dashboard", "Directory", "Pending", "Approved", "Inactive Technicians", "Documents", "Performance"];
+const tabs = ["Dashboard", "Directory", "Pending", "Approved", "Inactive Technicians", "Audit History", "Documents", "Performance"];
 const statuses = ["All", "Pending", "Approved", "Rejected", "Inactive", "Missing Documents"];
 const editableTechnicianStatuses = statuses.filter((status) => !["All", "Inactive"].includes(status));
 const sortOptions = ["Assigned Number"];
@@ -144,6 +144,7 @@ export default function TechnicianCenter({ currentUser }) {
   const [technicianToDelete, setTechnicianToDelete] = useState(null);
   const [invitationToDelete, setInvitationToDelete] = useState(null);
   const [invitations, setInvitations] = useState([]);
+  const [auditHistory, setAuditHistory] = useState([]);
   const [addTechnicianModalOpen, setAddTechnicianModalOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -154,10 +155,11 @@ export default function TechnicianCenter({ currentUser }) {
   const [missingColumns, setMissingColumns] = useState([]);
 
   const currentUserRole = String(currentUser?.role || "").toLowerCase();
-  const currentAdminName = currentUser?.name || currentUser?.username || "Admin";
+  const currentAdminName = currentUser?.name || currentUser?.username || "Technician Manager";
   const currentUserId = currentUser?.authUserId || currentUser?.id || "";
   const permissions = getPermissions(currentUserRole);
-  const canApproveTechnicians = permissions.canApproveTechnicians;
+  const canApproveTechnicians = permissions.canManageTechnicians || permissions.canApproveTechnicians;
+  const canManageInvitations = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
   const canEditDirectoryTechnicians = canApproveTechnicians;
   console.log("Rendering technicians:", technicians);
@@ -180,11 +182,15 @@ export default function TechnicianCenter({ currentUser }) {
       let nextTechnicians = activeTechnicians;
       if (canApproveTechnicians) {
         try {
-          const allTechnicians = await loadTechnicians({ includeInactive: true });
+          const [allTechnicians, history] = await Promise.all([
+            loadTechnicians({ includeInactive: true }),
+            loadTechnicianAuditHistory(),
+          ]);
           nextTechnicians = [
             ...activeTechnicians,
             ...allTechnicians.filter((technician) => !technician.isActive),
           ];
+          setAuditHistory(history);
         } catch (inactiveLoadError) {
           console.error("Inactive technician load error:", inactiveLoadError);
         }
@@ -198,7 +204,7 @@ export default function TechnicianCenter({ currentUser }) {
       setLoading(false);
     }
 
-    if (permissions.canApproveTechnicians) {
+    if (canManageInvitations) {
       try {
         setInvitations(await loadInvitations());
       } catch (loadInviteError) {
@@ -216,7 +222,7 @@ export default function TechnicianCenter({ currentUser }) {
     }
     refreshTechnicians();
     return subscribeToTechnicians(refreshTechnicians);
-  }, []);
+  }, [canApproveTechnicians, canManageInvitations]);
 
   const safeTechnicians = technicians;
 
@@ -416,16 +422,16 @@ export default function TechnicianCenter({ currentUser }) {
     }
 
     setError("");
-    setTechnicianToDelete({ technician, mode: "auto" });
+    setTechnicianToDelete({ technician, mode: "delete" });
   }
 
-  function requestPermanentDeleteTechnician(technician) {
+  function requestDeactivateTechnician(technician) {
     if (!canApproveTechnicians) {
-      setError("Only administrators can permanently delete technicians.");
+      setError("You do not have permission to deactivate technicians.");
       return;
     }
     setError("");
-    setTechnicianToDelete({ technician, mode: "permanent" });
+    setTechnicianToDelete({ technician, mode: "deactivate" });
   }
 
   async function restoreInactiveTechnician(technician) {
@@ -467,30 +473,25 @@ export default function TechnicianCenter({ currentUser }) {
     const { technician, mode } = technicianToDelete;
     setSaving(true);
     try {
-      let completedMode = mode;
-      if (mode === "permanent") {
-        await permanentlyDeleteUnusedTechnician(technician);
-      } else {
-        const result = await deleteOrDeactivateTechnician(technician, currentUserId);
-        completedMode = result.action === "deactivated" ? "deactivate" : "permanent";
-      }
+      const result = await deleteOrDeactivateTechnician(technician, currentUserId, mode);
+      const completedMode = result.action;
 
       setTechnicians((current) => current.filter((item) => item.id !== technician.id));
       setSelectedTechnician(null);
       setEditingTechnician(null);
       setTechnicianToDelete(null);
-      setCopyMessage(completedMode === "permanent" ? "Unused technician permanently deleted." : "Technician removed from the active directory.");
+      setCopyMessage("Technician removed from the active directory.");
       setError("");
       await logActivity({
         entityType: "technician",
         entityId: technician.id,
-        action: completedMode === "permanent" ? "Technician Permanently Deleted" : "Technician Deactivated",
-        description: `${technician.full_name || "Technician"} ${completedMode === "permanent" ? "permanently deleted" : "deactivated"} by ${currentAdminName}`,
+        action: completedMode === "deactivated" ? "Technician Deactivated" : "Technician Deleted",
+        description: `${technician.full_name || "Technician"} ${completedMode === "deactivated" ? "deactivated" : "soft-deleted"} by ${currentAdminName}`,
         createdBy: currentAdminName,
         metadata: {
           technicianId: technician.id,
           technicianName: technician.full_name,
-          action: completedMode === "permanent" ? "permanently deleted" : "deactivated",
+          action: completedMode === "deactivated" ? "deactivated" : "deleted",
           previousValues: technician.raw,
         },
       });
@@ -705,7 +706,9 @@ export default function TechnicianCenter({ currentUser }) {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-3xl font-black tracking-tight text-slate-950">Technician Center</h1>
-                  <span className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-wide text-blue-700">Dispatcher-Safe Mode</span>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase tracking-wide ${currentUserRole === "technician_manager" ? "border-violet-200 bg-violet-50 text-violet-700" : "border-blue-200 bg-blue-50 text-blue-700"}`}>
+                    {currentUserRole === "technician_manager" ? "Technician Manager" : "Dispatcher-Safe Mode"}
+                  </span>
                 </div>
                 <p className="mt-2 max-w-3xl text-sm font-medium text-slate-500">
                   Central hub for technician management, compliance, dispatch readiness, and performance.
@@ -716,10 +719,10 @@ export default function TechnicianCenter({ currentUser }) {
 
             <div className="flex flex-wrap items-center justify-start gap-2 xl:max-w-3xl xl:justify-end">
               {canEditDirectoryTechnicians && <ActionButton onClick={() => setAddTechnicianModalOpen(true)} icon={<UserPlus />} label="Add Technician" tone="blue" />}
-              {canApproveTechnicians && <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />}
-              {canApproveTechnicians && <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />}
-              {canApproveTechnicians && <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />}
-              {canApproveTechnicians && <ActionButton onClick={shareRegistrationBySms} icon={<Smartphone />} label="SMS Invite" tone="blue" />}
+              {canManageInvitations && <ActionButton onClick={() => setInviteModalOpen(true)} icon={<UserPlus />} label="Invite Technician" />}
+              {canManageInvitations && <ActionButton onClick={copyRegistrationLink} icon={<Clipboard />} label="Copy Registration Link" tone="emerald" />}
+              {canManageInvitations && <ActionButton onClick={shareRegistrationOnWhatsApp} icon={<MessageCircle />} label="WhatsApp Share" tone="green" />}
+              {canManageInvitations && <ActionButton onClick={shareRegistrationBySms} icon={<Smartphone />} label="SMS Invite" tone="blue" />}
               <ActionButton onClick={printTechnicianDirectory} icon={<Printer />} label="Print / Save PDF" tone="blue" />
               <ActionButton onClick={refreshTechnicians} icon={<RefreshCw className={loading ? "animate-spin" : ""} />} label="Refresh" />
             </div>
@@ -779,8 +782,8 @@ export default function TechnicianCenter({ currentUser }) {
             onOpen={setSelectedTechnician}
             onEdit={setEditingTechnician}
             onDelete={requestDeleteTechnician}
+            onDeactivate={requestDeactivateTechnician}
             onRestore={restoreInactiveTechnician}
-            onPermanentDelete={requestPermanentDeleteTechnician}
             onCoverage={setCoverageTechnician}
             onNearbyParts={setNearbyPartsTechnician}
             onAdd={() => setAddTechnicianModalOpen(true)}
@@ -789,14 +792,14 @@ export default function TechnicianCenter({ currentUser }) {
           />
         )}
 
-        {activeTab !== "Directory" && (
+        {activeTab !== "Directory" && activeTab !== "Audit History" && (
           <TechnicianCardGrid
             technicians={filteredTechnicians}
             onOpen={setSelectedTechnician}
           />
         )}
 
-        {canApproveTechnicians && (
+        {canManageInvitations && (
           <InvitationsPanel
             invitations={invitations}
             onCopy={copyInviteLink}
@@ -812,13 +815,13 @@ export default function TechnicianCenter({ currentUser }) {
           </div>
         )}
 
-        {canApproveTechnicians && inviteError && (
+        {canManageInvitations && inviteError && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-700">
             Invitation system: {inviteError}
           </div>
         )}
 
-        {activeTab !== "Directory" && (
+        {activeTab !== "Directory" && activeTab !== "Audit History" && (
         <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
           {canApproveTechnicians && (
             <form onSubmit={addTechnician} className="rounded-3xl bg-white p-5 shadow-sm">
@@ -965,8 +968,8 @@ export default function TechnicianCenter({ currentUser }) {
                                   technician={technician}
                                   onStatus={(status) => updateTechnicianStatus(technician, status)}
                                   onDelete={() => requestDeleteTechnician(technician)}
+                                  onDeactivate={() => requestDeactivateTechnician(technician)}
                                   onRestore={() => restoreInactiveTechnician(technician)}
-                                  onPermanentDelete={() => requestPermanentDeleteTechnician(technician)}
                                 />
                               </div>
                             )}
@@ -984,6 +987,7 @@ export default function TechnicianCenter({ currentUser }) {
 
         {activeTab === "Documents" && <DocumentsPanel technicians={filteredTechnicians} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />}
         {activeTab === "Performance" && <PerformancePanel technicians={filteredTechnicians} canViewPrivateTechnicianData={canViewPrivateTechnicianData} />}
+        {activeTab === "Audit History" && <TechnicianAuditHistory rows={auditHistory} />}
       </div>
 
       {selectedTechnician && (
@@ -1001,8 +1005,8 @@ export default function TechnicianCenter({ currentUser }) {
           onSaveNotes={(notes) => saveTechnician(selectedTechnician.id, { notes })}
           onStatus={(status) => updateTechnicianStatus(selectedTechnician, status)}
           onDelete={() => requestDeleteTechnician(selectedTechnician)}
+          onDeactivate={() => requestDeactivateTechnician(selectedTechnician)}
           onRestore={() => restoreInactiveTechnician(selectedTechnician)}
-          onPermanentDelete={() => requestPermanentDeleteTechnician(selectedTechnician)}
         />
       )}
 
@@ -1097,8 +1101,8 @@ function TechnicianDirectory({
   onOpen,
   onEdit,
   onDelete,
+  onDeactivate,
   onRestore,
-  onPermanentDelete,
   onCoverage,
   onNearbyParts,
   onAdd,
@@ -1285,8 +1289,8 @@ function TechnicianDirectory({
                   onOpen={onOpen}
                   onEdit={onEdit}
                   onDelete={onDelete}
+                  onDeactivate={onDeactivate}
                   onRestore={onRestore}
-                  onPermanentDelete={onPermanentDelete}
                   onCoverage={onCoverage}
                   onNearbyParts={onNearbyParts}
                   onAssign={onAssign}
@@ -1325,7 +1329,7 @@ function RegionalStats({ stats }) {
   );
 }
 
-function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAssign, isFavorite, onOpen, onEdit, onDelete, onRestore, onPermanentDelete, onCoverage, onNearbyParts, onAssign, onFavorite }) {
+function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAssign, isFavorite, onOpen, onEdit, onDelete, onDeactivate, onRestore, onCoverage, onNearbyParts, onAssign, onFavorite }) {
   return (
     <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start gap-4">
@@ -1375,25 +1379,79 @@ function TechnicianRegionalCard({ technician, lookup, canEdit, canDelete, canAss
             <IconTextButton label={isFavorite ? "Favorited" : "Favorite"} onClick={() => onFavorite(technician)} tone={isFavorite ? "amber" : "slate"}><Star className="h-4 w-4" /></IconTextButton>
             {coverageAreas(technician).length > 0 && <IconTextButton label="Coverage" onClick={() => onCoverage(technician)} tone="indigo"><LocateFixed className="h-4 w-4" /></IconTextButton>}
             {canDelete && technician.isActive && (
-              <button type="button" onClick={() => onDelete(technician)} className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
-                <Trash2 className="h-4 w-4" /> Delete Technician
-              </button>
-            )}
-            {canDelete && !technician.isActive && (
               <>
-                <button type="button" onClick={() => onRestore(technician)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">
-                  <UserCheck className="h-4 w-4" /> Restore Technician
+                <button type="button" onClick={() => onDeactivate(technician)} className="ml-3 inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50">
+                  <Ban className="h-4 w-4" /> Deactivate
                 </button>
-                <button type="button" onClick={() => onPermanentDelete(technician)} className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
-                  <Trash2 className="h-4 w-4" /> Permanently Delete
+                <button type="button" onClick={() => onDelete(technician)} className="inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
+                  <Trash2 className="h-4 w-4" /> Delete
                 </button>
               </>
+            )}
+            {canDelete && !technician.isActive && (
+              <button type="button" onClick={() => onRestore(technician)} className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">
+                <UserCheck className="h-4 w-4" /> Activate / Restore
+              </button>
             )}
           </div>
         </div>
       </div>
     </article>
   );
+}
+
+function TechnicianAuditHistory({ rows }) {
+  return (
+    <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4">
+        <h2 className="text-xl font-black text-slate-950">Technician Audit History</h2>
+        <p className="mt-1 text-sm text-slate-500">Created, updated, deactivated, deleted, and restored technician records.</p>
+      </div>
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <Th>Timestamp</Th>
+              <Th>Action</Th>
+              <Th>Technician</Th>
+              <Th>Actor</Th>
+              <Th>Actor Email</Th>
+              <Th>Changed Fields</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-slate-200 align-top">
+                <Td>{dateTime(row.created_at)}</Td>
+                <Td><span className="font-bold text-slate-950">{auditActionLabel(row.action)}</span></Td>
+                <Td>{row.technician_name || row.technician_id}</Td>
+                <Td>{row.actor_name || row.actor_user_id}</Td>
+                <Td>{row.actor_email || "—"}</Td>
+                <Td><pre className="max-w-md whitespace-pre-wrap break-words text-xs text-slate-600">{formatAuditChanges(row.changed_fields)}</pre></Td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><Td colSpan={6}>No technician audit events found.</Td></tr>}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function auditActionLabel(action) {
+  return String(action || "")
+    .replace(/^technician_/, "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatAuditChanges(changes) {
+  if (!changes) return "—";
+  try {
+    return JSON.stringify(changes, null, 2);
+  } catch {
+    return String(changes);
+  }
 }
 
 function AddTechnicianModal({ saving, canAssignNumber, onClose, onSave }) {
@@ -1933,8 +1991,8 @@ function TechnicianProfileModal({
   onSaveNotes,
   onStatus,
   onDelete,
+  onDeactivate,
   onRestore,
-  onPermanentDelete,
 }) {
   const [notes, setNotes] = useState(technician.notes || "");
 
@@ -1954,7 +2012,7 @@ function TechnicianProfileModal({
 
           <div className="flex flex-wrap gap-2">
             {canApproveTechnicians && (
-              <AdminActions technician={technician} onStatus={onStatus} onDelete={onDelete} onRestore={onRestore} onPermanentDelete={onPermanentDelete} />
+              <AdminActions technician={technician} onStatus={onStatus} onDelete={onDelete} onDeactivate={onDeactivate} onRestore={onRestore} />
             )}
             <button
               type="button"
@@ -2046,18 +2104,13 @@ function TechnicianProfileModal({
   );
 }
 
-function AdminActions({ technician, onStatus, onDelete, onRestore, onPermanentDelete }) {
+function AdminActions({ technician, onStatus, onDelete, onDeactivate, onRestore }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {!technician.isActive ? (
-        <>
-          <button type="button" onClick={onRestore} className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">
-            Restore Technician
-          </button>
-          <button type="button" onClick={onPermanentDelete} className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50">
-            <Trash2 className="h-4 w-4" /> Permanently Delete
-          </button>
-        </>
+        <button type="button" onClick={onRestore} className="rounded-xl border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-50">
+          Activate / Restore
+        </button>
       ) : (
       <>
       {technician.status !== "Approved" && (
@@ -2089,10 +2142,17 @@ function AdminActions({ technician, onStatus, onDelete, onRestore, onPermanentDe
       )}
       <button
         type="button"
-        onClick={onDelete}
-        className="ml-3 inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"
+        onClick={onDeactivate}
+        className="ml-3 inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs font-bold text-amber-700 hover:bg-amber-50"
       >
-        <Trash2 className="h-4 w-4" /> Delete Technician
+        <Ban className="h-4 w-4" /> Deactivate
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="inline-flex items-center gap-2 rounded-xl border border-red-300 bg-white px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50"
+      >
+        <Trash2 className="h-4 w-4" /> Delete
       </button>
       </>
       )}
@@ -2101,17 +2161,11 @@ function AdminActions({ technician, onStatus, onDelete, onRestore, onPermanentDe
 }
 
 function DeleteTechnicianModal({ technician, mode, saving, error, onCancel, onConfirm }) {
-  const permanent = mode === "permanent";
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
       <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
-        <h2 className="text-2xl font-bold text-slate-950">{permanent ? "Permanently Delete Technician?" : "Delete Technician?"}</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          {permanent
-            ? "This permanently removes an unused technician. The operation will be blocked if any previous job is linked to this technician."
-            : "This technician will be removed from the active directory."}
-        </p>
-        {!permanent && <p className="mt-2 text-sm text-slate-600">If this technician is already linked to previous jobs, those job records will remain unchanged.</p>}
+        <h2 className="text-2xl font-bold text-slate-950">Are you sure you want to remove this technician?</h2>
+        <p className="mt-2 text-sm text-slate-600">This technician will be removed from the active directory. Technician history and previous job relationships will remain unchanged.</p>
 
         <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm">
           <Detail label="Full name" value={technician.full_name} />
@@ -2140,7 +2194,7 @@ function DeleteTechnicianModal({ technician, mode, saving, error, onCancel, onCo
             disabled={saving}
             className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700"
           >
-            {saving ? "Deleting..." : permanent ? "Permanently Delete" : "Delete Technician"}
+            {saving ? "Removing..." : "Remove Technician"}
           </button>
         </div>
       </div>

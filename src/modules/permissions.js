@@ -7,6 +7,7 @@ export function getPermissions(role) {
 
   const permissions = {
     canViewTechnicianCenter: false,
+    canManageTechnicians: false,
     canApproveTechnicians: false,
     canViewPrivateTechnicianData: false,
     canAssignTechnicians: false,
@@ -27,6 +28,15 @@ export function getPermissions(role) {
       canViewTechnicianCenter: true,
       canAssignTechnicians: true,
       canViewCustomers: true,
+    };
+  }
+
+  if (normalizedRole === "technician_manager") {
+    return {
+      ...permissions,
+      canViewTechnicianCenter: true,
+      canManageTechnicians: true,
+      canViewPrivateTechnicianData: true,
     };
   }
 

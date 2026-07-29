@@ -268,7 +268,7 @@ export default function App() {
           }
           return;
         }
-        if (!["admin", "dispatcher", "supervisor"].includes(String(profile.role).toLowerCase())) {
+        if (!["admin", "dispatcher", "supervisor", "technician_manager"].includes(String(profile.role).toLowerCase())) {
           if (mounted && !isAuthenticatedRef.current) {
             await handleLogout("session_invalid", "You do not have permission to access this application.");
           } else {
@@ -431,7 +431,7 @@ export default function App() {
     }
     try {
       const profile = await loadCurrentProfile(authSession.user.id);
-      if (profile?.status !== "Active" || !["admin", "dispatcher", "supervisor"].includes(String(profile?.role || "").toLowerCase())) {
+      if (profile?.status !== "Active" || !["admin", "dispatcher", "supervisor", "technician_manager"].includes(String(profile?.role || "").toLowerCase())) {
         await handleLogout("session_invalid", "Your session is no longer valid. Please sign in again.");
         return;
       }
@@ -752,6 +752,7 @@ function canAccessView(view, role, permissions) {
 
 function roleLabel(role) {
   if (role === "admin") return "Administrator";
+  if (role === "technician_manager") return "Technician Manager";
   if (role === "dispatcher") return "Dispatcher";
   if (role === "supervisor") return "Supervisor";
   return "Access required";
