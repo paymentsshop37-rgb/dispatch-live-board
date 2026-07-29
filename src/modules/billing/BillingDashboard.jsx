@@ -18,7 +18,7 @@ const columnAliases = {
 const requiredFields = ["invoiceNumber", "date", "company", "referenceNumber", "location", "status", "paymentMethod", "totalBill", "parts", "techLabor"];
 const exportHeaders = ["Invoice #", "Date", "Company", "Reference #", "Location", "Status", "Payment Method", "Total Bill", "Parts", "Tech Labor", "Profit"];
 
-export default function BillingDashboard() {
+export default function BillingDashboard({ onOpenJob }) {
   const [jobs, setJobs] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -242,7 +242,7 @@ export default function BillingDashboard() {
                 <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                   <MobileInvoiceField label="Date" value={job.date || "Not set"} />
                   <MobileInvoiceField label="Company" value={job.company || "Not set"} />
-                  <MobileInvoiceField label="Reference #" value={<JobReferenceLink job={job} />} />
+                  <MobileInvoiceField label="Reference #" value={<JobReferenceLink job={job} onOpenJob={onOpenJob} />} />
                   <MobileInvoiceField label="Location" value={job.location || "Not set"} />
                   <MobileInvoiceField label="Payment Method" value={job.paymentMethod || "Pending"} />
                   <MobileInvoiceField label="Total Bill" value={money(job.totalBill)} />
@@ -250,7 +250,7 @@ export default function BillingDashboard() {
                   <MobileInvoiceField label="Tech Labor" value={money(job.techLabor)} />
                   <MobileInvoiceField label="Profit" value={money(job.profit)} />
                 </dl>
-                <a href={`/jobs/${job.id}`} className="mt-4 inline-flex rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">View Job</a>
+                <button type="button" onClick={() => onOpenJob?.(job.id)} className="mt-4 inline-flex rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">View Job</button>
               </article>
             ))}
             {!loading && filteredJobs.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No invoices match the current filters.</p>}
@@ -271,7 +271,7 @@ export default function BillingDashboard() {
                     <td className="px-4 py-3 font-bold text-slate-900">{job.invoiceNumber || "No invoice"}</td>
                     <td className="px-4 py-3">{job.date || "Not set"}</td>
                     <td className="px-4 py-3">{job.company || "Not set"}</td>
-                    <td className="px-4 py-3"><JobReferenceLink job={job} /></td>
+                    <td className="px-4 py-3"><JobReferenceLink job={job} onOpenJob={onOpenJob} /></td>
                     <td className="px-4 py-3">{job.location || "Not set"}</td>
                     <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
                     <td className="px-4 py-3">{job.paymentMethod || "Pending"}</td>
@@ -280,9 +280,9 @@ export default function BillingDashboard() {
                     <td className="px-4 py-3">{money(job.techLabor)}</td>
                     <td className={`px-4 py-3 font-bold ${job.profit >= 0 ? "text-emerald-700" : "text-red-700"}`}>{money(job.profit)}</td>
                     <td className="px-4 py-3">
-                      <a href={`/jobs/${job.id}`} className="inline-flex rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">
+                      <button type="button" onClick={() => onOpenJob?.(job.id)} className="inline-flex rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">
                         View
-                      </a>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -385,9 +385,9 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character]);
 }
 
-function JobReferenceLink({ job }) {
+function JobReferenceLink({ job, onOpenJob }) {
   if (!job.referenceNumber) return <span aria-label="No reference number">—</span>;
-  return <a href={`/jobs/${job.id}`} className="font-bold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900">{job.referenceNumber}</a>;
+  return <button type="button" onClick={() => onOpenJob?.(job.id)} className="font-bold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900">{job.referenceNumber}</button>;
 }
 
 function MobileInvoiceField({ label, value }) {

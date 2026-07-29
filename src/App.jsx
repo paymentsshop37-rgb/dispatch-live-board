@@ -688,7 +688,7 @@ export default function App() {
         {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} jobSearchRequest={jobSearchRequest} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
-        {canAccessActiveView && activeView === "billing" && <BillingDashboard />}
+        {canAccessActiveView && activeView === "billing" && <BillingDashboard onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
         {canAccessActiveView && activeView === "activity" && <ActivityLogPage role={role} />}
