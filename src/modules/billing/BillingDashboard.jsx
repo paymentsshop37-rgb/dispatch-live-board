@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Download, RefreshCw } from "lucide-react";
+import { Download, FileText, Printer, RefreshCw, Search } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 
 const columnAliases = {
   invoiceNumber: ["invoice_number", "invoice", "reference"],
   date: ["job_date", "date"],
   company: ["company"],
+  referenceNumber: ["reference_number"],
   location: ["location"],
   status: ["invoice_status", "status", "invoice"],
   paymentMethod: ["payment_method", "paymentMethod"],
@@ -14,17 +15,20 @@ const columnAliases = {
   techLabor: ["tech_labor", "techLabor"],
 };
 
-const requiredFields = ["invoiceNumber", "date", "company", "location", "status", "paymentMethod", "totalBill", "parts", "techLabor"];
+const requiredFields = ["invoiceNumber", "date", "company", "referenceNumber", "location", "status", "paymentMethod", "totalBill", "parts", "techLabor"];
+const exportHeaders = ["Invoice #", "Date", "Company", "Reference #", "Location", "Status", "Payment Method", "Total Bill", "Parts", "Tech Labor", "Profit"];
 
 export default function BillingDashboard() {
   const [jobs, setJobs] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
+    search: "",
     fromDate: "",
     toDate: "",
     status: "All",
     company: "All",
+    referenceNumber: "All",
     paymentMethod: "All",
   });
 
@@ -34,7 +38,7 @@ export default function BillingDashboard() {
 
   async function loadBillingJobs() {
     setLoading(true);
-    const { data, error } = await supabase.from("jobs").select("*");
+    const { data, error } = await supabase.from("jobs").select("*, reference_number");
 
     if (error) {
       setWarnings([`Safe mode: unable to load jobs table (${error.message}).`]);
@@ -58,13 +62,23 @@ export default function BillingDashboard() {
 
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) => {
+      const searchValue = filters.search.trim().toLowerCase();
+      const matchesSearch = !searchValue || [
+        job.invoiceNumber,
+        job.company,
+        job.referenceNumber,
+        job.location,
+        job.status,
+        job.paymentMethod,
+      ].some((value) => String(value || "").toLowerCase().includes(searchValue));
       const matchesFrom = !filters.fromDate || job.date >= filters.fromDate;
       const matchesTo = !filters.toDate || job.date <= filters.toDate;
       const matchesStatus = filters.status === "All" || job.status === filters.status;
       const matchesCompany = filters.company === "All" || job.company === filters.company;
+      const matchesReference = filters.referenceNumber === "All" || job.referenceNumber === filters.referenceNumber;
       const matchesPayment = filters.paymentMethod === "All" || job.paymentMethod === filters.paymentMethod;
 
-      return matchesFrom && matchesTo && matchesStatus && matchesCompany && matchesPayment;
+      return matchesSearch && matchesFrom && matchesTo && matchesStatus && matchesCompany && matchesReference && matchesPayment;
     });
   }, [jobs, filters]);
 
@@ -90,15 +104,16 @@ export default function BillingDashboard() {
   }, [filteredJobs]);
 
   const companies = uniqueOptions(jobs.map((job) => job.company));
+  const referenceNumbers = uniqueOptions(jobs.map((job) => job.referenceNumber));
   const statuses = uniqueOptions(jobs.map((job) => job.status));
   const paymentMethods = uniqueOptions(jobs.map((job) => job.paymentMethod));
 
-  function exportCsv() {
-    const headers = ["Invoice #", "Date", "Company", "Location", "Status", "Payment Method", "Total Bill", "Parts", "Tech Labor", "Profit"];
-    const rows = filteredJobs.map((job) => [
+  function exportRows() {
+    return filteredJobs.map((job) => [
       job.invoiceNumber,
       job.date,
       job.company,
+      job.referenceNumber || "—",
       job.location,
       job.status,
       job.paymentMethod,
@@ -107,16 +122,39 @@ export default function BillingDashboard() {
       job.techLabor,
       job.profit,
     ]);
-    const csv = [headers, ...rows]
+  }
+
+  function exportExcel() {
+    const csv = [exportHeaders, ...exportRows()]
       .map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
       .join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([`\uFEFF${csv}`], { type: "application/vnd.ms-excel;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `nttr-billing-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `nttr-billing-${new Date().toISOString().slice(0, 10)}.xls`;
     link.click();
     URL.revokeObjectURL(url);
+  }
+
+  function printInvoices() {
+    const printWindow = window.open("", "_blank", "width=1200,height=800");
+    if (!printWindow) return;
+    const rows = filteredJobs.map((job) => `<tr>${[
+      job.invoiceNumber,
+      job.date,
+      job.company,
+      job.referenceNumber || "—",
+      job.location,
+      job.status,
+      job.paymentMethod,
+      money(job.totalBill),
+      money(job.parts),
+      money(job.techLabor),
+      money(job.profit),
+    ].map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
+    printWindow.document.write(`<!doctype html><html><head><title>Invoice List</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 6px}p{color:#64748b;margin:0 0 18px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:left}th{background:#f1f5f9}@media print{body{padding:0}}</style></head><body><h1>Invoice List</h1><p>${filteredJobs.length} invoice records · Generated ${escapeHtml(new Date().toLocaleString())}</p><table><thead><tr>${exportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
+    printWindow.document.close();
   }
 
   return (
@@ -133,9 +171,17 @@ export default function BillingDashboard() {
               <RefreshCw className="h-4 w-4" />
               Refresh
             </button>
-            <button type="button" onClick={exportCsv} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
+            <button type="button" onClick={exportExcel} className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">
               <Download className="h-4 w-4" />
-              Export CSV
+              Export Excel
+            </button>
+            <button type="button" onClick={printInvoices} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+              <FileText className="h-4 w-4" />
+              Export PDF
+            </button>
+            <button type="button" onClick={printInvoices} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+              <Printer className="h-4 w-4" />
+              Print
             </button>
           </div>
         </div>
@@ -158,11 +204,19 @@ export default function BillingDashboard() {
         </div>
 
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <label className="space-y-1 text-sm font-semibold text-slate-700 xl:col-span-2">
+              Search invoices
+              <span className="relative block">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <input type="search" value={filters.search} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Invoice, company, reference, location…" className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 outline-none focus:border-blue-500" />
+              </span>
+            </label>
             <FilterInput label="Start Date" type="date" value={filters.fromDate} onChange={(value) => setFilters((current) => ({ ...current, fromDate: value }))} />
             <FilterInput label="End Date" type="date" value={filters.toDate} onChange={(value) => setFilters((current) => ({ ...current, toDate: value }))} />
             <FilterSelect label="Status" value={filters.status} options={["All", ...statuses]} onChange={(value) => setFilters((current) => ({ ...current, status: value }))} />
             <FilterSelect label="Company" value={filters.company} options={["All", ...companies]} onChange={(value) => setFilters((current) => ({ ...current, company: value }))} />
+            <FilterSelect label="Reference #" value={filters.referenceNumber} options={["All", ...referenceNumbers]} onChange={(value) => setFilters((current) => ({ ...current, referenceNumber: value }))} />
             <FilterSelect label="Payment Method" value={filters.paymentMethod} options={["All", ...paymentMethods]} onChange={(value) => setFilters((current) => ({ ...current, paymentMethod: value }))} />
           </div>
         </div>
@@ -175,11 +229,38 @@ export default function BillingDashboard() {
             </div>
           </div>
 
-          <div className="w-full overflow-x-auto rounded-xl border border-slate-200">
-            <table className="min-w-[1300px] table-auto whitespace-nowrap text-left text-sm">
+          <div className="space-y-3 md:hidden">
+            {filteredJobs.map((job) => (
+              <article key={job.id} className="rounded-xl border border-slate-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Invoice #</p>
+                    <p className="font-bold text-slate-950">{job.invoiceNumber || "No invoice"}</p>
+                  </div>
+                  <StatusBadge status={job.status} />
+                </div>
+                <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <MobileInvoiceField label="Date" value={job.date || "Not set"} />
+                  <MobileInvoiceField label="Company" value={job.company || "Not set"} />
+                  <MobileInvoiceField label="Reference #" value={<JobReferenceLink job={job} />} />
+                  <MobileInvoiceField label="Location" value={job.location || "Not set"} />
+                  <MobileInvoiceField label="Payment Method" value={job.paymentMethod || "Pending"} />
+                  <MobileInvoiceField label="Total Bill" value={money(job.totalBill)} />
+                  <MobileInvoiceField label="Parts" value={money(job.parts)} />
+                  <MobileInvoiceField label="Tech Labor" value={money(job.techLabor)} />
+                  <MobileInvoiceField label="Profit" value={money(job.profit)} />
+                </dl>
+                <a href={`/jobs/${job.id}`} className="mt-4 inline-flex rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">View Job</a>
+              </article>
+            ))}
+            {!loading && filteredJobs.length === 0 && <p className="py-8 text-center text-sm text-slate-500">No invoices match the current filters.</p>}
+          </div>
+
+          <div className="hidden w-full overflow-x-auto rounded-xl border border-slate-200 md:block">
+            <table className="min-w-[1420px] table-auto whitespace-nowrap text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  {["Invoice #", "Date", "Company", "Location", "Status", "Payment Method", "Total Bill", "Parts", "Tech Labor", "Profit", "Actions"].map((header) => (
+                  {["Invoice #", "Date", "Company", "Reference #", "Location", "Status", "Payment Method", "Total Bill", "Parts", "Tech Labor", "Profit", "Actions"].map((header) => (
                     <th key={header} className="px-4 py-3 font-bold">{header}</th>
                   ))}
                 </tr>
@@ -190,6 +271,7 @@ export default function BillingDashboard() {
                     <td className="px-4 py-3 font-bold text-slate-900">{job.invoiceNumber || "No invoice"}</td>
                     <td className="px-4 py-3">{job.date || "Not set"}</td>
                     <td className="px-4 py-3">{job.company || "Not set"}</td>
+                    <td className="px-4 py-3"><JobReferenceLink job={job} /></td>
                     <td className="px-4 py-3">{job.location || "Not set"}</td>
                     <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
                     <td className="px-4 py-3">{job.paymentMethod || "Pending"}</td>
@@ -198,15 +280,15 @@ export default function BillingDashboard() {
                     <td className="px-4 py-3">{money(job.techLabor)}</td>
                     <td className={`px-4 py-3 font-bold ${job.profit >= 0 ? "text-emerald-700" : "text-red-700"}`}>{money(job.profit)}</td>
                     <td className="px-4 py-3">
-                      <button type="button" className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">
+                      <a href={`/jobs/${job.id}`} className="inline-flex rounded-xl bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-200">
                         View
-                      </button>
+                      </a>
                     </td>
                   </tr>
                 ))}
                 {!loading && filteredJobs.length === 0 && (
                   <tr>
-                    <td colSpan={11} className="px-4 py-8 text-center text-slate-500">No invoices match the current filters.</td>
+                    <td colSpan={12} className="px-4 py-8 text-center text-slate-500">No invoices match the current filters.</td>
                   </tr>
                 )}
               </tbody>
@@ -228,6 +310,7 @@ function normalizeJob(row) {
     invoiceNumber: readAlias(row, columnAliases.invoiceNumber),
     date: readAlias(row, columnAliases.date),
     company: readAlias(row, columnAliases.company),
+    referenceNumber: readAlias(row, columnAliases.referenceNumber),
     location: readAlias(row, columnAliases.location),
     status: readAlias(row, columnAliases.status) || "Pending",
     paymentMethod: readAlias(row, columnAliases.paymentMethod) || "Pending",
@@ -296,6 +379,19 @@ function jobStatusVisual(status) {
 
 function money(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0));
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[character]);
+}
+
+function JobReferenceLink({ job }) {
+  if (!job.referenceNumber) return <span aria-label="No reference number">—</span>;
+  return <a href={`/jobs/${job.id}`} className="font-bold text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900">{job.referenceNumber}</a>;
+}
+
+function MobileInvoiceField({ label, value }) {
+  return <div><dt className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-0.5 break-words text-slate-900">{value}</dd></div>;
 }
 
 function BillingCard({ label, value, highlight = false }) {
