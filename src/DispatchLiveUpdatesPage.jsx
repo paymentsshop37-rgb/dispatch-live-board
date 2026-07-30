@@ -393,7 +393,7 @@ function fromDbJob(row) {
     serviceAreaMethod: row.service_area_assignment_method || "",
     status: row.status || "New",
     rowFlag: row.row_flag || "Normal",
-    internalControlColor: row.internal_control_color || "",
+    internalControlColor: row.internal_control_color || "none",
     invoice: row.invoice_status || "Pending",
     paymentMethod: row.payment_method || "Pending",
     paymentReceiver: row.received || "A",
@@ -424,7 +424,7 @@ function toDbJob(job) {
     job_state: String(job.state || "").trim().toUpperCase() || null,
     status: job.status || "New",
     row_flag: job.rowFlag || "Normal",
-    internal_control_color: job.internalControlColor || null,
+    internal_control_color: internalControlColor(job.internalControlColor).value,
     invoice_status: job.invoice || "Pending",
     payment_method: job.paymentMethod || "Pending",
     received: job.paymentReceiver || "A",
@@ -465,7 +465,7 @@ function emptyForm() {
     state: "",
     status: "New",
     rowFlag: "Normal",
-    internalControlColor: "",
+    internalControlColor: "none",
     invoice: "Pending",
     paymentMethod: "Pending",
     paymentReceiver: "A",
@@ -1052,7 +1052,7 @@ const { data: logsData } = await supabase
         const matchesInvoice = invoiceFilter === "All" || job.invoice === invoiceFilter;
         const matchesTechPayment = techPaymentFilter === "All" || job.techPaymentStatus === techPaymentFilter;
         const matchesInternalControl = internalControlFilter === "All"
-          || (internalControlFilter === "" ? !job.internalControlColor : job.internalControlColor === internalControlFilter);
+          || job.internalControlColor === internalControlFilter;
 const today = new Date();
 const normalizedJobDate = normalizeJobDate(job.date);
 const jobDate = normalizedJobDate ? new Date(`${normalizedJobDate}T00:00:00`) : new Date(0);
@@ -1508,7 +1508,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
   async function updateInternalControlColor(job, nextColor) {
     if (!canEditInternalControl) return;
-    const previousColor = job.internalControlColor || "";
+    const previousColor = internalControlColor(job.internalControlColor).value;
     const normalizedColor = internalControlColor(nextColor).value;
     if (previousColor === normalizedColor) return;
 
@@ -1520,7 +1520,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
     const { data, error } = await supabase
       .from("jobs")
-      .update({ internal_control_color: normalizedColor || null })
+      .update({ internal_control_color: normalizedColor })
       .eq("id", job.id)
       .select("id");
 
@@ -1540,8 +1540,8 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
       job_id: job.id,
       action: "internal_control_color_changed",
       field_name: "internal_control_color",
-      old_value: previousColor || "none",
-      new_value: normalizedColor || "none",
+      old_value: previousColor,
+      new_value: normalizedColor,
       user_name: currentUserName || "Dispatcher",
       month_key: changedAt.toISOString().slice(0, 7),
     }]);
@@ -2560,8 +2560,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 >
                   <option value="All" style={darkOptionStyle}>Internal Control: All</option>
                   {internalControlColors.map((option) => (
-                    <option key={option.value || "none"} value={option.value} style={darkOptionStyle}>
-                      {option.value ? `${option.value[0].toUpperCase()}${option.value.slice(1)} — ${option.label}` : "None"}
+                    <option key={option.value} value={option.value} style={darkOptionStyle}>
+                      {option.value === "none" ? "None" : `${option.value[0].toUpperCase()}${option.value.slice(1)} — ${option.label}`}
                     </option>
                   ))}
                 </select>
@@ -2631,7 +2631,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   <article
                     key={job.id}
                     onClick={() => openJobDetails(job)}
-                    style={controlVisual.value ? { backgroundColor: controlVisual.tint, borderLeftColor: controlVisual.color, borderLeftWidth: 4 } : undefined}
+                    style={controlVisual.value !== "none" ? { backgroundColor: controlVisual.tint, borderLeftColor: controlVisual.color, borderLeftWidth: 4 } : undefined}
                     className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${job.rowFlag === "Problem" || job.status === "Dry Run" ? "border-red-400/60 bg-red-500/10" : "border-white/10 bg-[#0f1c2e]"}`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -2765,7 +2765,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <tr
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
-                      style={controlVisual.value ? {
+                      style={controlVisual.value !== "none" ? {
                         backgroundColor: controlVisual.tint,
                         boxShadow: `inset 4px 0 0 ${controlVisual.color}`,
                       } : undefined}

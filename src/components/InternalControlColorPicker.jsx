@@ -55,7 +55,7 @@ export default function InternalControlColorPicker({ value, onChange, disabled =
         }}
         className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/20 bg-[#111f33] text-slate-300 outline-none hover:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {selected.value
+        {selected.value !== "none"
           ? <span className="h-3.5 w-3.5 rounded-full border border-white/50" style={{ backgroundColor: selected.color }} />
           : <Palette className="h-3.5 w-3.5" />}
       </button>
@@ -70,7 +70,7 @@ export default function InternalControlColorPicker({ value, onChange, disabled =
           <p className="px-2 pb-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Internal Control</p>
           {internalControlColors.map((option) => (
             <button
-              key={option.value || "none"}
+              key={option.value}
               type="button"
               role="menuitemradio"
               aria-checked={selected.value === option.value}
@@ -80,8 +80,8 @@ export default function InternalControlColorPicker({ value, onChange, disabled =
               }}
               className={`flex min-h-9 w-full items-center gap-3 rounded-lg px-2 text-left text-xs font-bold hover:bg-white/10 ${selected.value === option.value ? "bg-blue-500/15 text-blue-100" : "text-slate-200"}`}
             >
-              <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/40" style={{ backgroundColor: option.value ? option.color : "transparent" }} />
-              {option.value ? `${option.value[0].toUpperCase()}${option.value.slice(1)} — ${option.label}` : option.label}
+              <span className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/40" style={{ backgroundColor: option.value === "none" ? "transparent" : option.color }} />
+              {option.value === "none" ? option.label : `${option.value[0].toUpperCase()}${option.value.slice(1)} — ${option.label}`}
             </button>
           ))}
         </div>,

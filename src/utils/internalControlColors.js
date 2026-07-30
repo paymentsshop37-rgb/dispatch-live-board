@@ -1,5 +1,5 @@
 export const internalControlColors = [
-  { value: "", label: "None", color: "#64748b", tint: "transparent" },
+  { value: "none", label: "None", color: "#64748b", tint: "transparent" },
   { value: "yellow", label: "Pending Estimate", color: "#eab308", tint: "rgba(234, 179, 8, 0.10)" },
   { value: "orange", label: "Pending Customer Approval", color: "#f97316", tint: "rgba(249, 115, 22, 0.10)" },
   { value: "blue", label: "Pending Technician Invoice", color: "#3b82f6", tint: "rgba(59, 130, 246, 0.10)" },
@@ -11,6 +11,6 @@ export const internalControlColors = [
 ];
 
 export function internalControlColor(value) {
-  return internalControlColors.find((option) => option.value === String(value || "").toLowerCase())
+  return internalControlColors.find((option) => option.value === String(value || "none").toLowerCase())
     || internalControlColors[0];
 }
