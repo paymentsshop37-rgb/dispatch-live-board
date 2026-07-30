@@ -3,6 +3,7 @@ import { ArrowLeft, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { normalizeUppercaseAddJobFields, uppercaseAddJobField } from "./addJobUppercase";
 import AmPmTimeInput from "../../components/AmPmTimeInput";
+import { uppercaseUpdates } from "../../utils/updatesText";
 
 const STATES = {
   AL: "AL", ALABAMA: "AL", AK: "AK", ALASKA: "AK", AZ: "AZ", ARIZONA: "AZ",
@@ -83,7 +84,7 @@ function toDbJob(job) {
     location: normalizedJob.location || null, job_city: normalizedJob.jobCity || null, job_state: normalizedJob.jobState || null,
     status: normalizedJob.status || null, row_flag: normalizedJob.rowFlag || null,
     invoice_status: normalizedJob.invoice || "Pending", payment_method: normalizedJob.paymentMethod || "Pending",
-    received: normalizedJob.paymentReceiver || null, updates: normalizedJob.updates || null,
+    received: normalizedJob.paymentReceiver || null, updates: uppercaseUpdates(normalizedJob.updates) || null,
     total_bill: Number(normalizedJob.totalBill || 0), parts: Number(normalizedJob.parts || 0), tech_labor: Number(normalizedJob.techLabor || 0),
   };
 }
@@ -280,7 +281,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
           <Section title="Details & Totals" visible={step === 3}>
             <Field label="Customer Phone"><input name="customerPhone" value={form.customerPhone} onChange={(e) => update("customerPhone", e.target.value)} /></Field>
             <Field label="Complaint / Notes" wide><textarea name="complaint" rows="3" value={form.complaint} onChange={(e) => update("complaint", e.target.value)} /></Field>
-            <Field label="Updates" wide><textarea name="updates" rows="3" value={form.updates} onChange={(e) => update("updates", e.target.value)} /></Field>
+            <Field label="Updates" wide><textarea name="updates" rows="3" value={uppercaseUpdates(form.updates)} onChange={(e) => update("updates", uppercaseUpdates(e.target.value))} /></Field>
             <Field label="Parts"><input name="parts" value={form.parts} onChange={(e) => update("parts", e.target.value)} /></Field>
             <Field label="Flat-rate Labor"><input name="techLabor" value={form.techLabor} onChange={(e) => update("techLabor", e.target.value)} /></Field>
             <Field label="Total Bill"><input name="totalBill" value={form.totalBill} onChange={(e) => update("totalBill", e.target.value)} /></Field>

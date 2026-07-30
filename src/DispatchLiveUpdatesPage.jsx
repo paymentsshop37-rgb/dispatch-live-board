@@ -40,6 +40,7 @@ import { getPermissions, normalizeRole } from "./modules/permissions";
 import { compareJobsChronologically, normalizeJobDate } from "./utils/jobChronology";
 import { formatDateTime12Hour, formatTime12Hour } from "./utils/timeFormat";
 import AmPmTimeInput from "./components/AmPmTimeInput";
+import { uppercaseUpdates } from "./utils/updatesText";
 import {
   techPaymentControlStyle,
   techPaymentLabel,
@@ -393,7 +394,7 @@ function fromDbJob(row) {
     invoice: row.invoice_status || "Pending",
     paymentMethod: row.payment_method || "Pending",
     paymentReceiver: row.received || "A",
-    updates: row.updates || "",
+    updates: uppercaseUpdates(row.updates || ""),
     totalBill: Number(row.total_bill || 0),
     parts: Number(row.parts || 0),
     techLabor: Number(row.tech_labor || 0),
@@ -423,7 +424,7 @@ function toDbJob(job) {
     invoice_status: job.invoice || "Pending",
     payment_method: job.paymentMethod || "Pending",
     received: job.paymentReceiver || "A",
-    updates: job.updates || "",
+    updates: uppercaseUpdates(job.updates || ""),
     total_bill: Number(job.totalBill || 0),
     parts: Number(job.parts || 0),
     tech_labor: Number(job.techLabor || 0),
@@ -1443,15 +1444,16 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
   async function updateJob(id, field, value) {
     const oldJob = jobs.find((job) => job.id === id);
     const oldValue = oldJob ? oldJob[field] : "";
+    const normalizedValue = field === "updates" ? uppercaseUpdates(value) : value;
 
     setJobs((currentJobs) =>
-      currentJobs.map((job) => (job.id === id ? { ...job, [field]: value } : job))
+      currentJobs.map((job) => (job.id === id ? { ...job, [field]: normalizedValue } : job))
     );
 
     const dbField = fieldMap[field] || field;
 
     const databaseValue =
-      field === "jobReference" ? String(value || "").trim() || null : value;
+      field === "jobReference" ? String(normalizedValue || "").trim() || null : normalizedValue;
 
     const { error } = await supabase
       .from("jobs")
@@ -1465,7 +1467,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
     }
     const activityMessage = {
       id: Date.now(),
-      message: buildJobActivityMessage(field, oldValue, value, currentUserName || "Dispatcher"),
+      message: buildJobActivityMessage(field, oldValue, normalizedValue, currentUserName || "Dispatcher"),
       time: formatDateTime12Hour(new Date()),
     };
 
@@ -1477,13 +1479,13 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
         action: "updated",
         field_name: field,
         old_value: String(oldValue ?? ""),
-        new_value: String(value ?? ""),
+        new_value: String(normalizedValue ?? ""),
         user_name: currentUserName || "Dispatcher",
         month_key: new Date().toISOString().slice(0, 7),
       },
     ]);
 
-    if (jobFinancialActivityActions[field] && valueActuallyChanged(oldValue, value)) {
+    if (jobFinancialActivityActions[field] && valueActuallyChanged(oldValue, normalizedValue)) {
       await logActivity({
         entityType: "job",
         entityId: id,
@@ -2217,7 +2219,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 {mobileJobStep === 1 && <><Input label="Invoice #" value={form.reference} onChange={(value) => setForm({ ...form, reference: value })} /><Input label="Reference #" value={form.jobReference || ""} onChange={(value) => setForm({ ...form, jobReference: value })} /><Input label="Company" value={form.company} onChange={(value) => setForm({ ...form, company: value })} /><Input label="Phone" type="tel" value={form.customerPhone || ""} onChange={(value) => setForm({ ...form, customerPhone: value })} /></>}
                 {mobileJobStep === 2 && <><Input label="Location / Address" value={form.location} onChange={updateFormLocation} />{isAdmin && <><Input label="Parsed City (optional correction)" value={form.city} onChange={(value) => setForm({ ...form, city: value })} /><Input label="Parsed State (optional correction)" value={form.state} onChange={(value) => setForm({ ...form, state: value.toUpperCase().slice(0, 2) })} /></>}<Input label="Unit Type / Unit #" value={form.truckUnit || ""} onChange={(value) => setForm({ ...form, truckUnit: value })} /><label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Complaint</span><textarea name="add_job_complaint" className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.complaint || ""} onChange={(event) => setForm({ ...form, complaint: event.target.value })} /></label></>}
                 {mobileJobStep === 3 && <><Input label="Technician" list="technician-suggestions" value={form.tech} onChange={(value) => setForm({ ...form, tech: value })} /><Input label="Dispatcher" list="dispatcher-suggestions" value={form.dispatch} onChange={(value) => setForm({ ...form, dispatch: value })} /><Select label="Priority" value={form.rowFlag} onChange={(value) => setForm({ ...form, rowFlag: value })} options={["Normal", "Pending", "Problem", "Completed", "Info"]} /><Select label="Status" value={form.status} onChange={(value) => setForm({ ...form, status: value })} options={jobStatusOptions} /></>}
-                {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea name="add_job_updates" className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={form.updates} onChange={(event) => setForm({ ...form, updates: event.target.value })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
+                {mobileJobStep === 4 && <>{canEditJobFinancial && <><Input label="Labor" type="number" value={form.techLabor} onChange={(value) => setForm({ ...form, techLabor: value })} /><Input label="Parts" type="number" value={form.parts} onChange={(value) => setForm({ ...form, parts: value })} /></>}<label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-slate-300"><span>Notes</span><textarea name="add_job_updates" className="min-h-32 rounded-xl border border-white/10 bg-[#111f33] p-3 text-base text-white" value={uppercaseUpdates(form.updates)} onChange={(event) => setForm({ ...form, updates: uppercaseUpdates(event.target.value) })} /></label><label className="flex min-h-14 cursor-pointer items-center justify-center rounded-xl border border-dashed border-blue-400/40 bg-blue-500/10 px-4 font-bold text-blue-200">Select Photos<input type="file" multiple accept="image/*" capture="environment" className="hidden" /></label></>}
                 {mobileJobStep === 5 && <div className="grid gap-3 rounded-2xl border border-white/10 bg-white/5 p-4"><MobileJobField label="Reference #" value={form.jobReference || "Not assigned"} /><MobileJobField label="Invoice #" value={form.reference || "Not assigned"} /><MobileJobField label="Company" value={form.company || "Not provided"} /><MobileJobField label="Location" value={form.location || "Not provided"} /><MobileJobField label="Technician" value={form.tech || "Unassigned"} /><MobileJobField label="Dispatcher" value={form.dispatch || "Unassigned"} /><MobileJobField label="Priority" value={form.rowFlag} /><MobileJobField label="Notes" value={form.updates || form.complaint || "No notes"} lines={2} /></div>}
               </div>
             </div>
@@ -2247,8 +2249,8 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   name="add_job_updates"
                   className="h-16 w-full resize-none rounded-lg border border-white/10 bg-[#111f33] px-3 py-2 text-sm font-semibold text-white outline-none placeholder:text-slate-500 focus:border-blue-400"
                   placeholder="Example: Driver called. Tech ETA 35 minutes..."
-                  value={form.updates}
-                  onChange={(e) => setForm({ ...form, updates: e.target.value })}
+                  value={uppercaseUpdates(form.updates)}
+                  onChange={(e) => setForm({ ...form, updates: uppercaseUpdates(e.target.value) })}
                 />
               </label>
 
@@ -3785,7 +3787,7 @@ function CompactAssignTechnicianModal({ job, technicians, filters, onFiltersChan
 }
 
 function UpdatesModal({ job, canEditTechPayment = false, canEditGeography = false, serviceAreas = [], technicianNames = [], onClose, onSave }) {
-  const [value, setValue] = useState(job.updates || "");
+  const [value, setValue] = useState(uppercaseUpdates(job.updates || ""));
   const [jobReference, setJobReference] = useState(job.jobReference || "");
   const [techPaymentStatus, setTechPaymentStatus] = useState(job.techPaymentStatus || "Pending");
   const [technician, setTechnician] = useState(job.tech || "");
@@ -3867,7 +3869,7 @@ function UpdatesModal({ job, canEditTechPayment = false, canEditGeography = fals
         <textarea
           className="mt-4 min-h-40 w-full rounded-xl border border-white/10 bg-[#111f33] p-3 text-sm font-semibold text-white outline-none focus:border-blue-400"
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => setValue(uppercaseUpdates(event.target.value))}
         />
         <div className="mt-4 flex justify-end gap-2">
           <button type="button" onClick={onClose} className="h-9 rounded-lg border border-white/10 bg-white/10 px-4 text-sm font-bold text-slate-100 hover:bg-white/15">Cancel</button>
