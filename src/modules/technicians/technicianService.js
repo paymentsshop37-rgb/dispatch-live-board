@@ -124,13 +124,9 @@ export async function loadTechnicians({ includeInactive = false } = {}) {
   if (!includeInactive) query = query.eq("is_active", true);
 
   const { data, error } = await query.order("full_name", { ascending: true });
-  console.log("Technicians returned:", data);
-  console.log("Count:", data?.length);
-  console.log("Error:", error);
 
   if (error) {
-    console.error("Technician load error:", error);
-    throw error;
+    throw technicianOperationError("Load technicians", error);
   }
 
   const technicians = sortTechniciansByAssignedNumber((data || []).map(normalizeTechnician));
@@ -170,7 +166,7 @@ export async function createTechnician(technician, knownColumns = DEFAULT_COLUMN
     .single();
 
   if (error) {
-    throw error;
+    throw technicianOperationError("Add technician", error);
   }
 
   return normalizeTechnician(data);
@@ -185,7 +181,7 @@ export async function updateTechnician(id, technician, knownColumns = DEFAULT_CO
     .single();
 
   if (error) {
-    throw error;
+    throw technicianOperationError("Edit technician", error);
   }
 
   return normalizeTechnician(data);
@@ -196,13 +192,13 @@ export async function deleteOrDeactivateTechnician(technician, userId, action = 
   if (!userId) throw new Error("The authenticated user could not be identified.");
   const functionName = action === "deactivate" ? "deactivate_technician" : "soft_delete_technician";
   const { error } = await supabase.rpc(functionName, { p_technician_id: technician.id });
-  if (error) throw error;
+  if (error) throw technicianOperationError(action === "deactivate" ? "Deactivate technician" : "Delete technician", error);
   return { action: action === "deactivate" ? "deactivated" : "deleted" };
 }
 
 export async function restoreTechnician(id) {
   const { error } = await supabase.rpc("restore_technician", { p_technician_id: id });
-  if (error) throw error;
+  if (error) throw technicianOperationError("Restore technician", error);
 }
 
 export async function loadTechnicianAuditHistory() {
@@ -323,6 +319,20 @@ export async function getAvailableTechnicians(city, service) {
       serviceMatches
     );
   }));
+}
+
+function technicianOperationError(operation, error) {
+  const parts = [
+    error?.message,
+    error?.details,
+    error?.hint && `Hint: ${error.hint}`,
+    error?.code && `Postgres code: ${error.code}`,
+  ].filter(Boolean);
+  const wrapped = new Error(`${operation} failed: ${parts.join(" | ") || "Unknown Supabase error"}`);
+  wrapped.code = error?.code;
+  wrapped.details = error?.details;
+  wrapped.hint = error?.hint;
+  return wrapped;
 }
 
 export function getAssignedNumber(technician) {

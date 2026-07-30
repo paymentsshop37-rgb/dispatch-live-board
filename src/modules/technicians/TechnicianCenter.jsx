@@ -162,7 +162,6 @@ export default function TechnicianCenter({ currentUser }) {
   const canManageInvitations = permissions.canApproveTechnicians;
   const canViewPrivateTechnicianData = permissions.canViewPrivateTechnicianData;
   const canEditDirectoryTechnicians = canApproveTechnicians;
-  console.log("Rendering technicians:", technicians);
   const knownColumns = useMemo(() => getKnownColumns(technicians).filter((column) => !missingColumns.includes(column)), [missingColumns, technicians]);
   const missingDirectoryColumns = useMemo(() => missingColumns, [missingColumns]);
   const registrationLink = buildRegistrationLink();
@@ -177,8 +176,6 @@ export default function TechnicianCenter({ currentUser }) {
         loadTechnicians(),
         loadTechnicianColumnSupport(),
       ]);
-      console.log("Role:", currentUser?.role || currentUserRole);
-      console.log("Technicians:", activeTechnicians.length);
       let nextTechnicians = activeTechnicians;
       if (canApproveTechnicians) {
         try {
