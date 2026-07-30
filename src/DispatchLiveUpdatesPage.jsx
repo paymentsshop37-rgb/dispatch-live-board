@@ -2632,10 +2632,12 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     key={job.id}
                     onClick={() => openJobDetails(job)}
                     style={controlVisual.value !== "none" ? {
-                      backgroundColor: controlVisual.tint,
+                      backgroundColor: String(selectedJobId) === String(job.id) ? controlVisual.selectedTint : controlVisual.tint,
                       borderLeftColor: controlVisual.color,
-                      borderLeftWidth: 5,
-                      boxShadow: String(selectedJobId) === String(job.id) ? "inset 0 0 0 1px rgba(96, 165, 250, 0.75)" : undefined,
+                      borderLeftWidth: 8,
+                      boxShadow: String(selectedJobId) === String(job.id)
+                        ? `0 0 18px ${controlVisual.color}99, inset 0 0 0 2px ${controlVisual.color}`
+                        : `0 0 12px ${controlVisual.color}66`,
                     } : String(selectedJobId) === String(job.id) ? { boxShadow: "inset 0 0 0 1px rgba(96, 165, 250, 0.75)" } : undefined}
                     className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${job.rowFlag === "Problem" || job.status === "Dry Run" ? "border-red-400/60 bg-red-500/10" : "border-white/10 bg-[#0f1c2e]"}`}
                   >
@@ -2771,8 +2773,10 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
                       style={controlVisual.value !== "none" ? {
-                        backgroundColor: controlVisual.tint,
-                        boxShadow: `inset 5px 0 0 ${controlVisual.color}${String(selectedJobId) === String(job.id) ? ", inset 0 0 0 1px rgba(96, 165, 250, 0.75)" : ""}`,
+                        backgroundColor: String(selectedJobId) === String(job.id) ? controlVisual.selectedTint : controlVisual.tint,
+                        boxShadow: String(selectedJobId) === String(job.id)
+                          ? `inset 8px 0 0 ${controlVisual.color}, 0 0 18px ${controlVisual.color}99, inset 0 0 0 2px ${controlVisual.color}`
+                          : `inset 8px 0 0 ${controlVisual.color}, 0 0 12px ${controlVisual.color}66`,
                       } : String(selectedJobId) === String(job.id) ? { boxShadow: "inset 0 0 0 1px rgba(96, 165, 250, 0.75)" } : undefined}
                     className={`h-14 max-h-14 align-middle text-slate-200 transition hover:bg-blue-500/10 ${
                       job.rowFlag === "Problem" || job.status === "Dry Run"
