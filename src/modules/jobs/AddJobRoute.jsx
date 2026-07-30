@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { normalizeUppercaseAddJobFields, uppercaseAddJobField } from "./addJobUppercase";
 
 const STATES = {
   AL: "AL", ALABAMA: "AL", AK: "AK", ALASKA: "AK", AZ: "AZ", ARIZONA: "AZ",
@@ -73,15 +74,16 @@ function hasDraftData(form) {
 }
 
 function toDbJob(job) {
+  const normalizedJob = normalizeUppercaseAddJobFields(job);
   return {
-    job_date: job.date || null, job_time: job.time || null,
-    reference_number: job.jobReference || null, invoice_number: job.reference || null,
-    dispatch: job.dispatch || null, company: job.company || null, tech: job.tech || null,
-    location: job.location || null, job_city: job.jobCity || null, job_state: job.jobState || null,
-    status: job.status || null, row_flag: job.rowFlag || null,
-    invoice_status: job.invoice || "Pending", payment_method: job.paymentMethod || "Pending",
-    received: job.paymentReceiver || null, updates: job.updates || null,
-    total_bill: Number(job.totalBill || 0), parts: Number(job.parts || 0), tech_labor: Number(job.techLabor || 0),
+    job_date: normalizedJob.date || null, job_time: normalizedJob.time || null,
+    reference_number: normalizedJob.jobReference || null, invoice_number: normalizedJob.reference || null,
+    dispatch: normalizedJob.dispatch || null, company: normalizedJob.company || null, tech: normalizedJob.tech || null,
+    location: normalizedJob.location || null, job_city: normalizedJob.jobCity || null, job_state: normalizedJob.jobState || null,
+    status: normalizedJob.status || null, row_flag: normalizedJob.rowFlag || null,
+    invoice_status: normalizedJob.invoice || "Pending", payment_method: normalizedJob.paymentMethod || "Pending",
+    received: normalizedJob.paymentReceiver || null, updates: normalizedJob.updates || null,
+    total_bill: Number(normalizedJob.totalBill || 0), parts: Number(normalizedJob.parts || 0), tech_labor: Number(normalizedJob.techLabor || 0),
   };
 }
 
@@ -91,7 +93,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
     try { return JSON.parse(sessionStorage.getItem(storageKey) || "null"); } catch { return null; }
   }, [storageKey]);
   const [form, setForm] = useState(() => {
-    const saved = restored?.formData || {};
+    const saved = normalizeUppercaseAddJobFields(restored?.formData || {});
     return {
       ...initialForm(),
       ...saved,
@@ -173,9 +175,10 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
 
   function update(name, value) {
     setForm((current) => {
-      const next = { ...current, [name]: value };
+      const normalizedValue = uppercaseAddJobField(name, value);
+      const next = { ...current, [name]: normalizedValue };
       if (name === "location") {
-        const parsed = parseLocation(value);
+        const parsed = parseLocation(normalizedValue);
         next.jobCity = parsed.city;
         next.jobState = parsed.state;
       }
