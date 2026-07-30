@@ -28,6 +28,7 @@ import {
   techPaymentLabel,
   techPaymentStatusOptions,
 } from "../../utils/techPaymentStatus";
+import { InternalControlQueue } from "./InternalControlQueue";
 
 const columnAliases = {
   id: ["id"],
@@ -49,6 +50,7 @@ const columnAliases = {
   techLabor: ["tech_labor", "techLabor", "labor", "labor_cost"],
   updates: ["updates", "notes", "job_notes"],
   techPaymentStatus: ["tech_payment_status"],
+  internalControlColor: ["internal_control_color"],
 };
 
 const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"];
@@ -68,9 +70,31 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
   const [serviceAreas, setServiceAreas] = useState([]);
   const [serviceAreaAliases, setServiceAreaAliases] = useState([]);
   const [coverageSettingsOpen, setCoverageSettingsOpen] = useState(false);
+  const internalControlQueueRef = useRef(null);
 
   useEffect(() => {
     loadDashboard();
+  }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("executive-dashboard-jobs")
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, ({ eventType, new: nextRow, old: previousRow }) => {
+        if (eventType === "DELETE") {
+          setJobs((current) => current.filter((job) => String(job.id) !== String(previousRow?.id)));
+          return;
+        }
+        const nextJob = normalizeJob(nextRow);
+        setJobs((current) => {
+          const exists = current.some((job) => String(job.id) === String(nextJob.id));
+          const next = exists
+            ? current.map((job) => String(job.id) === String(nextJob.id) ? nextJob : job)
+            : [nextJob, ...current];
+          return next.sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   async function loadDashboard() {
@@ -130,6 +154,10 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
     () => buildCitiesWithoutJobs({ coverageCities, jobs, technicians, range: dateRange, includeCancelled: false, includeDryRuns: false }),
     [coverageCities, dateRange, jobs, technicians]
   );
+  const totalRedJobs = useMemo(
+    () => jobs.filter((job) => job.internalControlColor === "red").length,
+    [jobs]
+  );
 
   function exportCsv() {
     const headers = ["Date", "Invoice #", "Company", "City", "Status", "Dispatcher", "Technician", "Payment Method", "Invoice Status", "Tech Payment", "Total Bill", "Parts", "Tech Labor", "Profit"];
@@ -187,7 +215,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
           </div>
         )}
 
-        <section className="executive-kpi-grid grid gap-4 lg:grid-cols-3 2xl:grid-cols-7">
+        <section className="executive-kpi-grid grid gap-4 lg:grid-cols-3 2xl:grid-cols-8">
           <KpiCard title="Revenue" value={money(analytics.revenue)} detail="Today's trend" icon={CircleDollarSign} tone="blue" trend={analytics.todayRevenue} />
           <KpiCard title="Expenses" value={money(analytics.expenses)} detail="Parts + labor" icon={TrendingDown} tone="orange" trend={analytics.todayExpenses} />
           <KpiCard title="Profit" value={money(analytics.profit)} detail={`${analytics.profitMargin.toFixed(1)}% margin`} icon={TrendingUp} tone="green" trend={analytics.todayProfit} />
@@ -195,7 +223,10 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
           <KpiCard title="Open Invoices" value={analytics.openInvoices} detail="Not paid/cancelled" icon={FileText} tone="orange" trend={analytics.needReviewInvoices} suffix="need review" />
           <KpiCard title="Average ETA" value={`${analytics.averageEta} min`} detail="Operational estimate" icon={Clock} tone="cyan" trend={analytics.jobsWaitingEta} suffix="waiting ETA" />
           <KpiCard title="Cities Without Jobs" value={missingCityMetric.summary.withoutJobs} detail="Click to review coverage" icon={MapPin} tone="orange" onClick={() => setCitiesWithoutJobsOpen(true)} />
+          <KpiCard title="🔴 Internal Control" value={totalRedJobs} detail="Total Red Jobs" icon={Filter} tone="red" onClick={() => internalControlQueueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} />
         </section>
+
+        <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} />
 
         <div>
           <main className="space-y-6">
@@ -374,6 +405,7 @@ function KpiCard({ title, value, detail, icon: Icon, tone, trend, suffix, onClic
     orange: "border-orange-400/20 from-orange-500/20 text-orange-300",
     purple: "border-violet-400/20 from-violet-500/20 text-violet-300",
     cyan: "border-cyan-400/20 from-cyan-500/20 text-cyan-300",
+    red: "border-red-400/30 from-red-500/30 text-red-300",
   };
 
   const Component = onClick ? "button" : "article";
@@ -984,6 +1016,7 @@ function normalizeJob(row) {
     updates,
     etaMinutes: extractEtaMinutes(updates),
     techPaymentStatus: titleCase(stringValue(readAlias(row, columnAliases.techPaymentStatus)) || "Pending"),
+    internalControlColor: normalized(readAlias(row, columnAliases.internalControlColor)) || "none",
     latitude: finiteNumber(row.latitude),
     longitude: finiteNumber(row.longitude),
     serviceAreaId: row.service_area_id || null,

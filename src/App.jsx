@@ -31,6 +31,7 @@ import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard } from "./modules/billing";
 import { CustomerCRM } from "./modules/customers";
 import { ExecutiveDashboard } from "./modules/executive";
+import { InternalControlQueue } from "./modules/executive/InternalControlQueue";
 import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
 import { UserManagement } from "./modules/users";
 import { formatDateTime12Hour } from "./utils/timeFormat";
@@ -685,7 +686,7 @@ export default function App() {
         />
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
-        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} /> : <DispatcherDashboard />)}
+        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} /> : <DispatcherDashboard role={role} onOpenJob={openJobDetailsFromView} />)}
         {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} jobSearchRequest={jobSearchRequest} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
@@ -1017,13 +1018,15 @@ function formatAlertDate(value) {
   return formatDateTime12Hour(value) || "N/A";
 }
 
-function DispatcherDashboard() {
+function DispatcherDashboard({ role, onOpenJob }) {
   const [jobs, setJobs] = useState([]);
+  const internalControlQueueRef = useRef(null);
+  const canViewInternalControlQueue = role === "supervisor";
 
   useEffect(() => {
     let mounted = true;
     async function loadOperationalSummary() {
-      const { data, error } = await supabase.from("jobs").select("id,status,job_date");
+      const { data, error } = await supabase.from("jobs").select(canViewInternalControlQueue ? "*" : "id,status,job_date");
       if (!mounted) return;
       setJobs(error ? [] : data || []);
     }
@@ -1031,7 +1034,27 @@ function DispatcherDashboard() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [canViewInternalControlQueue]);
+
+  useEffect(() => {
+    if (!canViewInternalControlQueue) return undefined;
+    const channel = supabase
+      .channel("supervisor-internal-control-queue")
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, ({ eventType, new: nextRow, old: previousRow }) => {
+        if (eventType === "DELETE") {
+          setJobs((current) => current.filter((job) => String(job.id) !== String(previousRow?.id)));
+          return;
+        }
+        setJobs((current) => {
+          const exists = current.some((job) => String(job.id) === String(nextRow.id));
+          return exists
+            ? current.map((job) => String(job.id) === String(nextRow.id) ? nextRow : job)
+            : [nextRow, ...current];
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [canViewInternalControlQueue]);
 
   const today = new Date().toISOString().slice(0, 10);
   const summary = {
@@ -1041,6 +1064,7 @@ function DispatcherDashboard() {
     completedToday: jobs.filter((job) => String(job.status || "").toLowerCase().includes("completed") && String(job.job_date || "").slice(0, 10) === today).length,
     cancelados: jobs.filter((job) => ["cancelled", "canceled", "cancelado"].some((status) => String(job.status || "").toLowerCase().includes(status))).length,
     dryRuns: jobs.filter((job) => String(job.status || "").toLowerCase().includes("dry")).length,
+    redJobs: canViewInternalControlQueue ? jobs.filter((job) => String(job.internal_control_color || "").toLowerCase() === "red").length : 0,
   };
 
   return (
@@ -1060,7 +1084,9 @@ function DispatcherDashboard() {
         <DispatcherMetric title="Completed Today" value={summary.completedToday} />
         <DispatcherMetric title="Cancelados" value={summary.cancelados} />
         <DispatcherMetric title="Dry Runs" value={summary.dryRuns} />
+        {canViewInternalControlQueue && <button type="button" onClick={() => internalControlQueueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} className="rounded-2xl border border-red-300 bg-red-50 p-5 text-left shadow-sm"><p className="text-xs font-black uppercase tracking-wide text-red-700">🔴 Internal Control</p><p className="mt-2 text-3xl font-black text-red-700">{summary.redJobs}</p><p className="mt-1 text-xs font-bold text-red-600">Total Red Jobs</p></button>}
       </section>
+      {canViewInternalControlQueue && <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} />}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <DispatcherCard title="Dispatch Board" text="Create, edit, track, and assign live jobs." />
