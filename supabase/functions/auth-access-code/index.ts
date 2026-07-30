@@ -8,6 +8,8 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const clean = (value: unknown) => String(value ?? "").trim();
+const allowedApplicationRoles = new Set(["admin", "dispatcher", "supervisor", "technician_manager"]);
+const canonicalRole = (value: unknown) => clean(value).toLowerCase().replace(/[\s-]+/g, "_");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -34,7 +36,8 @@ Deno.serve(async (req) => {
     if (profileError) return json({ error: "Unable to verify account." }, 500);
     if (!profile) return json({ error: "Invalid password." }, 401);
     if (profile.status !== "Active") return json({ error: "Your account is inactive. Contact an administrator." }, 403);
-    if (!["admin", "dispatcher"].includes(String(profile.role || "").toLowerCase())) {
+    const role = canonicalRole(profile.role);
+    if (!allowedApplicationRoles.has(role)) {
       return json({ error: "You do not have permission to access this application." }, 403);
     }
 
@@ -75,7 +78,7 @@ Deno.serve(async (req) => {
         auth_user_id: data.user.id,
         username: profile.username,
         name: profile.name,
-        role: profile.role,
+        role,
         status: profile.status,
         force_password_change: profile.force_password_change,
         last_login_at: loginAt,
