@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Download, FileText, Printer, RefreshCw, Search } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { formatDateTime12Hour } from "../../utils/timeFormat";
 
 const columnAliases = {
   invoiceNumber: ["invoice_number", "invoice", "reference"],
@@ -153,7 +154,7 @@ export default function BillingDashboard({ onOpenJob }) {
       money(job.techLabor),
       money(job.profit),
     ].map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
-    printWindow.document.write(`<!doctype html><html><head><title>Invoice List</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 6px}p{color:#64748b;margin:0 0 18px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:left}th{background:#f1f5f9}@media print{body{padding:0}}</style></head><body><h1>Invoice List</h1><p>${filteredJobs.length} invoice records · Generated ${escapeHtml(new Date().toLocaleString())}</p><table><thead><tr>${exportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
+    printWindow.document.write(`<!doctype html><html><head><title>Invoice List</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 6px}p{color:#64748b;margin:0 0 18px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:left}th{background:#f1f5f9}@media print{body{padding:0}}</style></head><body><h1>Invoice List</h1><p>${filteredJobs.length} invoice records · Generated ${escapeHtml(formatDateTime12Hour(new Date()))}</p><table><thead><tr>${exportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
     printWindow.document.close();
   }
 

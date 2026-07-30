@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ArrowLeft, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { normalizeUppercaseAddJobFields, uppercaseAddJobField } from "./addJobUppercase";
+import AmPmTimeInput from "../../components/AmPmTimeInput";
 
 const STATES = {
   AL: "AL", ALABAMA: "AL", AK: "AK", ALASKA: "AK", AZ: "AZ", ARIZONA: "AZ",
@@ -107,10 +108,15 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
   const [confirmAction, setConfirmAction] = useState("");
   const pageRef = useRef(null);
   const formRef = useRef(null);
+  const draftTimerRef = useRef(null);
   const clearedRef = useRef(false);
   const latestRef = useRef({ form, step, scrollPosition: Number(restored?.scrollPosition || 0), lastFocusedField: restored?.lastFocusedField || null });
 
   const saveDraft = useCallback(() => {
+    if (draftTimerRef.current) {
+      window.clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
     latestRef.current.scrollPosition = pageRef.current?.scrollTop ?? latestRef.current.scrollPosition;
     sessionStorage.setItem(storageKey, JSON.stringify({
       isOpen: true, formData: latestRef.current.form, currentStep: latestRef.current.step,
@@ -145,8 +151,11 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
   useEffect(() => {
     latestRef.current.form = form;
     latestRef.current.step = step;
-    const timer = window.setTimeout(saveDraft, 250);
-    return () => window.clearTimeout(timer);
+    if (draftTimerRef.current) window.clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = window.setTimeout(saveDraft, 800);
+    return () => {
+      if (draftTimerRef.current) window.clearTimeout(draftTimerRef.current);
+    };
   }, [form, step, saveDraft]);
 
   useEffect(() => {
@@ -171,7 +180,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
       window.removeEventListener("beforeunload", beforeUnload);
       window.removeEventListener("add-job-route-exit-request", requestRouteExit);
     };
-  }, [form, restorePosition, saveDraft]);
+  }, [restorePosition, saveDraft]);
 
   function update(name, value) {
     setForm((current) => {
@@ -188,8 +197,9 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
   }
 
   function requestClose() {
-    console.trace("[AddJobRoute] close requested", { hasData: hasDraftData(form) });
-    if (!hasDraftData(form)) {
+    const currentForm = latestRef.current.form;
+    console.trace("[AddJobRoute] close requested", { hasData: hasDraftData(currentForm) });
+    if (!hasDraftData(currentForm)) {
       clearedRef.current = true;
       sessionStorage.removeItem(storageKey);
       onBack();
@@ -239,14 +249,14 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
       </header>
 
       <main className="mx-auto max-w-6xl p-4 pb-24 md:p-8">
-        <form ref={formRef} onSubmit={submit} onFocus={(event) => { if (event.target.name) latestRef.current.lastFocusedField = event.target.name; }} className="rounded-3xl border border-white/10 bg-[#0d1b2e] p-5 shadow-2xl md:p-8">
+        <form ref={formRef} onSubmit={submit} onBlur={saveDraft} onFocus={(event) => { if (event.target.name) latestRef.current.lastFocusedField = event.target.name; }} className="rounded-3xl border border-white/10 bg-[#0d1b2e] p-5 shadow-2xl md:p-8">
           <div className="mb-6 flex gap-2 md:hidden">
             {[1, 2, 3].map((number) => <button key={number} type="button" onClick={() => setStep(number)} className={`h-2 flex-1 rounded-full ${step === number ? "bg-blue-500" : "bg-slate-700"}`} aria-label={`Go to section ${number}`} />)}
           </div>
 
           <Section title="Job Information" visible={step === 1}>
             <Field label="Date"><input name="date" type="date" value={form.date} onChange={(e) => update("date", e.target.value)} /></Field>
-            <Field label="Time"><input name="time" type="time" value={form.time} onChange={(e) => update("time", e.target.value)} /></Field>
+            <Field label="Time"><AmPmTimeInput name="time" value={form.time} onChange={(value) => update("time", value)} /></Field>
             <Field label="Company"><input name="company" value={form.company} onChange={(e) => update("company", e.target.value)} /></Field>
             <Field label="Invoice #"><input name="reference" value={form.reference} onChange={(e) => update("reference", e.target.value)} /></Field>
             <Field label="Reference #"><input name="jobReference" value={form.jobReference} onChange={(e) => update("jobReference", e.target.value)} /></Field>
@@ -298,5 +308,5 @@ function Section({ title, visible, children }) {
 }
 
 function Field({ label, wide = false, children }) {
-  return <label className={`grid gap-2 text-sm font-bold text-slate-300 ${wide ? "md:col-span-2" : ""}`}><span>{label}</span>{React.cloneElement(children, { className: "min-h-12 w-full rounded-xl border border-slate-600 bg-[#081423] px-3 py-2 text-base text-white outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20" })}</label>;
+  return <label className={`grid gap-2 text-sm font-bold text-slate-300 ${wide ? "md:col-span-2" : ""}`}><span>{label}</span>{React.cloneElement(children, { className: "min-h-12 w-full rounded-xl border border-slate-600 bg-[#081423] px-3 py-2 text-base text-white outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20 [&_select]:rounded-lg [&_select]:border [&_select]:border-slate-600 [&_select]:bg-[#081423] [&_select]:px-2 [&_select]:text-white" })}</label>;
 }

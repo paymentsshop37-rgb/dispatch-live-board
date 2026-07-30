@@ -49,6 +49,7 @@ import {
 } from "./technicianInvitationService";
 import { logActivity } from "../activity";
 import { getPermissions } from "../permissions";
+import { formatDateTime12Hour } from "../../utils/timeFormat";
 
 const emptyTechnician = {
   full_name: "",
@@ -677,7 +678,7 @@ export default function TechnicianCenter({ currentUser }) {
         <body>
           <header>
             <div><h1>Technician Directory</h1><div class="brand">NTTR · National Truck Trailer Repair</div></div>
-            <div class="meta">Generated ${escapePrintHtml(new Date().toLocaleString())}<br>${filteredTechnicians.length} technician${filteredTechnicians.length === 1 ? "" : "s"}</div>
+            <div class="meta">Generated ${escapePrintHtml(formatDateTime12Hour(new Date()))}<br>${filteredTechnicians.length} technician${filteredTechnicians.length === 1 ? "" : "s"}</div>
           </header>
           <div class="summary"><span><strong>Current view:</strong> ${escapePrintHtml(filterSummary)}</span><span><strong>Grouped by:</strong> State → City</span></div>
           <table>
@@ -2584,7 +2585,7 @@ function money(value) {
 }
 
 function dateTime(value) {
-  return value ? new Date(value).toLocaleString() : "Not yet";
+  return formatDateTime12Hour(value) || "Not yet";
 }
 
 function statusClass(status) {

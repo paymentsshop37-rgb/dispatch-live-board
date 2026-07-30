@@ -33,6 +33,7 @@ import { CustomerCRM } from "./modules/customers";
 import { ExecutiveDashboard } from "./modules/executive";
 import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
 import { UserManagement } from "./modules/users";
+import { formatDateTime12Hour } from "./utils/timeFormat";
 import { FlatRateGuide } from "./modules/flat-rate";
 import { PartsIntelligence } from "./modules/parts";
 import AddJobRoute from "./modules/jobs/AddJobRoute";
@@ -1013,9 +1014,7 @@ function alertSeverityClass(severity) {
 }
 
 function formatAlertDate(value) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return formatDateTime12Hour(value) || "N/A";
 }
 
 function DispatcherDashboard() {

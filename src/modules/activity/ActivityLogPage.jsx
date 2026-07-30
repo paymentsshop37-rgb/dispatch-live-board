@@ -12,6 +12,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { getRecentActivity, SYSTEM_ACTIVITY_ACTIONS } from "./activityLogService";
+import { formatDateTime12Hour } from "../../utils/timeFormat";
 
 const dateFilters = ["Today", "Yesterday", "Last 7 Days", "All"];
 const dispatcherActivityActions = [
@@ -244,7 +245,5 @@ function startOfDay(date) {
 }
 
 function formatDate(value) {
-  if (!value) return "Not recorded";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+  return formatDateTime12Hour(value) || "Not recorded";
 }

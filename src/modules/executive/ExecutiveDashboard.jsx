@@ -16,6 +16,7 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { formatDateTime12Hour, formatTime12Hour } from "../../utils/timeFormat";
 import CitiesWithoutJobsPanel from "../coverage/CitiesWithoutJobsPanel";
 import { buildCitiesWithoutJobs, loadCoverageCities, normalizeCoverageCity, normalizeState, setCoverageCityActive } from "../coverage/coverageCityService";
 import CoverageSettings from "../coverage/CoverageSettings";
@@ -323,7 +324,7 @@ function ExecutiveHeader({ loading, lastSync, filterMode, customRange, onRefresh
             <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold text-slate-400">
               <span className="inline-flex items-center gap-2"><CalendarDays className="h-4 w-4 text-blue-300" />{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</span>
               <span className="hidden h-1 w-1 rounded-full bg-slate-600 md:block" />
-              <span>Last Sync: {lastSync ? lastSync.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Waiting"}</span>
+              <span>Last Sync: {lastSync ? formatTime12Hour(lastSync) : "Waiting"}</span>
             </div>
           </div>
 
@@ -920,7 +921,7 @@ function exportDispatcherExcel(rows, totals) {
 function exportDispatcherPdf(rows, totals) {
   const printWindow = window.open("", "_blank", "noopener,noreferrer");
   if (!printWindow) return;
-  printWindow.document.write(`<!doctype html><html><head><title>Dispatcher Performance</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:22px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #bbb;padding:7px;text-align:left}th{background:#e8eef7}tbody tr:last-child{font-weight:700;background:#eef5ff}</style></head><body><h1>Dispatcher Performance</h1><p>Generated ${escapeHtml(new Date().toLocaleString())}</p>${dispatcherExportTable(rows, totals)}<script>window.onload=()=>window.print()</script></body></html>`);
+  printWindow.document.write(`<!doctype html><html><head><title>Dispatcher Performance</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111}h1{font-size:22px}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #bbb;padding:7px;text-align:left}th{background:#e8eef7}tbody tr:last-child{font-weight:700;background:#eef5ff}</style></head><body><h1>Dispatcher Performance</h1><p>Generated ${escapeHtml(formatDateTime12Hour(new Date()))}</p>${dispatcherExportTable(rows, totals)}<script>window.onload=()=>window.print()</script></body></html>`);
   printWindow.document.close();
 }
 
@@ -1147,11 +1148,7 @@ function dateOnly(value) {
 }
 
 function timeOnly(value) {
-  if (!value) return "";
-  const text = String(value);
-  if (/^\d{2}:\d{2}/.test(text)) return text.slice(0, 5);
-  const parsed = new Date(text);
-  return Number.isNaN(parsed.getTime()) ? "" : parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return formatTime12Hour(value);
 }
 
 function localDate(date) {

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import React, { useCallback, useDeferredValue, useMemo, useRef, useState, useEffect } from "react";
 import {
   Search,
   Menu,
@@ -38,6 +38,8 @@ import { logActivity } from "./modules/activity";
 import { compareTechniciansByAssignedNumber, loadTechnicians } from "./modules/technicians/technicianService";
 import { getPermissions, normalizeRole } from "./modules/permissions";
 import { compareJobsChronologically, normalizeJobDate } from "./utils/jobChronology";
+import { formatDateTime12Hour, formatTime12Hour } from "./utils/timeFormat";
+import AmPmTimeInput from "./components/AmPmTimeInput";
 import {
   techPaymentControlStyle,
   techPaymentLabel,
@@ -259,7 +261,7 @@ function exportJobsToCSV(jobs) {
 
   const rows = jobs.map((job) => [
     job.date,
-    job.time,
+    formatTime12Hour(job.time),
     job.jobReference || "—",
     job.reference,
     job.dispatch,
@@ -304,7 +306,7 @@ function exportJobsToPDF(jobs, showProfit = true) {
       return `
         <tr>
           <td>${job.date || ""}</td>
-          <td>${job.time || ""}</td>
+          <td>${formatTime12Hour(job.time)}</td>
           <td>${job.jobReference || "—"}</td>
           <td>${job.reference || ""}</td>
           <td>${job.company || ""}</td>
@@ -335,7 +337,7 @@ function exportJobsToPDF(jobs, showProfit = true) {
       </head>
       <body>
         <h1>Dispatch Live Report</h1>
-        <div class="subtitle">Generated ${new Date().toLocaleString()}</div>
+        <div class="subtitle">Generated ${formatDateTime12Hour(new Date())}</div>
         <table>
           <thead>
             <tr>
@@ -493,6 +495,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
     currentUser?.role || null
   );
   const [search, setSearch] = useState("");
+  const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All");
   const [periodFilter, setPeriodFilter] = useState("This Week");
@@ -572,7 +575,6 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   formStateRef.current = form;
   addJobOpenRef.current = showAddJobModal;
   mobileJobStepRef.current = mobileJobStep;
-  console.log("Rendering technicians:", dispatchTechnicians);
 
   useEffect(() => {
     migrateDispatchBoardColumnPreferences();
@@ -727,7 +729,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
 
   useEffect(() => {
     if (!showAddJobModal) return undefined;
-    const timer = window.setTimeout(saveAddJobDraft, 250);
+    const timer = window.setTimeout(saveAddJobDraft, 800);
     return () => window.clearTimeout(timer);
   }, [form, mobileJobStep, saveAddJobDraft, showAddJobModal]);
 
@@ -849,7 +851,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
                 id: `${payload.new.id}-${Date.now()}`,
                 message,
                 detail: payload.new.company || payload.new.invoice_number || `Job ${payload.new.id}`,
-                time: new Date().toLocaleTimeString(),
+                time: formatTime12Hour(new Date()),
               },
               ...current,
             ].slice(0, 8));
@@ -1032,7 +1034,7 @@ const { data: logsData } = await supabase
   const filteredJobs = useMemo(() => {
     return jobs
       .filter((job) => {
-        const matchesSearch = Object.values(job).join(" ").toLowerCase().includes(search.toLowerCase());
+        const matchesSearch = Object.values(job).join(" ").toLowerCase().includes(deferredSearch.toLowerCase());
         const matchesStatus = statusFilter === "All" || job.status === statusFilter;
         const matchesDate = dateFilter === "All" || job.date === dateFilter;
         const matchesCity = cityFilter === "All" || job.location === cityFilter;
@@ -1149,7 +1151,7 @@ return (
   matchesDateRange
 );
       });
-  }, [jobs, search, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
+  }, [jobs, deferredSearch, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
 
   const sortedJobs = useMemo(
     () => [...filteredJobs].sort(compareJobsChronologically),
@@ -1317,7 +1319,7 @@ profit: filteredJobs.reduce(
         {
           id: Date.now(),
           message: `${currentUserName || "Dispatcher"} added job "${newJob.reference || newJob.company || "New Job"}"`,
-          time: new Date().toLocaleString(),
+          time: formatDateTime12Hour(new Date()),
         },
         ...logs,
       ]);
@@ -1399,7 +1401,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
   const activityMessage = {
   id: Date.now(),
   message: `${currentUserName || "Dispatcher"} uploaded ${documentType.toLowerCase()} to job ${jobId}`,
-  time: new Date().toLocaleString(),
+  time: formatDateTime12Hour(new Date()),
 };
  
   setActivityLogs((logs) => [ activityMessage, ...logs,]);
@@ -1422,7 +1424,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
       {
         id: Date.now(),
         message: `File deleted from Job #${jobLabel} by ${currentUserName || "Dispatcher"}`,
-        time: new Date().toLocaleString(),
+        time: formatDateTime12Hour(new Date()),
       },
       ...logs,
     ]);
@@ -1464,7 +1466,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
     const activityMessage = {
       id: Date.now(),
       message: buildJobActivityMessage(field, oldValue, value, currentUserName || "Dispatcher"),
-      time: new Date().toLocaleString(),
+      time: formatDateTime12Hour(new Date()),
     };
 
     setActivityLogs((logs) => [activityMessage, ...logs]);
@@ -1600,7 +1602,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
       {
         id: Date.now(),
         message: `${currentUserName || "Dispatcher"} updated tech payment for job ${jobId}`,
-        time: new Date().toLocaleString(),
+        time: formatDateTime12Hour(new Date()),
       },
       ...logs,
     ]);
@@ -1655,7 +1657,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 const newActivity = {
   id: Date.now(),
   message: `${currentUserName || "Dispatcher"} deleted job ${deletedJob?.reference || deletedJob?.company || id}`,
-  time: new Date().toLocaleString(),
+  time: formatDateTime12Hour(new Date()),
 };
 
 setActivityLogs((logs) => [newActivity, ...logs]);
@@ -2561,7 +2563,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                           <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openJobDetails(job.id); }} className="job-number-button flex min-h-11 items-center rounded-lg px-1 text-sm font-black text-blue-300 underline decoration-blue-400/50 underline-offset-4">#{job.displayNumber || index + 1}</button>
                           <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${job.rowFlag === "Problem" ? "bg-red-500 text-white" : "bg-white/10 text-slate-300"}`}>{job.rowFlag || "Normal"}</span>
                         </div>
-                        <p className="mt-2 text-xs font-semibold text-slate-400">{job.date || "No date"} · {job.time || "No time"}</p>
+                        <p className="mt-2 text-xs font-semibold text-slate-400">{job.date || "No date"} · {formatTime12Hour(job.time) || "No time"}</p>
                       </div>
                       <select onClick={(event) => event.stopPropagation()} value={job.status} onChange={(event) => updateJob(job.id, "status", event.target.value)} className={`${darkSelectClass} min-h-11 max-w-[52%] rounded-xl px-3 text-xs font-black`} style={jobStatusControlStyle(job.status)} aria-label={`Status for job ${job.reference || index + 1}`}>
                         {jobStatusOptions.map((status) => <option key={status} value={status} style={darkOptionStyle}>{jobStatusLabel(status)}</option>)}
@@ -2727,7 +2729,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         </div>
                       </Td>
 
-                      <Td><Editable value={job.time} onChange={(v) => updateJob(job.id, "time", v)} /></Td>
+                      <Td><AmPmTimeInput className="min-w-56 [&_select]:h-9 [&_select]:rounded-lg [&_select]:border [&_select]:border-white/10 [&_select]:bg-[#111f33] [&_select]:px-2 [&_select]:text-sm [&_select]:text-white" name={`jobTime${job.id}`} value={job.time} onChange={(value) => updateJob(job.id, "time", value)} /></Td>
                       <Td><Editable className="w-36" value={job.jobReference} placeholder="—" onChange={(v) => updateJob(job.id, "jobReference", v)} /></Td>
                       <Td><Editable value={job.reference} onChange={(v) => updateJob(job.id, "reference", v)} /></Td>
                       <Td><Editable value={job.dispatch} onChange={(v) => updateJob(job.id, "dispatch", v)} /></Td>
@@ -3215,7 +3217,7 @@ function DispatchCockpit({
                   <p className="truncate text-sm font-black text-white">{job.reference || "No invoice"}</p>
                   <p className="mt-1 truncate text-sm font-semibold text-slate-300">{job.company || "No company"}</p>
                   <p className="mt-1 truncate text-xs text-slate-500">{job.location || "No location"}</p>
-                  <p className="mt-2 text-xs text-slate-500">{[job.date, job.time].filter(Boolean).join(" · ") || "No date/time"}</p>
+                  <p className="mt-2 text-xs text-slate-500">{[job.date, formatTime12Hour(job.time)].filter(Boolean).join(" · ") || "No date/time"}</p>
                 </div>
                 <JobStatusBadge status={job.status} className="shrink-0 px-2 py-1 text-[11px]" />
               </div>
@@ -4010,7 +4012,7 @@ function JobDocumentsModal({ job, isAdmin, currentUserName, onUpload, onDeleted,
                   <p className="truncate font-black text-white">{document.name}</p>
                   <p className="text-xs font-semibold text-slate-400">{document.type} · Uploaded by {document.uploadedBy}</p>
                 </div>
-                <span className="text-xs font-semibold text-slate-400">{document.uploadedAt ? new Date(document.uploadedAt).toLocaleString() : "Date not stored"}</span>
+                <span className="text-xs font-semibold text-slate-400">{document.uploadedAt ? formatDateTime12Hour(document.uploadedAt) : "Date not stored"}</span>
                 <a href={document.url} target="_blank" rel="noreferrer" className="h-9 rounded-lg bg-white/10 px-3 py-2 text-center text-xs font-bold text-slate-100 hover:bg-white/15">
                   Preview / Open
                 </a>
@@ -4048,16 +4050,37 @@ function JobDocumentsModal({ job, isAdmin, currentUserName, onUpload, onDeleted,
   );
 }
 
-function Editable({ value, onChange, className = "", placeholder = "" }) {
+const Editable = React.memo(function Editable({ value, onChange, className = "", placeholder = "" }) {
+  const [draft, setDraft] = useState(value ?? "");
+  const focusedRef = useRef(false);
+
+  useEffect(() => {
+    if (!focusedRef.current) setDraft(value ?? "");
+  }, [value]);
+
+  function commit() {
+    focusedRef.current = false;
+    if (String(draft ?? "") !== String(value ?? "")) onChange(draft);
+  }
+
   return (
     <input
       className={`${tableControlClass} w-32 px-2 py-1 ${className}`}
-      value={value}
+      value={draft}
       placeholder={placeholder}
-      onChange={(e) => onChange(e.target.value)}
+      onFocus={() => { focusedRef.current = true; }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(value ?? "");
+          event.currentTarget.blur();
+        }
+      }}
     />
   );
-}
+});
 
 function MoneyInput({ value, onChange, className = "" }) {
   return (
@@ -4408,7 +4431,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
               <DetailSection title="Job Identification">
                 <DetailGrid items={[
                   ["Internal job number", job.id], ["Invoice number", job.reference || "—"], ["Reference number", job.jobReference || "—"],
-                  ["Created", valueFrom(raw.created_at, `${job.date || ""} ${job.time || ""}`)], ["Last modified", raw.updated_at], ["Status", job.status],
+                  ["Created", raw.created_at ? formatDateTime12Hour(raw.created_at) : `${job.date || ""} ${formatTime12Hour(job.time)}`], ["Last modified", formatDateTime12Hour(raw.updated_at)], ["Status", job.status],
                   ["Priority", job.rowFlag], ["Job source", valueFrom(raw.job_source, raw.source, "Dispatch Live")],
                 ]} />
                 <label className="mt-3 grid gap-1 text-xs font-black uppercase text-slate-400">Change Status<select value={job.status} onChange={(event) => onChangeStatus(job, event.target.value)} className={`${darkSelectClass} min-h-11 px-3 text-sm font-bold`}>{jobStatusOptions.map((status) => <option key={status} value={status} style={darkOptionStyle}>{jobStatusLabel(status)}</option>)}</select></label>
@@ -4426,7 +4449,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
 
               <DetailSection title="Unit Information"><DetailGrid items={[["Unit type", valueFrom(raw.unit_type, raw.vehicle_type)], ["Truck number", valueFrom(raw.truck_number, raw.truck_unit)], ["Trailer number", raw.trailer_number], ["VIN", raw.vin], ["Year", raw.year], ["Make", raw.make], ["Model", raw.model], ["Engine", raw.engine], ["License plate", raw.license_plate], ["Mileage", raw.mileage], ["Complaint", valueFrom(raw.complaint, complaintFromUpdates(job.updates))]]} /></DetailSection>
 
-              <DetailSection title="Dispatch Information"><DetailGrid items={[["Created by", valueFrom(raw.created_by_name, raw.created_by)], ["Dispatcher", job.dispatch], ["Supervisor", raw.supervisor], ["Technician", valueFrom(technician.full_name, job.tech)], ["Technician phone", technician.phone], ["Technician company", valueFrom(technician.company, technician.company_name)], ["Technician city", technician.city], ["Dispatch time", valueFrom(raw.dispatch_time, job.time)], ["Assigned time", valueFrom(raw.assigned_at, job.assignedAt)], ["En route", raw.en_route_at], ["On site", raw.on_site_at], ["Completed", raw.completed_at], ["Actual ETA", valueFrom(raw.manual_eta, extractEta(job.updates))]]} /></DetailSection>
+              <DetailSection title="Dispatch Information"><DetailGrid items={[["Created by", valueFrom(raw.created_by_name, raw.created_by)], ["Dispatcher", job.dispatch], ["Supervisor", raw.supervisor], ["Technician", valueFrom(technician.full_name, job.tech)], ["Technician phone", technician.phone], ["Technician company", valueFrom(technician.company, technician.company_name)], ["Technician city", technician.city], ["Dispatch time", formatTime12Hour(valueFrom(raw.dispatch_time, job.time))], ["Assigned time", formatDateTime12Hour(valueFrom(raw.assigned_at, job.assignedAt))], ["En route", formatDateTime12Hour(raw.en_route_at)], ["On site", formatDateTime12Hour(raw.on_site_at)], ["Completed", formatDateTime12Hour(raw.completed_at)], ["Actual ETA", formatTime12Hour(valueFrom(raw.manual_eta, extractEta(job.updates)))]]} /></DetailSection>
 
               <DetailSection title="Status and Timeline">{timeline.length ? <div className="space-y-3">{timeline.map((entry, index) => <div key={`${entry.time}-${index}`} className="border-l-2 border-blue-500 pl-3"><p className="text-sm font-black text-white">{entry.action}</p><p className="text-xs text-slate-400">{formatDetailDate(entry.time)} · {entry.user || "System"}</p>{(entry.oldValue || entry.newValue) && <p className="mt-1 text-xs text-slate-300">{entry.oldValue || "—"} → {entry.newValue || "—"}</p>}{entry.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-300">{entry.notes}</p>}</div>)}</div> : <EmptyDetail label="No timeline entries recorded." />}</DetailSection>
 
@@ -4490,7 +4513,7 @@ function buildJobDetailsTimeline(details) {
 }
 
 function valueFrom(...values) { return values.find((value) => value !== undefined && value !== null && String(value).trim() !== "") || ""; }
-function formatDetailDate(value) { if (!value) return "Unknown time"; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(); }
+function formatDetailDate(value) { return formatDateTime12Hour(value) || "Unknown time"; }
 function complaintFromUpdates(updates) { return String(updates || "").match(/complaint\s*:\s*([^\n\r]+)/i)?.[1]?.trim() || ""; }
 function profitMargin(job) { const bill = Number(job?.totalBill || 0); if (!bill) return "0%"; return `${(((bill - Number(job.parts || 0) - Number(job.techLabor || 0)) / bill) * 100).toFixed(1)}%`; }
 function shareJobLocation(address) { if (navigator.share) navigator.share({ title: "Dispatch Live Job Location", text: address || "", url: mapLink(address) }).catch(() => {}); else navigator.clipboard?.writeText(mapLink(address)); }
@@ -4584,8 +4607,8 @@ function buildCockpitActivity(selectedJob, notifications, activityLogs, changeLo
     ...importantChangeLogs.map((item) => ({
       id: `change-${item.id}`,
       title: `${item.action || "Updated"} ${item.field_name || "job"}`,
-      detail: `${item.user_name || "Dispatcher"} · ${item.created_at ? new Date(item.created_at).toLocaleString() : "Recent"}`,
-      time: item.created_at ? new Date(item.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Recent",
+      detail: `${item.user_name || "Dispatcher"} · ${item.created_at ? formatDateTime12Hour(item.created_at) : "Recent"}`,
+      time: item.created_at ? formatTime12Hour(item.created_at) : "Recent",
       by: item.user_name || "Dispatcher",
     })),
   ];
