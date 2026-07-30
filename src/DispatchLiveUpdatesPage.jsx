@@ -2729,7 +2729,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         </div>
                       </Td>
 
-                      <Td><AmPmTimeInput className="min-w-56 [&_select]:h-9 [&_select]:rounded-lg [&_select]:border [&_select]:border-white/10 [&_select]:bg-[#111f33] [&_select]:px-2 [&_select]:text-sm [&_select]:text-white" name={`jobTime${job.id}`} value={job.time} onChange={(value) => updateJob(job.id, "time", value)} /></Td>
+                      <Td><AmPmTimeInput className="border-white/10 bg-[#111f33] text-white" name={`jobTime${job.id}`} value={job.time} onChange={(value) => updateJob(job.id, "time", value)} /></Td>
                       <Td><Editable className="w-36" value={job.jobReference} placeholder="—" onChange={(v) => updateJob(job.id, "jobReference", v)} /></Td>
                       <Td><Editable value={job.reference} onChange={(v) => updateJob(job.id, "reference", v)} /></Td>
                       <Td><Editable value={job.dispatch} onChange={(v) => updateJob(job.id, "dispatch", v)} /></Td>
