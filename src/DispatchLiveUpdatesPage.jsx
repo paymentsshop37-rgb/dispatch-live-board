@@ -40,7 +40,9 @@ import { getPermissions, normalizeRole } from "./modules/permissions";
 import { compareJobsChronologically, normalizeJobDate } from "./utils/jobChronology";
 import { formatDateTime12Hour, formatTime12Hour } from "./utils/timeFormat";
 import AmPmTimeInput from "./components/AmPmTimeInput";
+import InternalControlColorPicker from "./components/InternalControlColorPicker";
 import { uppercaseUpdates } from "./utils/updatesText";
+import { internalControlColor, internalControlColors } from "./utils/internalControlColors";
 import {
   techPaymentControlStyle,
   techPaymentLabel,
@@ -391,6 +393,7 @@ function fromDbJob(row) {
     serviceAreaMethod: row.service_area_assignment_method || "",
     status: row.status || "New",
     rowFlag: row.row_flag || "Normal",
+    internalControlColor: row.internal_control_color || "",
     invoice: row.invoice_status || "Pending",
     paymentMethod: row.payment_method || "Pending",
     paymentReceiver: row.received || "A",
@@ -421,6 +424,7 @@ function toDbJob(job) {
     job_state: String(job.state || "").trim().toUpperCase() || null,
     status: job.status || "New",
     row_flag: job.rowFlag || "Normal",
+    internal_control_color: job.internalControlColor || null,
     invoice_status: job.invoice || "Pending",
     payment_method: job.paymentMethod || "Pending",
     received: job.paymentReceiver || "A",
@@ -461,6 +465,7 @@ function emptyForm() {
     state: "",
     status: "New",
     rowFlag: "Normal",
+    internalControlColor: "",
     invoice: "Pending",
     paymentMethod: "Pending",
     paymentReceiver: "A",
@@ -508,6 +513,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const [companyFilter, setCompanyFilter] = useState("All");
   const [invoiceFilter, setInvoiceFilter] = useState("All");
   const [techPaymentFilter, setTechPaymentFilter] = useState("All");
+  const [internalControlFilter, setInternalControlFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
   const [deleteRestrictedOpen, setDeleteRestrictedOpen] = useState(false);
@@ -572,6 +578,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
+  const canEditInternalControl = ["admin", "supervisor", "dispatcher"].includes(normalizedUserRole);
   const draftKey = useMemo(() => addJobDraftKey(currentUser), [currentUser]);
   formStateRef.current = form;
   addJobOpenRef.current = showAddJobModal;
@@ -789,7 +796,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
 
   useEffect(() => {
     setMobileVisibleCount(50);
-  }, [search, statusFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
+  }, [search, statusFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, internalControlFilter, periodFilter, fromDate, toDate]);
 
   useEffect(() => {
     const pendingDetailsId = localStorage.getItem("nttr-open-job-details-id");
@@ -1044,6 +1051,8 @@ const { data: logsData } = await supabase
         const matchesCompany = companyFilter === "All" || job.company === companyFilter;
         const matchesInvoice = invoiceFilter === "All" || job.invoice === invoiceFilter;
         const matchesTechPayment = techPaymentFilter === "All" || job.techPaymentStatus === techPaymentFilter;
+        const matchesInternalControl = internalControlFilter === "All"
+          || (internalControlFilter === "" ? !job.internalControlColor : job.internalControlColor === internalControlFilter);
 const today = new Date();
 const normalizedJobDate = normalizeJobDate(job.date);
 const jobDate = normalizedJobDate ? new Date(`${normalizedJobDate}T00:00:00`) : new Date(0);
@@ -1148,11 +1157,12 @@ return (
   matchesCompany &&
   matchesInvoice &&
   matchesTechPayment &&
+  matchesInternalControl &&
   matchesPeriod &&
   matchesDateRange
 );
       });
-  }, [jobs, deferredSearch, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, periodFilter, fromDate, toDate]);
+  }, [jobs, deferredSearch, statusFilter, dateFilter, cityFilter, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, internalControlFilter, periodFilter, fromDate, toDate]);
 
   const sortedJobs = useMemo(
     () => [...filteredJobs].sort(compareJobsChronologically),
@@ -1494,6 +1504,50 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
         createdBy: currentUserName || "Dispatcher",
       });
     }
+  }
+
+  async function updateInternalControlColor(job, nextColor) {
+    if (!canEditInternalControl) return;
+    const previousColor = job.internalControlColor || "";
+    const normalizedColor = internalControlColor(nextColor).value;
+    if (previousColor === normalizedColor) return;
+
+    setJobs((currentJobs) =>
+      currentJobs.map((currentJob) =>
+        currentJob.id === job.id ? { ...currentJob, internalControlColor: normalizedColor } : currentJob
+      )
+    );
+
+    const { data, error } = await supabase
+      .from("jobs")
+      .update({ internal_control_color: normalizedColor || null })
+      .eq("id", job.id)
+      .select("id");
+
+    if (error || !data?.length) {
+      setJobs((currentJobs) =>
+        currentJobs.map((currentJob) =>
+          currentJob.id === job.id ? { ...currentJob, internalControlColor: previousColor } : currentJob
+        )
+      );
+      setToastMessage(`Unable to save Internal Control Color: ${error?.message || "update was not accepted"}`);
+      window.setTimeout(() => setToastMessage(""), 4500);
+      return;
+    }
+
+    const changedAt = new Date();
+    await supabase.from("change_logs").insert([{
+      job_id: job.id,
+      action: "internal_control_color_changed",
+      field_name: "internal_control_color",
+      old_value: previousColor || "none",
+      new_value: normalizedColor || "none",
+      user_name: currentUserName || "Dispatcher",
+      month_key: changedAt.toISOString().slice(0, 7),
+    }]);
+
+    setToastMessage(`Internal Control Color saved: ${internalControlColor(normalizedColor).label}`);
+    window.setTimeout(() => setToastMessage(""), 2500);
   }
 
   async function updateTechPaymentStatus(job, value) {
@@ -2498,6 +2552,20 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   className="2xl:col-span-2"
                 />
 
+                <select
+                  aria-label="Filter by Internal Control Color"
+                  className={`${darkSelectClass} h-9 w-full px-3 py-2 text-sm font-semibold 2xl:col-span-2`}
+                  value={internalControlFilter}
+                  onChange={(event) => setInternalControlFilter(event.target.value)}
+                >
+                  <option value="All" style={darkOptionStyle}>Internal Control: All</option>
+                  {internalControlColors.map((option) => (
+                    <option key={option.value || "none"} value={option.value} style={darkOptionStyle}>
+                      {option.value ? `${option.value[0].toUpperCase()}${option.value.slice(1)} — ${option.label}` : "None"}
+                    </option>
+                  ))}
+                </select>
+
                 <input
                   type="date"
                   className="h-9 w-full rounded-lg border border-white/10 bg-[#111f33] px-3 py-2 text-sm text-white outline-none focus:border-blue-400 2xl:col-span-2"
@@ -2525,6 +2593,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     setToDate("");
                     setInvoiceFilter("All");
                     setTechPaymentFilter("All");
+                    setInternalControlFilter("All");
                     setPeriodFilter("All");
                   }}
                   className="h-9 w-full whitespace-nowrap rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-slate-100 hover:bg-white/15 2xl:col-span-1"
@@ -2557,13 +2626,27 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 const eta = job.manualEta || extractEta(job.updates);
                 const financialOpen = mobileFinancialIds.includes(String(job.id));
                 const moreOpen = mobileMoreJobId === job.id;
+                const controlVisual = internalControlColor(job.internalControlColor);
                 return (
-                  <article key={job.id} onClick={() => openJobDetails(job)} className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${job.rowFlag === "Problem" || job.status === "Dry Run" ? "border-red-400/60 bg-red-500/10" : "border-white/10 bg-[#0f1c2e]"}`}>
+                  <article
+                    key={job.id}
+                    onClick={() => openJobDetails(job)}
+                    style={controlVisual.value ? { backgroundColor: controlVisual.tint, borderLeftColor: controlVisual.color, borderLeftWidth: 4 } : undefined}
+                    className={`overflow-hidden rounded-2xl border p-4 shadow-lg ${job.rowFlag === "Problem" || job.status === "Dry Run" ? "border-red-400/60 bg-red-500/10" : "border-white/10 bg-[#0f1c2e]"}`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openJobDetails(job.id); }} className="job-number-button flex min-h-11 items-center rounded-lg px-1 text-sm font-black text-blue-300 underline decoration-blue-400/50 underline-offset-4">#{job.displayNumber || index + 1}</button>
                           <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${job.rowFlag === "Problem" ? "bg-red-500 text-white" : "bg-white/10 text-slate-300"}`}>{job.rowFlag || "Normal"}</span>
+                          <span onClick={(event) => event.stopPropagation()}>
+                            <InternalControlColorPicker
+                              value={job.internalControlColor}
+                              onChange={(value) => updateInternalControlColor(job, value)}
+                              disabled={!canEditInternalControl}
+                              jobLabel={job.displayNumber || job.id}
+                            />
+                          </span>
                         </div>
                         <p className="mt-2 text-xs font-semibold text-slate-400">{job.date || "No date"} · {formatTime12Hour(job.time) || "No time"}</p>
                       </div>
@@ -2652,6 +2735,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   <tr>
                     <Th>#</Th>
                     <Th>Flag</Th>
+                    <Th>Internal Control</Th>
                     <Th>Date</Th>
                     <Th>Status</Th>
                     <Th>Time</Th>
@@ -2675,10 +2759,16 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 </thead>
 
                 <tbody>
-                  {sortedJobs.map((job, index) => (
+                  {sortedJobs.map((job, index) => {
+                    const controlVisual = internalControlColor(job.internalControlColor);
+                    return (
                     <tr
                       key={job.id}
                       onContextMenu={(event) => openJobContextMenu(event, job)}
+                      style={controlVisual.value ? {
+                        backgroundColor: controlVisual.tint,
+                        boxShadow: `inset 4px 0 0 ${controlVisual.color}`,
+                      } : undefined}
                     className={`h-14 max-h-14 align-middle text-slate-200 transition hover:bg-blue-500/10 ${
                       job.rowFlag === "Problem" || job.status === "Dry Run"
                           ? "border-l-4 border-red-500 bg-red-500/10"
@@ -2689,6 +2779,15 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openJobDetails(job.id); }} className="job-number-button inline-flex min-h-9 items-center rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-blue-200 underline decoration-blue-400/40 underline-offset-4 hover:bg-blue-500/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-400">
                           #{job.displayNumber || index + 1}
                         </button>
+                      </Td>
+
+                      <Td className="text-center">
+                        <InternalControlColorPicker
+                          value={job.internalControlColor}
+                          onChange={(value) => updateInternalControlColor(job, value)}
+                          disabled={!canEditInternalControl}
+                          jobLabel={job.displayNumber || job.id}
+                        />
                       </Td>
 
                       <Td>
@@ -2918,7 +3017,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         </div>
                       </Td>
                     </tr>
-                  ))}
+                  )})}
                   {sortedJobs.length === 0 && (
                     <tr>
                       <td colSpan={canEditJobFinancial ? 21 : 17} className="px-4 py-10 text-center text-sm font-semibold text-slate-500">
