@@ -29,6 +29,7 @@ import {
   techPaymentStatusOptions,
 } from "../../utils/techPaymentStatus";
 import { InternalControlQueue } from "./InternalControlQueue";
+import StatusJobsReport from "./StatusJobsReport";
 
 const columnAliases = {
   id: ["id"],
@@ -70,6 +71,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
   const [serviceAreas, setServiceAreas] = useState([]);
   const [serviceAreaAliases, setServiceAreaAliases] = useState([]);
   const [coverageSettingsOpen, setCoverageSettingsOpen] = useState(false);
+  const [statusReport, setStatusReport] = useState(null);
   const internalControlQueueRef = useRef(null);
 
   useEffect(() => {
@@ -133,6 +135,11 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
   const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange]);
   const filteredJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, dateRange)), [jobs, dateRange]);
   const analytics = useMemo(() => buildAnalytics(filteredJobs), [filteredJobs]);
+  const statusReportJobs = useMemo(
+    () => statusReport ? filteredJobs.filter((job) => matchesStatusMetric(job.status, statusReport.key)) : [],
+    [filteredJobs, statusReport]
+  );
+  const periodLabel = useMemo(() => formatPeriodLabel(filterMode, dateRange), [filterMode, dateRange]);
   const previousRange = useMemo(() => previousDateRange(dateRange), [dateRange]);
   const previousJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, previousRange)), [jobs, previousRange]);
   const cityStatusRows = useMemo(() => buildCityStatusRows(filteredJobs, serviceAreas, serviceAreaAliases), [filteredJobs, serviceAreas, serviceAreaAliases]);
@@ -236,7 +243,14 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
                   <DonutChart segments={analytics.statusSegments} total={analytics.totalJobs} />
                   <div className="space-y-3">
                     {analytics.statusSegments.map((segment) => (
-                      <MetricBar key={segment.label} label={segment.label} value={segment.value} total={analytics.totalJobs} tone={segment.tone} />
+                      <MetricBar
+                        key={segment.label}
+                        label={segment.label}
+                        value={segment.value}
+                        total={analytics.totalJobs}
+                        tone={segment.tone}
+                        onClick={segment.reportable ? () => setStatusReport({ key: segment.key, label: segment.reportLabel }) : undefined}
+                      />
                     ))}
                   </div>
                 </div>
@@ -333,6 +347,20 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
           />
         )}
         {coverageSettingsOpen && <CoverageSettings onClose={() => setCoverageSettingsOpen(false)} onChanged={loadDashboard} />}
+        {statusReport && (
+          <StatusJobsReport
+            statusKey={statusReport.key}
+            statusLabel={statusReport.label}
+            jobs={statusReportJobs}
+            periodLabel={periodLabel}
+            canViewFinancial
+            onClose={() => setStatusReport(null)}
+            onOpenJob={(jobId) => {
+              setStatusReport(null);
+              onOpenJob?.(jobId);
+            }}
+          />
+        )}
       </div>
     </div>
   );
@@ -758,12 +786,18 @@ function InvoiceTile({ item }) {
   );
 }
 
-function MetricBar({ label, value, total, tone }) {
+function MetricBar({ label, value, total, tone, onClick }) {
   const percent = total ? Math.round((value / total) * 100) : 0;
   const visual = jobStatusVisual(label);
+  const Component = onClick ? "button" : "div";
 
   return (
-    <div>
+    <Component
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      aria-label={onClick ? `Open ${label} jobs report with ${value} jobs` : undefined}
+      className={`block w-full rounded-xl p-2 text-left transition ${onClick ? "cursor-pointer hover:bg-white/[0.07] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300" : ""}`}
+    >
       <div className="mb-2 flex items-center justify-between gap-3 text-sm">
         <span className="font-bold text-slate-300">{visual.dot} {label}</span>
         <span className="font-black" style={{ color: visual.border }}>{value} ({percent}%)</span>
@@ -771,7 +805,7 @@ function MetricBar({ label, value, total, tone }) {
       <div className="h-3 overflow-hidden rounded-full bg-white/10">
         <div className="h-full rounded-full" style={{ width: `${percent}%`, backgroundColor: visual.border }} />
       </div>
-    </div>
+    </Component>
   );
 }
 
@@ -827,10 +861,10 @@ function buildAnalytics(rows) {
   const profit = revenue - expenses;
   const today = localDate(new Date());
   const todayRows = rows.filter((job) => job.date === today);
-  const completed = rows.filter((job) => isCompleted(job.status)).length;
-  const cancelled = rows.filter((job) => isCancelled(job.status)).length;
-  const dryRuns = rows.filter((job) => normalized(job.status).includes("dry")).length;
-  const pending = rows.filter((job) => isPending(job.status)).length;
+  const completed = rows.filter((job) => matchesStatusMetric(job.status, "completed")).length;
+  const cancelled = rows.filter((job) => matchesStatusMetric(job.status, "cancelled")).length;
+  const dryRuns = rows.filter((job) => matchesStatusMetric(job.status, "dryRuns")).length;
+  const pending = rows.filter((job) => matchesStatusMetric(job.status, "pending")).length;
   const inProgress = Math.max(rows.length - completed - cancelled - dryRuns - pending, 0);
   const avgEta = average(rows.map((job) => job.etaMinutes).filter((value) => value > 0));
 
@@ -847,11 +881,11 @@ function buildAnalytics(rows) {
     todayProfit: sumBy(todayRows, "totalBill") - sumBy(todayRows, "parts") - sumBy(todayRows, "techLabor"),
     jobsToday: todayRows.length,
     statusSegments: [
-      { label: "Completed", value: completed, tone: "green" },
-      { label: "In Progress", value: inProgress, tone: "blue" },
-      { label: "Cancelled", value: cancelled, tone: "red" },
-      { label: "Pending", value: pending, tone: "orange" },
-      { label: "Dry Run", value: dryRuns, tone: "purple" },
+      { key: "completed", label: "Completed", reportLabel: "Completed", value: completed, tone: "green", reportable: true },
+      { key: "inProgress", label: "In Progress", value: inProgress, tone: "blue", reportable: false },
+      { key: "cancelled", label: "Cancelled", reportLabel: "Cancelled", value: cancelled, tone: "red", reportable: true },
+      { key: "pending", label: "Pending", reportLabel: "Pending", value: pending, tone: "orange", reportable: true },
+      { key: "dryRuns", label: "Dry Run", reportLabel: "Dry Runs", value: dryRuns, tone: "purple", reportable: true },
     ],
     invoiceSegments: [
       { label: "Pending", value: rows.filter((job) => normalized(job.invoiceStatus).includes("pending")).length },
@@ -1226,6 +1260,25 @@ function isCancelled(status) {
 function isPending(status) {
   const value = normalized(status);
   return value.includes("pending") || value.includes("new") || value.includes("open");
+}
+
+function matchesStatusMetric(status, key) {
+  if (key === "completed") return isCompleted(status);
+  if (key === "cancelled") return isCancelled(status);
+  if (key === "pending") return isPending(status);
+  if (key === "dryRuns") return normalized(status).includes("dry");
+  return false;
+}
+
+function formatPeriodLabel(mode, range) {
+  const format = (value) => {
+    if (!value || value === "1900-01-01" || value === "2999-12-31") return "";
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+  const from = format(range?.from);
+  const to = format(range?.to);
+  return `${mode}${from || to ? ` · ${from || "Start"} – ${to || "Present"}` : ""}`;
 }
 
 function isPaid(status) {
