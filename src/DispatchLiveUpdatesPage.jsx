@@ -480,7 +480,7 @@ function emptyForm() {
   };
 }
 
-export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest = 0, onOpenAddJob, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians }) {
+export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest = 0, onOpenAddJob, onLogout, onOpenFlatRate, onOpenParts, onOpenTechnicians, onOpenTechPayments }) {
   const formRef = useRef(null);
   const mobileFormScrollRef = useRef(null);
   const desktopFormScrollRef = useRef(null);
@@ -1213,6 +1213,7 @@ return (
   total: filteredJobs.length,
   activeJobs: filteredJobs.filter((j) => !["Completed", "Canceled", "Cancelled", "Paid"].includes(j.status)).length,
   pendingJobs: filteredJobs.filter((j) => ["New", "Pending"].includes(j.status)).length,
+  techPaymentsPendingAll: jobs.filter((job) => String(job.techPaymentStatus || "").trim().toLowerCase() === "pending").length,
   newJobs: filteredJobs.filter((j) => j.status === "New").length,
   assigned: filteredJobs.filter((j) => j.status === "Assigned").length,
   enRoute: filteredJobs.filter((j) => j.status === "En Route").length,
@@ -2102,6 +2103,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
           {roleKpis.map((kpi) => (
             <DispatchKpiCard key={kpi.label} {...kpi} />
           ))}
+          <DispatchKpiCard icon={DollarSign} label="Tech Payment Pending" value={stats.techPaymentsPendingAll} accent="amber" onClick={onOpenTechPayments} />
         </div>
 
         {false && isAdmin && (
@@ -3675,7 +3677,7 @@ function dispatchKpis(stats, isAdmin) {
   ];
 }
 
-function DispatchKpiCard({ icon: Icon, label, value, accent = "blue" }) {
+function DispatchKpiCard({ icon: Icon, label, value, accent = "blue", onClick }) {
   const accents = {
     blue: "border-blue-400/20 bg-blue-500/10 text-blue-200",
     amber: "border-amber-400/20 bg-amber-500/10 text-amber-200",
@@ -3685,8 +3687,9 @@ function DispatchKpiCard({ icon: Icon, label, value, accent = "blue" }) {
     cyan: "border-cyan-400/20 bg-cyan-500/10 text-cyan-200",
   };
 
+  const Component = onClick ? "button" : "div";
   return (
-    <div className="rounded-2xl border border-white/10 bg-[#0b1628] p-4 shadow-xl shadow-black/10">
+    <Component type={onClick ? "button" : undefined} onClick={onClick} className={`rounded-2xl border border-white/10 bg-[#0b1628] p-4 text-left shadow-xl shadow-black/10 ${onClick ? "transition hover:-translate-y-0.5 hover:border-blue-400/40" : ""}`}>
       <div className="flex items-center justify-between gap-3">
         <div className={`flex h-11 w-11 items-center justify-center rounded-xl border ${accents[accent] || accents.blue}`}>
           <Icon className="h-5 w-5" />
@@ -3695,7 +3698,7 @@ function DispatchKpiCard({ icon: Icon, label, value, accent = "blue" }) {
       </div>
       <p className="mt-4 text-xs font-black uppercase tracking-wide text-slate-400">{label}</p>
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
-    </div>
+    </Component>
   );
 }
 

@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 
-const roles = ["Administrator", "Dispatcher"];
+const roles = ["Administrator", "Dispatcher", "Technician Manager"];
 const statuses = ["Active", "Inactive"];
 const emptyForm = {
   name: "",
@@ -21,6 +21,8 @@ const emptyForm = {
   status: "Active",
   forcePasswordChange: true,
   notes: "",
+  canViewTechPayments: false,
+  canMarkTechPaymentsPaid: false,
 };
 
 export default function UserManagement({ currentUser }) {
@@ -231,6 +233,10 @@ export default function UserManagement({ currentUser }) {
                 />
                 Force password change on first login
               </label>
+              {form.role === "Technician Manager" && <>
+                <label className="flex gap-3 rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-900"><input type="checkbox" checked={form.canViewTechPayments} onChange={(event) => setForm((current) => ({ ...current, canViewTechPayments: event.target.checked, canMarkTechPaymentsPaid: event.target.checked ? current.canMarkTechPaymentsPaid : false }))} /> View pending technician payments</label>
+                <label className="flex gap-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900"><input type="checkbox" checked={form.canMarkTechPaymentsPaid} onChange={(event) => setForm((current) => ({ ...current, canMarkTechPaymentsPaid: event.target.checked, canViewTechPayments: event.target.checked || current.canViewTechPayments }))} /> Mark technician payments paid</label>
+              </>}
               <button
                 disabled={busy === "create"}
                 className="rounded-xl bg-blue-600 px-4 py-3 font-black text-white disabled:bg-slate-400"
@@ -249,7 +255,7 @@ export default function UserManagement({ currentUser }) {
               <table className="min-w-[1250px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    {["Name", "Username", "Role", "Status", "Force Change", "Auth", "Last Login", "Notes", "Actions"].map((header) => (
+                    {["Name", "Username", "Role", "Status", "View Tech Payments", "Mark Paid", "Force Change", "Auth", "Last Login", "Notes", "Actions"].map((header) => (
                       <th key={header} className="px-3 py-3">{header}</th>
                     ))}
                   </tr>
@@ -273,6 +279,8 @@ export default function UserManagement({ currentUser }) {
                           {user.status}
                         </span>
                       </td>
+                      <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canViewTechPayments} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canViewTechPayments: checked, ...(checked ? {} : { canMarkTechPaymentsPaid: false }) })} /></td>
+                      <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canMarkTechPaymentsPaid} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canMarkTechPaymentsPaid: checked, ...(checked ? { canViewTechPayments: true } : {}) })} /></td>
                       <td className="px-3 py-3">
                         <span className={`rounded-full px-2 py-1 text-xs font-black ${user.forcePasswordChange ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
                           {user.forcePasswordChange ? "REQUIRED" : "NOT REQUIRED"}
@@ -563,18 +571,21 @@ function Metric({ icon: Icon, label, value }) {
 }
 
 function normalizeUser(row) {
+  const normalizedRole = String(row.role || "").toLowerCase();
   return {
     id: row.id,
     authUserId: row.auth_user_id || "",
     name: row.name || "",
     username: row.username || "",
-    role: String(row.role).toLowerCase() === "admin" ? "Administrator" : "Dispatcher",
+    role: normalizedRole === "admin" ? "Administrator" : normalizedRole === "technician_manager" ? "Technician Manager" : "Dispatcher",
     status: row.status || "Inactive",
     forcePasswordChange: Boolean(row.force_password_change),
     lastLoginAt: row.last_login_at,
     notes: row.notes || "",
     authExists: Boolean(row.auth_exists),
     isDesynced: Boolean(row.is_desynced),
+    canViewTechPayments: Boolean(row.can_view_tech_payments),
+    canMarkTechPaymentsPaid: Boolean(row.can_mark_tech_payments_paid),
   };
 }
 
@@ -585,6 +596,8 @@ function normalizePatch(patch) {
   if (patch.notes !== undefined) normalized.notes = String(patch.notes || "").trim();
   if (patch.role !== undefined) normalized.role = roleToDb(patch.role);
   if (patch.status !== undefined) normalized.status = patch.status;
+  if (patch.canViewTechPayments !== undefined) normalized.canViewTechPayments = Boolean(patch.canViewTechPayments);
+  if (patch.canMarkTechPaymentsPaid !== undefined) normalized.canMarkTechPaymentsPaid = Boolean(patch.canMarkTechPaymentsPaid);
   return normalized;
 }
 
@@ -601,12 +614,16 @@ function isCurrentUser(user, currentUser) {
 function profilePatchToUi(patch) {
   return {
     ...patch,
-    ...(patch.role ? { role: patch.role === "admin" ? "Administrator" : "Dispatcher" } : {}),
+    ...(patch.role ? { role: patch.role === "admin" ? "Administrator" : patch.role === "technician_manager" ? "Technician Manager" : "Dispatcher" } : {}),
   };
 }
 
 function roleToDb(role) {
-  return role === "Administrator" ? "admin" : "dispatcher";
+  return role === "Administrator" ? "admin" : role === "Technician Manager" ? "technician_manager" : "dispatcher";
+}
+
+function PermissionToggle({ checked, disabled, onChange }) {
+  return <label className={`inline-flex items-center gap-2 text-xs font-black ${disabled ? "text-slate-400" : "text-slate-700"}`}><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />{checked ? "Allowed" : "No"}</label>;
 }
 
 function validateCreatePayload(payload) {

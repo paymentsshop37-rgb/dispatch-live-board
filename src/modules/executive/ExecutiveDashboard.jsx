@@ -57,7 +57,7 @@ const columnAliases = {
 const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"];
 const defaultFilterMode = "This Week";
 
-export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
+export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpenTechPayments }) {
   const [jobs, setJobs] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -157,6 +157,15 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
     })),
     [filteredJobs]
   );
+  const pendingTechPayments = useMemo(() => {
+    const rows = jobs.filter((job) => normalized(job.techPaymentStatus) === "pending");
+    return {
+      count: rows.length,
+      amount: rows.reduce((sum, job) => sum + job.techLabor, 0),
+      missing: rows.filter((job) => job.techLaborMissing).length,
+      overdue: rows.filter((job) => paymentDaysPending(job) >= 8).length,
+    };
+  }, [jobs]);
   const missingCityMetric = useMemo(
     () => buildCitiesWithoutJobs({ coverageCities, jobs, technicians, range: dateRange, includeCancelled: false, includeDryRuns: false }),
     [coverageCities, dateRange, jobs, technicians]
@@ -222,7 +231,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
           </div>
         )}
 
-        <section className="executive-kpi-grid grid gap-4 lg:grid-cols-3 2xl:grid-cols-8">
+        <section className="executive-kpi-grid grid gap-4 lg:grid-cols-3 2xl:grid-cols-9">
           <KpiCard title="Revenue" value={money(analytics.revenue)} detail="Today's trend" icon={CircleDollarSign} tone="blue" trend={analytics.todayRevenue} />
           <KpiCard title="Expenses" value={money(analytics.expenses)} detail="Parts + labor" icon={TrendingDown} tone="orange" trend={analytics.todayExpenses} />
           <KpiCard title="Profit" value={money(analytics.profit)} detail={`${analytics.profitMargin.toFixed(1)}% margin`} icon={TrendingUp} tone="green" trend={analytics.todayProfit} />
@@ -231,6 +240,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians }) {
           <KpiCard title="Average ETA" value={`${analytics.averageEta} min`} detail="Operational estimate" icon={Clock} tone="cyan" trend={analytics.jobsWaitingEta} suffix="waiting ETA" />
           <KpiCard title="Cities Without Jobs" value={missingCityMetric.summary.withoutJobs} detail="Click to review coverage" icon={MapPin} tone="orange" onClick={() => setCitiesWithoutJobsOpen(true)} />
           <KpiCard title="🔴 Internal Control" value={totalRedJobs} detail="Total Red Jobs" icon={Filter} tone="red" onClick={() => internalControlQueueRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} />
+          <KpiCard title="Tech Payments Due" value={paymentMoney(pendingTechPayments.amount)} detail={`${pendingTechPayments.count} PENDING`} icon={CircleDollarSign} tone={pendingTechPayments.overdue || pendingTechPayments.missing ? "red" : "green"} trend={pendingTechPayments.missing} suffix="MISSING AMOUNTS" onClick={onOpenTechPayments} />
         </section>
 
         <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} />
@@ -1025,6 +1035,7 @@ function normalizeJob(row) {
   const totalBill = numberValue(readAlias(row, columnAliases.totalBill));
   const parts = numberValue(readAlias(row, columnAliases.parts));
   const techLabor = numberValue(readAlias(row, columnAliases.techLabor));
+  const rawTechLabor = readAlias(row, columnAliases.techLabor);
   const updates = stringValue(readAlias(row, columnAliases.updates));
 
   return {
@@ -1046,6 +1057,7 @@ function normalizeJob(row) {
     totalBill,
     parts,
     techLabor,
+    techLaborMissing: rawTechLabor === null || rawTechLabor === undefined || String(rawTechLabor).trim() === "" || techLabor === 0,
     profit: totalBill - parts - techLabor,
     updates,
     etaMinutes: extractEtaMinutes(updates),
@@ -1300,6 +1312,20 @@ function extractEtaMinutes(value) {
 
 function money(value) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(numberValue(value));
+}
+
+function paymentMoney(value) {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(numberValue(value));
+}
+
+function paymentDaysPending(job) {
+  const source = job.date || job.raw?.created_at;
+  const pendingDate = source ? new Date(String(source).length === 10 ? `${source}T00:00:00` : source) : new Date();
+  if (Number.isNaN(pendingDate.getTime())) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  pendingDate.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((today - pendingDate) / 86400000));
 }
 
 function formatTrend(value, suffix) {

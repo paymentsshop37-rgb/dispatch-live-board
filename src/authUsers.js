@@ -21,6 +21,8 @@ export function profileToSession(profile, authSession) {
     status: profile?.status || "Inactive",
     forcePasswordChange: Boolean(profile?.force_password_change),
     loginCount: Number(profile?.login_count || 0),
+    canViewTechPayments: Boolean(profile?.can_view_tech_payments),
+    canMarkTechPaymentsPaid: Boolean(profile?.can_mark_tech_payments_paid),
     isAuthenticated: Boolean(authSession?.user && profile?.status === "Active"),
   };
 }

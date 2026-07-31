@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     }
     if (req.method === "POST") {
       const name = clean(body.name), username = clean(body.username), email = internalEmailForUsername(username), password = String(body.temporaryPassword || ""), role = clean(body.role), status = clean(body.status);
-      if (!name || !username || !password || !["admin", "dispatcher"].includes(role) || !["Active", "Inactive"].includes(status)) return json({ error: "Invalid user data." }, 400);
+      if (!name || !username || !password || !["admin", "dispatcher", "technician_manager"].includes(role) || !["Active", "Inactive"].includes(status)) return json({ error: "Invalid user data." }, 400);
       if (password.length < 8) return json({ error: "The password must contain at least 8 characters." }, 400);
       const [{ data: duplicateEmail }, { data: duplicateUsername }] = await Promise.all([
         admin.from("app_users").select("id").eq("email", email).maybeSingle(),
@@ -88,7 +88,9 @@ Deno.serve(async (req) => {
       if (duplicateUsername) return json({ error: "This username is already in use." }, 409);
       const { data: created, error: createError } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { username, name, role } });
       if (createError || !created.user) return json({ error: createError?.message?.toLowerCase().includes("registered") ? "This username is already in use." : "Unable to create user." }, createError?.message?.toLowerCase().includes("registered") ? 409 : 400);
-      const { error: profileError } = await admin.from("app_users").insert({ id: created.user.id, auth_user_id: created.user.id, username, name, email, role, status, notes: clean(body.notes), force_password_change: body.forcePasswordChange !== false });
+      const canViewTechPayments = role === "technician_manager" && Boolean(body.canViewTechPayments || body.canMarkTechPaymentsPaid);
+      const canMarkTechPaymentsPaid = role === "technician_manager" && Boolean(body.canMarkTechPaymentsPaid);
+      const { error: profileError } = await admin.from("app_users").insert({ id: created.user.id, auth_user_id: created.user.id, username, name, email, role, status, notes: clean(body.notes), force_password_change: body.forcePasswordChange !== false, can_view_tech_payments: canViewTechPayments, can_mark_tech_payments_paid: canMarkTechPaymentsPaid });
       if (profileError) {
         await admin.auth.admin.deleteUser(created.user.id);
         const details = `${profileError.message || ""} ${profileError.details || ""}`.toLowerCase();
@@ -137,13 +139,24 @@ Deno.serve(async (req) => {
     if (req.method === "PATCH") {
       const allowed: Record<string, unknown> = {};
       for (const key of ["name", "username", "notes"]) if (body[key] !== undefined) allowed[key] = clean(body[key]);
-      if (body.role !== undefined) { if (!["admin", "dispatcher"].includes(body.role)) return json({ error: "Invalid role." }, 400); allowed.role = body.role; }
+      if (body.role !== undefined) { if (!["admin", "dispatcher", "technician_manager"].includes(body.role)) return json({ error: "Invalid role." }, 400); allowed.role = body.role; }
       if (body.status !== undefined) { if (!["Active", "Inactive"].includes(body.status)) return json({ error: "Invalid status." }, 400); allowed.status = body.status; }
       if (body.forcePasswordChange !== undefined) allowed.force_password_change = Boolean(body.forcePasswordChange);
+      if (body.canViewTechPayments !== undefined) allowed.can_view_tech_payments = Boolean(body.canViewTechPayments);
+      if (body.canMarkTechPaymentsPaid !== undefined) allowed.can_mark_tech_payments_paid = Boolean(body.canMarkTechPaymentsPaid);
       const before = await findProfile(admin, targetId);
       if (!before) return json({ error: "User not found." }, 404);
       if (allowed.name !== undefined && !allowed.name) return json({ error: "Invalid user data." }, 400);
       if (allowed.username !== undefined && !allowed.username) return json({ error: "Invalid user data." }, 400);
+      const nextRole = String(allowed.role || before.role || "");
+      if (nextRole !== "technician_manager") {
+        allowed.can_view_tech_payments = false;
+        allowed.can_mark_tech_payments_paid = false;
+      } else if (allowed.can_mark_tech_payments_paid === true) {
+        allowed.can_view_tech_payments = true;
+      } else if (allowed.can_view_tech_payments === false) {
+        allowed.can_mark_tech_payments_paid = false;
+      }
       const { error } = await admin.from("app_users").update(allowed).eq("id", before.id);
       if (error) {
         const details = `${error.message || ""} ${error.details || ""}`.toLowerCase();

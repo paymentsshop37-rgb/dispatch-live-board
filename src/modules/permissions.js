@@ -17,6 +17,8 @@ export function getPermissions(role) {
     canViewExecutiveDashboard: false,
     canViewCustomerPortal: false,
     canUseAiLaborGuide: false,
+    canViewTechPayments: false,
+    canMarkTechPaymentsPaid: false,
   };
 
   if (normalizedRole === "admin") {

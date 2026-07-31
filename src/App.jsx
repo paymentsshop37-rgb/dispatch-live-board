@@ -29,7 +29,7 @@ import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
 import { clearAuthSession, clearCustomAuthStorage, finishSessionAudit, loadCurrentProfile, profileToSession, startSessionAudit } from "./authUsers";
 import { ActivityLogPage } from "./modules/activity";
 import { AdministrationDashboard } from "./modules/administration";
-import { BillingDashboard } from "./modules/billing";
+import { BillingDashboard, TechnicianPaymentsReport } from "./modules/billing";
 import { CustomerCRM } from "./modules/customers";
 import { ExecutiveDashboard } from "./modules/executive";
 import { InternalControlQueue } from "./modules/executive/InternalControlQueue";
@@ -56,6 +56,7 @@ const sidebarItems = [
   { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
   { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher", "supervisor"] },
   { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
+  { id: "tech-payments", label: "Tech Payments", icon: CreditCard, requires: "canViewTechPayments" },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "users", label: "Users", icon: Users, adminOnly: true },
   { id: "activity", label: "Activity Log", icon: Activity, roles: ["admin", "dispatcher", "supervisor"] },
@@ -84,6 +85,7 @@ const sidebarSections = [
     items: [
       { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
       { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
+      { id: "tech-payments", label: "Tech Payments", icon: CreditCard, requires: "canViewTechPayments" },
       { id: "flat-rate", label: "Flat Rate Guide", icon: BookOpen, roles: ["admin", "dispatcher", "supervisor"] },
       { id: "ai-labor", label: "AI Labor Guide", icon: Bot, roles: ["admin", "dispatcher", "supervisor", "technician_manager"] },
       { id: "parts-intelligence", label: "Parts Intelligence", icon: PackageSearch, roles: ["admin", "dispatcher", "supervisor"] },
@@ -448,7 +450,11 @@ export default function App() {
   }, [handleLogout]);
 
   const role = normalizeRole(session.role);
-  const permissions = useMemo(() => getPermissions(role), [role]);
+  const permissions = useMemo(() => ({
+    ...getPermissions(role),
+    canViewTechPayments: role === "admin" || Boolean(session.canViewTechPayments),
+    canMarkTechPaymentsPaid: role === "admin" || Boolean(session.canMarkTechPaymentsPaid),
+  }), [role, session.canMarkTechPaymentsPaid, session.canViewTechPayments]);
   const isAdmin = role === "admin";
   const visibleSidebarSections = useMemo(
     () =>
@@ -689,11 +695,12 @@ export default function App() {
         />
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
-        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} /> : <DispatcherDashboard role={role} onOpenJob={openJobDetailsFromView} />)}
-        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} jobSearchRequest={jobSearchRequest} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} />}
+        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} onOpenTechPayments={() => setActiveView("tech-payments")} /> : <DispatcherDashboard role={role} onOpenJob={openJobDetailsFromView} />)}
+        {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} jobSearchRequest={jobSearchRequest} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} onOpenTechPayments={() => setActiveView("tech-payments")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard onOpenJob={openJobDetailsFromView} />}
+        {canAccessActiveView && activeView === "tech-payments" && <TechnicianPaymentsReport session={session} role={role} canViewFinancial={role === "admin" || (role === "technician_manager" && permissions.canViewTechPayments)} canMarkPaid={permissions.canMarkTechPaymentsPaid} canExport={role === "admin"} onBack={() => setActiveView(role === "admin" ? "dashboard" : "dispatch")} onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
         {canAccessActiveView && activeView === "activity" && <ActivityLogPage role={role} />}
@@ -752,6 +759,7 @@ function canAccessView(view, role, permissions) {
   if (view === "flat-rate") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (view === "ai-labor") return ["admin", "dispatcher", "supervisor", "technician_manager"].includes(role);
   if (view === "parts-intelligence") return ["admin", "dispatcher", "supervisor"].includes(role);
+  if (view === "tech-payments") return ["dispatcher", "supervisor"].includes(role) || Boolean(permissions.canViewTechPayments);
   if (["billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";
   }
@@ -768,7 +776,7 @@ function roleLabel(role) {
 
 function emptySession() {
   return {
-    id: "", authUserId: "", username: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, isAuthenticated: false,
+    id: "", authUserId: "", username: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, canViewTechPayments: false, canMarkTechPaymentsPaid: false, isAuthenticated: false,
   };
 }
 
@@ -779,6 +787,7 @@ function viewTitle(view) {
     technicians: "Technician Center",
     customers: "Customers",
     billing: "Billing",
+    "tech-payments": "Technician Payments Pending",
     administration: "Administration",
     users: "Users",
     activity: "Activity Log",
