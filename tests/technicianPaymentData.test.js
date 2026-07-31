@@ -8,6 +8,7 @@ import {
   summarizeTechnicianPayments,
 } from "../src/modules/billing/technicianPaymentData.js";
 import { getPermissions } from "../src/modules/permissions.js";
+import { safeTechPaymentError, techPaymentStatusOptions } from "../src/utils/techPaymentStatus.js";
 
 const now = new Date("2026-07-31T12:00:00-06:00");
 
@@ -74,4 +75,15 @@ test("dispatcher and Technician Manager do not receive payment authority by role
   assert.equal(getPermissions("admin").canMarkTechPaymentsPaid, true);
   assert.equal(getPermissions("dispatcher").canMarkTechPaymentsPaid, false);
   assert.equal(getPermissions("technician_manager").canMarkTechPaymentsPaid, false);
+});
+
+test("dropdown values exactly match the production status constraint", () => {
+  assert.deepEqual(techPaymentStatusOptions, ["Pending", "Paid", "Cancelled"]);
+});
+
+test("technical payment errors map to safe actionable messages", () => {
+  assert.equal(safeTechPaymentError({ code: "42501" }), "Permission denied for Tech Payment updates.");
+  assert.equal(safeTechPaymentError({ code: "23514" }), "Invalid payment status.");
+  assert.equal(safeTechPaymentError({ code: "42703" }), "Missing database payment configuration.");
+  assert.equal(safeTechPaymentError({ code: "28000" }), "Session expired. Please sign in again.");
 });

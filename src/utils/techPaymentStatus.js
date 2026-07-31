@@ -1,4 +1,4 @@
-export const techPaymentStatusOptions = ["Pending", "Reviewing", "Approved", "Paid", "Cancelled"];
+export const techPaymentStatusOptions = ["Pending", "Paid", "Cancelled"];
 
 export const techPaymentStatusVisuals = {
   Pending: { icon: "🟠", backgroundColor: "#FFF3CD", color: "#B45309" },
@@ -25,4 +25,14 @@ export function techPaymentControlStyle(status) {
     color: visual.color,
     borderColor: visual.color,
   };
+}
+
+export function safeTechPaymentError(error) {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+  if (["28000", "PGRST301"].includes(code) || message.includes("jwt") || message.includes("session")) return "Session expired. Please sign in again.";
+  if (code === "42501" || message.includes("permission") || message.includes("not authorized")) return "Permission denied for Tech Payment updates.";
+  if (code === "23514" || message.includes("invalid technician payment status")) return "Invalid payment status.";
+  if (["42703", "PGRST202"].includes(code) || message.includes("column") || message.includes("function")) return "Missing database payment configuration.";
+  return "Tech Payment status could not be saved. Please try again.";
 }

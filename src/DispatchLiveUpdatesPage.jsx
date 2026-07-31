@@ -44,6 +44,7 @@ import InternalControlColorPicker from "./components/InternalControlColorPicker"
 import { uppercaseUpdates } from "./utils/updatesText";
 import { internalControlColor, internalControlColors } from "./utils/internalControlColors";
 import {
+  safeTechPaymentError,
   techPaymentControlStyle,
   techPaymentLabel,
   techPaymentStatusOptions,
@@ -156,8 +157,8 @@ const jobStatusOptions = [...jobPipeline, "Need Review", "Declined", "Canceled",
 const techPaymentFieldAliases = {
   status: ["tech_payment_status"],
   method: ["tech_payment_method", "technician_payment_method"],
-  paidDate: ["tech_paid_date", "technician_paid_date", "tech_payment_paid_at", "paid_date"],
-  paidBy: ["tech_paid_by", "technician_paid_by", "tech_payment_paid_by", "paid_by"],
+  paidDate: ["tech_payment_paid_at"],
+  paidBy: ["tech_payment_paid_by"],
   reference: ["tech_payment_reference", "technician_payment_reference", "tech_paid_reference"],
   notes: ["tech_payment_notes", "technician_payment_notes"],
 };
@@ -579,6 +580,9 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
+  const canEditTechPayment = isAdmin
+    || normalizedUserRole === "dispatcher"
+    || (normalizedUserRole === "technician_manager" && Boolean(currentUser?.canMarkTechPaymentsPaid));
   const canEditInternalControl = ["admin", "supervisor", "dispatcher"].includes(normalizedUserRole);
   const draftKey = useMemo(() => addJobDraftKey(currentUser), [currentUser]);
   formStateRef.current = form;
@@ -1554,18 +1558,66 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
   async function updateTechPaymentStatus(job, value) {
     if (!techPaymentColumns.status) {
-      console.error("Tech payment update failed: jobs.tech_payment_status is unavailable.");
-      setToastMessage("Unable to update Tech Payment status.");
+      console.error("Tech payment update failed", { table: "jobs", field: "tech_payment_status", code: "42703", message: "Production column is unavailable." });
+      setToastMessage("Missing database column: tech_payment_status.");
       window.setTimeout(() => setToastMessage(""), 3500);
-      return;
+      return false;
+    }
+    if (!techPaymentStatusOptions.includes(value)) {
+      setToastMessage("Invalid payment status.");
+      window.setTimeout(() => setToastMessage(""), 3500);
+      return false;
+    }
+    if (value === job.techPaymentStatus) return true;
+    if (value === "Paid" && !window.confirm(`Confirm technician payment of ${money(job.techLabor)} for this job?`)) return false;
+
+    const previousStatus = job.techPaymentStatus || "Pending";
+    const payload = { p_job_id: job.id, p_status: value };
+    const { data: authData } = await supabase.auth.getUser();
+    if (!authData?.user) {
+      setToastMessage("Session expired. Please sign in again.");
+      window.setTimeout(() => setToastMessage(""), 4500);
+      return false;
     }
 
-    setJobs((currentJobs) =>
-      currentJobs.map((currentJob) =>
-        currentJob.id === job.id ? { ...currentJob, techPaymentStatus: value } : currentJob
-      )
-    );
-    await saveTechPaymentDetails(job.id, { techPaymentStatus: value });
+    setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === job.id
+      ? { ...currentJob, techPaymentStatus: value }
+      : currentJob));
+
+    const response = await supabase.rpc("set_technician_payment_status", payload).single();
+    if (response.error) {
+      setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === job.id
+        ? { ...currentJob, techPaymentStatus: previousStatus }
+        : currentJob));
+      console.error("Tech payment status update failed", {
+        table: "public.jobs",
+        field: "tech_payment_status",
+        payload: { tech_payment_status: value },
+        authenticatedUser: authData.user.id,
+        applicationUser: currentUser?.id || null,
+        role: normalizedUserRole,
+        supabaseStatus: response.status,
+        supabaseStatusText: response.statusText,
+        postgresCode: response.error.code,
+        postgresMessage: response.error.message,
+        details: response.error.details,
+        hint: response.error.hint,
+      });
+      setToastMessage(safeTechPaymentError(response.error));
+      window.setTimeout(() => setToastMessage(""), 4500);
+      return false;
+    }
+
+    const saved = response.data;
+    setJobs((currentJobs) => currentJobs.map((currentJob) => currentJob.id === job.id ? {
+      ...currentJob,
+      techPaymentStatus: saved.new_status,
+      techPaidDate: saved.paid_at || "",
+      techPaidBy: saved.paid_by || "",
+    } : currentJob));
+    setToastMessage(`Tech Payment status saved: ${saved.new_status}.`);
+    window.setTimeout(() => setToastMessage(""), 2500);
+    return true;
   }
 
   function updateFormLocation(location) {
@@ -1604,32 +1656,20 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
   async function saveTechPaymentDetails(jobId, details) {
     if (!techPaymentColumns.status) {
       console.error("Tech payment update failed: jobs.tech_payment_status is unavailable.");
-      setToastMessage("Unable to update Tech Payment status.");
+      setToastMessage("Missing database column: tech_payment_status.");
       window.setTimeout(() => setToastMessage(""), 3500);
       return false;
     }
 
     const previousJob = jobs.find((job) => job.id === jobId);
-    const markedPaid = isPaidStatus(details.techPaymentStatus) && !isPaidStatus(previousJob?.techPaymentStatus);
-    const paidTimestamp = markedPaid ? new Date().toISOString() : details.techPaidDate;
-    const paidBy = markedPaid ? currentUserName || "Admin" : details.techPaidBy;
-    const nextDetails = {
-      ...details,
-      ...(markedPaid ? { techPaidDate: paidTimestamp, techPaidBy: paidBy } : {}),
-    };
-
-    const update = {};
-    if (techPaymentColumns.status && details.techPaymentStatus !== undefined) {
-      update.tech_payment_status = details.techPaymentStatus || "Pending";
+    if (!previousJob) return false;
+    if (details.techPaymentStatus !== undefined && details.techPaymentStatus !== previousJob.techPaymentStatus) {
+      const statusSaved = await updateTechPaymentStatus(previousJob, details.techPaymentStatus);
+      if (!statusSaved) return false;
     }
+    const update = {};
     if (techPaymentColumns.method && details.techPaymentMethod !== undefined) {
       update[techPaymentColumns.method] = details.techPaymentMethod || "";
-    }
-    if (techPaymentColumns.paidDate && (details.techPaidDate !== undefined || markedPaid)) {
-      update[techPaymentColumns.paidDate] = paidTimestamp || null;
-    }
-    if (techPaymentColumns.paidBy && (details.techPaidBy !== undefined || markedPaid)) {
-      update[techPaymentColumns.paidBy] = paidBy || "";
     }
     if (techPaymentColumns.reference && details.techPaymentReference !== undefined) {
       update[techPaymentColumns.reference] = details.techPaymentReference || "";
@@ -1638,58 +1678,20 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
       update[techPaymentColumns.notes] = details.techPaymentNotes || "";
     }
 
-    if (Object.keys(update).length === 0) {
-      alert("Tech payment columns are not available yet.");
-      return false;
-    }
+    if (Object.keys(update).length === 0) return true;
 
     const { error } = await supabase.from("jobs").update(update).eq("id", jobId);
 
     if (error) {
-      console.error("Tech payment update failed:", error);
-      setToastMessage("Unable to update Tech Payment status.");
+      console.error("Tech payment details update failed", { table: "public.jobs", payload: update, role: normalizedUserRole, code: error.code, message: error.message, details: error.details, hint: error.hint });
+      setToastMessage(safeTechPaymentError(error));
       window.setTimeout(() => setToastMessage(""), 3500);
-      await loadJobs();
       return false;
     }
 
     setJobs((currentJobs) =>
-      currentJobs.map((job) => (job.id === jobId ? { ...job, ...nextDetails } : job))
+      currentJobs.map((job) => (job.id === jobId ? { ...job, ...details } : job))
     );
-    setActivityLogs((logs) => [
-      {
-        id: Date.now(),
-        message: `${currentUserName || "Dispatcher"} updated tech payment for job ${jobId}`,
-        time: formatDateTime12Hour(new Date()),
-      },
-      ...logs,
-    ]);
-
-    await supabase.from("change_logs").insert([
-      {
-        job_id: jobId,
-        action: "tech_payment",
-        field_name: "techPaymentStatus",
-        old_value: previousJob?.techPaymentStatus || "",
-        new_value: details.techPaymentStatus || previousJob?.techPaymentStatus || "",
-        user_name: currentUserName || "Dispatcher",
-        month_key: new Date().toISOString().slice(0, 7),
-      },
-    ]);
-
-    const statusChanged =
-      details.techPaymentStatus !== undefined &&
-      String(details.techPaymentStatus || "") !== String(previousJob?.techPaymentStatus || "");
-
-    if (statusChanged && techPaymentStatusOptions.includes(details.techPaymentStatus)) {
-      await logActivity({
-        entityType: "job",
-        entityId: jobId,
-        action: "Tech Payment Status Changed",
-        description: `Tech Payment Status changed to ${details.techPaymentStatus}`,
-        createdBy: currentUserName || "Admin",
-      });
-    }
     return true;
   }
 
@@ -2676,7 +2678,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                         <MobileJobField label="Technician" value={job.tech || "Unassigned"} />
                       </div>
                       <MobileJobField label="Last Update" value={firstLine(job.updates) || "No updates"} lines={2} />
-                      {canEditJobFinancial ? (
+                      {canEditTechPayment ? (
                         <TechPaymentSelect
                           value={job.techPaymentStatus || "Pending"}
                           onChange={(value) => updateTechPaymentStatus(job, value)}
@@ -2959,7 +2961,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                           <TechPaymentSelect
                             value={job.techPaymentStatus || "Pending"}
                             onChange={(value) => updateTechPaymentStatus(job, value)}
-                            disabled={!canEditJobFinancial}
+                            disabled={!canEditTechPayment}
                             compact
                           />
                         </div>
@@ -3166,7 +3168,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               />
             )}
 
-            {canEditJobFinancial && techPaymentJob && (
+            {canEditTechPayment && techPaymentJob && (
               <TechPaymentModal
                 job={techPaymentJob}
                 columnsAvailable={Boolean(techPaymentColumns.status)}
@@ -3202,7 +3204,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             {updatesJob && (
               <UpdatesModal
                 job={updatesJob}
-                canEditTechPayment={canEditJobFinancial}
+                canEditTechPayment={canEditTechPayment}
                 canEditGeography={isAdmin}
                 serviceAreas={serviceAreas}
                 technicianNames={dispatchTechnicians.map((technician) => technician.full_name).filter(Boolean)}
@@ -3230,7 +3232,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                       service_area_assigned_at: new Date().toISOString(),
                     }).eq("id", updatesJob.id);
                   }
-                  if (canEditJobFinancial && techPaymentStatus !== updatesJob.techPaymentStatus) {
+                  if (canEditTechPayment && techPaymentStatus !== updatesJob.techPaymentStatus) {
                     await updateTechPaymentStatus(updatesJob, techPaymentStatus);
                   }
                   await updateJob(updatesJob.id, "updates", updates);
@@ -3533,15 +3535,13 @@ function TechPaymentModal({ job, columnsAvailable, columns = {}, onClose, onSave
   const [details, setDetails] = useState({
     techPaymentStatus: job.techPaymentStatus || "Pending",
     techPaymentMethod: job.techPaymentMethod || job.paymentMethod || "",
-    techPaidDate: job.techPaidDate || "",
-    techPaidBy: job.techPaidBy || "",
     techPaymentReference: job.techPaymentReference || "",
     techPaymentNotes: job.techPaymentNotes || "",
   });
   const missingColumns = [
     ["tech_payment_status", columns.status],
-    ["tech_paid_date", columns.paidDate],
-    ["tech_paid_by", columns.paidBy],
+    ["tech_payment_paid_at", columns.paidDate],
+    ["tech_payment_paid_by", columns.paidBy],
     ["tech_payment_method", columns.method],
     ["tech_payment_reference", columns.reference],
     ["tech_payment_notes", columns.notes],
@@ -3603,25 +3603,8 @@ function TechPaymentModal({ job, columnsAvailable, columns = {}, onClose, onSave
             </select>
           </label>
 
-          <label className="grid gap-2 text-sm font-bold text-slate-600">
-            Paid Date
-            <input
-              type="date"
-              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
-              value={dateInputValue(details.techPaidDate)}
-              onChange={(event) => setDetails((current) => ({ ...current, techPaidDate: event.target.value }))}
-            />
-          </label>
-
-          <label className="grid gap-2 text-sm font-bold text-slate-600">
-            Paid By
-            <input
-              className="rounded-xl border border-slate-200 px-3 py-2 font-semibold text-slate-900 outline-none focus:border-blue-500"
-              value={details.techPaidBy || ""}
-              onChange={(event) => setDetails((current) => ({ ...current, techPaidBy: event.target.value }))}
-              placeholder="Admin user"
-            />
-          </label>
+          <PaymentDetail label="Paid Date" value={job.techPaidDate ? formatDateTime12Hour(job.techPaidDate) : "Set automatically when marked Paid"} />
+          <PaymentDetail label="Paid By" value={job.techPaidBy || "Set automatically from the signed-in user"} />
 
           <label className="grid gap-2 text-sm font-bold text-slate-600">
             Reference #
