@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.admin-users]
 verify_jwt = true
+
+[functions.ai-labor-guide]
+verify_jwt = true

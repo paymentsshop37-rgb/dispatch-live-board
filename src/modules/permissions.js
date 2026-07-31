@@ -16,6 +16,7 @@ export function getPermissions(role) {
     canManageUsers: false,
     canViewExecutiveDashboard: false,
     canViewCustomerPortal: false,
+    canUseAiLaborGuide: false,
   };
 
   if (normalizedRole === "admin") {
@@ -28,6 +29,7 @@ export function getPermissions(role) {
       canViewTechnicianCenter: true,
       canAssignTechnicians: true,
       canViewCustomers: true,
+      canUseAiLaborGuide: true,
     };
   }
 
@@ -37,6 +39,7 @@ export function getPermissions(role) {
       canViewTechnicianCenter: true,
       canManageTechnicians: true,
       canViewPrivateTechnicianData: true,
+      canUseAiLaborGuide: true,
     };
   }
 

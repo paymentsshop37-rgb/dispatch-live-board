@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Save, Trash2, X } from "lucide-react";
+import { ArrowLeft, Bot, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { normalizeUppercaseAddJobFields, uppercaseAddJobField } from "./addJobUppercase";
 import AmPmTimeInput from "../../components/AmPmTimeInput";
 import { uppercaseUpdates } from "../../utils/updatesText";
+import { AiLaborGuide } from "../ai-labor";
 
 const STATES = {
   AL: "AL", ALABAMA: "AL", AK: "AK", ALASKA: "AK", AZ: "AZ", ARIZONA: "AZ",
@@ -107,6 +108,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [confirmAction, setConfirmAction] = useState("");
+  const [aiLaborOpen, setAiLaborOpen] = useState(false);
   const pageRef = useRef(null);
   const formRef = useRef(null);
   const draftTimerRef = useRef(null);
@@ -291,6 +293,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
           <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
             <button type="button" onClick={() => setConfirmAction("clear")} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-red-400/30 px-5 font-bold text-red-200"><Trash2 className="h-4 w-4" />Clear</button>
             <div className="flex flex-col-reverse gap-3 sm:flex-row">
+              <button type="button" onClick={() => setAiLaborOpen(true)} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-blue-400/40 bg-blue-500/10 px-5 font-black text-blue-200"><Bot className="h-4 w-4" />ASK AI LABOR GUIDE</button>
               <button type="button" onClick={requestClose} className="min-h-12 rounded-xl border border-slate-600 px-6 font-bold">Close</button>
               {step < 3 && <button type="button" onClick={() => setStep((current) => Math.min(3, current + 1))} className="min-h-12 rounded-xl bg-slate-700 px-6 font-bold md:hidden">Next</button>}
               <button type="submit" disabled={saving} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-blue-600 px-7 font-black disabled:opacity-60"><Save className="h-4 w-4" />{saving ? "Saving..." : "Save Job"}</button>
@@ -300,6 +303,7 @@ export default function AddJobRoute({ currentUser, onBack, onSaved }) {
       </main>
 
       {confirmAction && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"><div className="w-full max-w-md rounded-3xl bg-white p-6 text-slate-950 shadow-2xl"><h2 className="text-xl font-black">Discard this unfinished job?</h2><p className="mt-2 text-sm font-semibold text-slate-600">Your saved Add Job draft will be deleted.</p><div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end"><button type="button" onClick={() => setConfirmAction("")} className="min-h-11 rounded-xl border border-slate-300 px-5 font-bold">Keep Editing</button><button type="button" onClick={discard} className="min-h-11 rounded-xl bg-red-600 px-5 font-bold text-white">Discard Job</button></div></div></div>}
+      {aiLaborOpen && <AiLaborGuide session={currentUser} role={String(currentUser?.role || "").toLowerCase()} initialJob={{ ...form, raw: { vehicle_type: form.truckUnit ? "Truck" : "", complaint: form.complaint } }} panel onClose={() => setAiLaborOpen(false)} />}
     </div>
   );
 }

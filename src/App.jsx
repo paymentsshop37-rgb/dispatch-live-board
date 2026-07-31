@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   Bell,
+  Bot,
   ClipboardList,
   Cloud,
   CreditCard,
@@ -37,6 +38,7 @@ import { UserManagement } from "./modules/users";
 import { formatDateTime12Hour } from "./utils/timeFormat";
 import { FlatRateGuide } from "./modules/flat-rate";
 import { PartsIntelligence } from "./modules/parts";
+import { AiLaborGuide } from "./modules/ai-labor";
 import AddJobRoute from "./modules/jobs/AddJobRoute";
 import DispatcherCoverageSummary from "./modules/coverage/DispatcherCoverageSummary";
 import { getPermissions, normalizeRole } from "./modules/permissions";
@@ -83,6 +85,7 @@ const sidebarSections = [
       { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
       { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
       { id: "flat-rate", label: "Flat Rate Guide", icon: BookOpen, roles: ["admin", "dispatcher", "supervisor"] },
+      { id: "ai-labor", label: "AI Labor Guide", icon: Bot, roles: ["admin", "dispatcher", "supervisor", "technician_manager"] },
       { id: "parts-intelligence", label: "Parts Intelligence", icon: PackageSearch, roles: ["admin", "dispatcher", "supervisor"] },
       { id: "invoices", label: "Invoices", icon: FileText, target: "billing", adminOnly: true },
     ],
@@ -695,6 +698,7 @@ export default function App() {
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
         {canAccessActiveView && activeView === "activity" && <ActivityLogPage role={role} />}
         {canAccessActiveView && activeView === "flat-rate" && <FlatRateGuide session={session} role={role} onCreateJob={navigateToAddJob} />}
+        {canAccessActiveView && activeView === "ai-labor" && <AiLaborGuide session={session} role={role} />}
         {canAccessActiveView && activeView === "parts-intelligence" && <PartsIntelligence session={session} role={role} />}
       </main>
 
@@ -708,6 +712,7 @@ export default function App() {
             <nav className="grid gap-2">
               {visibleItems.map((item) => { const Icon = item.icon; const target = item.target || item.id; return <button key={item.id} type="button" onClick={() => { setActiveView(target); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Icon className="h-5 w-5" />{item.label}</button>; })}
               <button type="button" onClick={() => { setActiveView("flat-rate"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><BookOpen className="h-5 w-5" />Flat Rate Guide</button>
+              <button type="button" onClick={() => { setActiveView("ai-labor"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Bot className="h-5 w-5" />AI Labor Guide</button>
               <button type="button" onClick={() => { setActiveView("parts-intelligence"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><PackageSearch className="h-5 w-5" />Parts Intelligence</button>
               <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3"><p className="text-xs font-black uppercase text-slate-500">Profile</p><p className="mt-1 font-bold">{session.name || session.username}</p><p className="text-xs capitalize text-slate-400">{roleLabel(role)}</p></div>
               <button type="button" onClick={() => { handleLogout(); setMobileMenuOpen(false); }} className="mt-3 flex min-h-11 items-center gap-3 rounded-xl bg-red-500/10 px-3 py-2 text-left font-bold text-red-300"><LogOut className="h-5 w-5" />Log Out</button>
@@ -745,6 +750,7 @@ function canAccessView(view, role, permissions) {
   if (view === "activity") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (view === "customers") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (view === "flat-rate") return ["admin", "dispatcher", "supervisor"].includes(role);
+  if (view === "ai-labor") return ["admin", "dispatcher", "supervisor", "technician_manager"].includes(role);
   if (view === "parts-intelligence") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (["billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";

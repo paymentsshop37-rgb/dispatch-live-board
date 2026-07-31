@@ -52,6 +52,7 @@ import {
 import CitiesWithoutJobsPanel from "./modules/coverage/CitiesWithoutJobsPanel";
 import { dateRangeForMode, loadCoverageCities, setCoverageCityActive } from "./modules/coverage/coverageCityService";
 import { loadServiceAreaConfiguration } from "./modules/coverage/serviceAreaService";
+import { AiLaborGuide } from "./modules/ai-labor";
 
 const normalizeText = (value) => {
   return String(value || "")
@@ -4452,6 +4453,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
+  const [aiLaborOpen, setAiLaborOpen] = useState(false);
   const isAdmin = role === "admin";
 
   useEffect(() => {
@@ -4534,6 +4536,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
                 <DetailAction label="Add Update" onClick={() => onUpdate(job)} />
                 <DetailAction label="Assign Technician" onClick={() => onAssign(job)} />
                 <DetailAction label="Add Labor" onClick={onFlatRate} />
+                <DetailAction label="Ask AI Labor Guide" onClick={() => setAiLaborOpen(true)} />
                 <DetailAction label="Add Parts" onClick={onParts} />
                 <DetailAction label="Upload File" onClick={() => onFiles(job)} />
                 <DetailAction label="Print" onClick={() => window.print()} />
@@ -4568,6 +4571,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
               <DetailSection title="Updates and Notes"><DetailGrid items={[["Dispatcher updates", job.updates], ["Technician updates", raw.technician_updates], ["Internal notes", raw.internal_notes], ["Customer notes", raw.customer_notes], ["Cancellation reason", raw.cancellation_reason], ["Dry-run reason", raw.dry_run_reason]]} preserveText /></DetailSection>
 
               <DetailSection title="Labor Information">{details.labor.length ? <div className="space-y-2">{details.labor.map((item) => <div key={item.id} className="rounded-xl bg-white/5 p-3"><p className="font-bold text-white">{item.operation_name || "Labor operation"}</p><DetailGrid items={[["Hours", item.hours], ["Quantity", item.quantity], ...(isAdmin ? [["Labor rate", money(item.labor_rate)], ["Labor total", money(item.labor_total)]] : []), ["Added by", item.created_by], ["Added", item.created_at]]} /></div>)}</div> : <EmptyDetail label="No labor operations recorded." />}</DetailSection>
+              <DetailSection title="Attached AI Labor Estimates"><AttachedAiEstimates jobId={job.id} /></DetailSection>
 
               <DetailSection title="Parts Information">{details.parts.length ? <div className="space-y-2">{details.parts.map((item) => <div key={item.id} className="rounded-xl bg-white/5 p-3"><p className="font-bold text-white">{item.part_name_snapshot || item.part_name || "Part"}</p><DetailGrid items={[["Part number", item.part_number_snapshot || item.part_number], ["Brand", item.brand_name], ["Quantity", item.quantity], ["Unit price", money(item.unit_selling_price)], ["Core charge", money(item.core_charge)], ["Extended total", money(item.extended_total)], ["Supplier", item.supplier_name], ["Availability", item.availability_status], ["Added by", item.created_by]]} /></div>)}</div> : <EmptyDetail label="No parts recorded." />}</DetailSection>
 
@@ -4582,6 +4586,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
           )}
         </div>
       </aside>
+      {aiLaborOpen && <AiLaborGuide role={role} initialJob={job} panel onClose={() => setAiLaborOpen(false)} />}
     </div>
   );
 }
@@ -4603,6 +4608,17 @@ function ContactLink({ label, href, external = false }) {
 }
 
 function EmptyDetail({ label }) { return <p className="text-sm font-semibold text-slate-500">{label}</p>; }
+function AttachedAiEstimates({ jobId }) {
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    let mounted = true;
+    supabase.from("ai_labor_estimates").select("id,service_name,estimated_hours,minimum_hours,maximum_hours,confidence_level,generated_at,user_name").eq("job_id", jobId).eq("attached_to_job", true).order("generated_at").then(({ data }) => { if (mounted) setRows(data || []); });
+    return () => { mounted = false; };
+  }, [jobId]);
+  const total = rows.reduce((sum, row) => sum + Number(row.estimated_hours || 0), 0);
+  if (!rows.length) return <EmptyDetail label="No AI labor estimates attached." />;
+  return <div className="space-y-2">{rows.map((row) => <div key={row.id} className="rounded-xl bg-blue-500/10 p-3"><div className="flex items-center justify-between gap-3"><p className="font-black text-blue-200">{row.service_name}</p><p className="text-lg font-black">{Number(row.estimated_hours).toFixed(2)} hrs</p></div><p className="mt-1 text-xs text-slate-400">Range {Number(row.minimum_hours).toFixed(2)}–{Number(row.maximum_hours).toFixed(2)} · {row.confidence_level} · {formatDateTime12Hour(row.generated_at)} · {row.user_name || "Dispatcher"}</p></div>)}<div className="rounded-xl border border-blue-400/30 bg-blue-500/15 p-3"><p className="text-xs font-black uppercase text-blue-300">Total AI Labor Estimate</p><p className="text-2xl font-black">{total.toFixed(2)} HOURS</p><p className="mt-1 text-xs text-slate-400">Overlapping removal or diagnostic operations may reduce actual combined time. Overlap is not removed automatically.</p></div></div>;
+}
 function JobDetailsSkeleton() { return <div className="space-y-4">{[1, 2, 3, 4].map((item) => <div key={item} className="h-32 animate-pulse rounded-2xl bg-white/5" />)}</div>; }
 
 async function loadJobRelation(table, field, value) {
