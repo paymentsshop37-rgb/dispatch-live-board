@@ -6,6 +6,8 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
+const failure = (stage: string, status: number, error: string, details: unknown = "") =>
+  json({ success: false, stage, status, error, details: serializeDetails(details) }, status);
 const roles = new Set(["admin", "supervisor", "dispatcher", "technician_manager"]);
 const promptVersion = "nttr-ai-labor-v1";
 const disclaimer = "AI-generated labor-time estimate for dispatch guidance only. Actual repair time may vary based on vehicle configuration, condition, access, corrosion, diagnosis and roadside conditions.";
@@ -37,41 +39,55 @@ Never claim an official manufacturer, Mitchell, MOTOR or nationally mandated fla
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  if (req.method !== "POST") return failure("request", 405, "Method not allowed.");
   try {
     const apiKey = Deno.env.get("OPENAI_API_KEY");
     const model = Deno.env.get("OPENAI_LABOR_GUIDE_MODEL");
-    if (!apiKey || !model) return json({ error: "AI Labor Guide is temporarily unavailable. Do not quote a labor time until the estimate can be reviewed." }, 503);
+    if (!apiKey) return failure("configuration", 503, "Missing OPENAI_API_KEY in Supabase Edge Function Secrets.");
+    if (!model) return failure("configuration", 503, "Missing OPENAI_LABOR_GUIDE_MODEL in Supabase Edge Function Secrets.");
     const auth = req.headers.get("Authorization") || "";
     const url = Deno.env.get("SUPABASE_URL")!;
     const anon = Deno.env.get("SUPABASE_ANON_KEY")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const userClient = createClient(url, anon, { global: { headers: { Authorization: auth } }, auth: { persistSession: false } });
     const { data: authData } = await userClient.auth.getUser();
-    if (!authData.user) return json({ error: "Authentication required." }, 401);
+    if (!authData.user) return failure("authentication", 401, "Authentication required.");
     const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
     const { data: profile } = await admin.from("app_users").select("id,auth_user_id,email,name,username,role,status").or(`auth_user_id.eq.${authData.user.id},id.eq.${authData.user.id}`).maybeSingle();
     const role = String(profile?.role || "").toLowerCase();
-    if (!profile || profile.status !== "Active" || !roles.has(role)) return json({ error: "You do not have permission to use AI Labor Guide." }, 403);
+    if (!profile || profile.status !== "Active" || !roles.has(role)) return failure("authorization", 403, "You do not have permission to use AI Labor Guide.");
     const { data: settings } = await admin.from("ai_labor_guide_settings").select("*").eq("id", true).single();
-    if (!settings?.enabled || !(settings.allowed_roles || []).includes(role)) return json({ error: "AI Labor Guide is currently disabled." }, 403);
+    if (!settings?.enabled || !(settings.allowed_roles || []).includes(role)) return failure("authorization", 403, "AI Labor Guide is currently disabled.");
+
+    const modelResponse = await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    const modelResult = await readJson(modelResponse);
+    if (!modelResponse.ok) {
+      console.error("ai-labor-guide OpenAI model validation error:", JSON.stringify({ status: modelResponse.status, model, response: modelResult }));
+      const message = modelResponse.status === 404
+        ? `Invalid model configured: ${model}`
+        : openAiErrorMessage(modelResult, `Unable to validate configured model: ${model}`);
+      return failure("model_validation", modelResponse.status, message, modelResult);
+    }
 
     const body = await req.json();
     const question = clean(body.question);
-    if (!question || question.length > 4000) return json({ error: "Enter a repair question under 4,000 characters." }, 400);
+    if (!question || question.length > 4000) return failure("input_validation", 400, "Enter a repair question under 4,000 characters.");
     const since = new Date(); since.setUTCHours(0,0,0,0);
     const { count } = await admin.from("ai_labor_estimates").select("id", { count: "exact", head: true }).eq("user_id", authData.user.id).gte("generated_at", since.toISOString());
-    if ((count || 0) >= Number(settings.max_requests_per_user_per_day || 100)) return json({ error: "Daily AI Labor Guide request limit reached." }, 429);
+    if ((count || 0) >= Number(settings.max_requests_per_user_per_day || 100)) return failure("rate_limit", 429, "Daily AI Labor Guide request limit reached.");
 
     const vehicle = sanitizeVehicle(body.vehicle || {});
     const fingerprint = await sha256(JSON.stringify({ question: question.toLowerCase(), vehicle, promptVersion, model }));
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
     const { data: cached } = await admin.from("ai_labor_estimates").select("*").eq("request_fingerprint", fingerprint).gte("generated_at", tenMinutesAgo).order("generated_at", { ascending: false }).limit(1).maybeSingle();
-    if (cached) return json({ estimate: cached.exact_ai_response, record: cached, cached: true, disclaimer: settings.disclaimer || disclaimer });
+    if (cached) return json({ success: true, stage: "complete", status: 200, estimate: cached.exact_ai_response, record: cached, cached: true, disclaimer: settings.disclaimer || disclaimer });
 
     const input = `Dispatcher question:\n${question}\n\nStructured vehicle data (may be blank):\n${JSON.stringify(vehicle)}`;
     let estimate: any = null;
     let lastError = "";
+    let lastDetails: unknown = "";
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const response = await fetch("https://api.openai.com/v1/responses", {
         method: "POST",
@@ -83,17 +99,33 @@ Deno.serve(async (req) => {
           text: { format: { type: "json_schema", name: "nttr_ai_labor_estimate", strict: true, schema } },
         }),
       });
-      const result = await response.json();
-      if (!response.ok) { lastError = result?.error?.message || "AI request failed."; continue; }
+      const result = await readJson(response);
+      if (!response.ok) {
+        console.error("ai-labor-guide full OpenAI Responses API error:", JSON.stringify({
+          status: response.status,
+          statusText: response.statusText,
+          model,
+          requestId: response.headers.get("x-request-id"),
+          response: result,
+        }));
+        return failure("responses_api", response.status, openAiErrorMessage(result, "OpenAI rejected the request."), {
+          openai_request_id: response.headers.get("x-request-id"),
+          openai_status: response.status,
+          openai_response: result,
+        });
+      }
       try {
         estimate = JSON.parse(result.output_text || result.output?.flatMap((item:any) => item.content || []).find((item:any) => item.type === "output_text")?.text || "");
         if (validEstimate(estimate)) break;
-        estimate = null; lastError = "AI response failed validation.";
-      } catch { lastError = "AI response was not valid JSON."; }
+        estimate = null; lastError = "AI response failed JSON schema validation."; lastDetails = { response_id: result.id, output: result.output };
+      } catch (parseError) {
+        lastError = "AI response was not valid JSON.";
+        lastDetails = { response_id: result.id, parse_error: parseError instanceof Error ? parseError.message : String(parseError), output_text: result.output_text || "" };
+      }
     }
     if (!estimate) {
-      console.error("ai-labor-guide invalid response:", lastError);
-      return json({ error: "AI Labor Guide is temporarily unavailable. Do not quote a labor time until the estimate can be reviewed." }, 502);
+      console.error("ai-labor-guide structured output validation error:", JSON.stringify({ error: lastError, details: lastDetails }));
+      return failure("json_schema_validation", 502, lastError || "Structured Output validation failed.", lastDetails);
     }
 
     const insert = {
@@ -110,11 +142,15 @@ Deno.serve(async (req) => {
       prompt_version: promptVersion, request_fingerprint: fingerprint,
     };
     const { data: record, error } = await admin.from("ai_labor_estimates").insert(insert).select("*").single();
-    if (error) throw error;
-    return json({ estimate, record, cached: false, disclaimer: settings.disclaimer || disclaimer });
+    if (error) {
+      console.error("ai-labor-guide database save error:", JSON.stringify(error));
+      return failure("database_save", 500, error.message || "Unable to save AI labor estimate.", error);
+    }
+    return json({ success: true, stage: "complete", status: 200, estimate, record, cached: false, disclaimer: settings.disclaimer || disclaimer });
   } catch (error) {
-    console.error("ai-labor-guide:", error instanceof Error ? error.message : error);
-    return json({ error: "AI Labor Guide is temporarily unavailable. Do not quote a labor time until the estimate can be reviewed." }, 500);
+    const details = error instanceof Error ? { name: error.name, message: error.message, stack: error.stack } : error;
+    console.error("ai-labor-guide unexpected error:", JSON.stringify(details));
+    return failure("unexpected", 500, error instanceof Error ? error.message : "Internal server error.", details);
   }
 });
 
@@ -133,4 +169,16 @@ function validEstimate(value: any) {
 async function sha256(value: string) {
   const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+async function readJson(response: Response) {
+  const text = await response.text();
+  try { return JSON.parse(text); } catch { return { raw_response: text }; }
+}
+function openAiErrorMessage(result: any, fallback: string) {
+  return String(result?.error?.message || result?.message || fallback);
+}
+function serializeDetails(details: unknown) {
+  if (details === null || details === undefined) return "";
+  if (typeof details === "string") return details;
+  try { return JSON.stringify(details); } catch { return String(details); }
 }
