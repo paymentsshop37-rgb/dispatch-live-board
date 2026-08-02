@@ -30,6 +30,7 @@ import { clearAuthSession, clearCustomAuthStorage, finishSessionAudit, loadCurre
 import { ActivityLogPage } from "./modules/activity";
 import { AdministrationDashboard } from "./modules/administration";
 import { BillingDashboard, TechnicianPaymentsReport } from "./modules/billing";
+import { AccountingCenter } from "./modules/accounting";
 import { CustomerCRM } from "./modules/customers";
 import { ExecutiveDashboard } from "./modules/executive";
 import { InternalControlQueue } from "./modules/executive/InternalControlQueue";
@@ -55,7 +56,7 @@ const sidebarItems = [
   { id: "dispatch", label: "Dispatch Center", icon: ClipboardList },
   { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
   { id: "customers", label: "Customers", icon: Building2, roles: ["admin", "dispatcher", "supervisor"] },
-  { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
+  { id: "accounting", label: "Accounting Center", icon: CreditCard, adminOnly: true },
   { id: "tech-payments", label: "Tech Payments", icon: CreditCard, requires: "canViewTechPayments" },
   { id: "administration", label: "Administration", icon: Shield, adminOnly: true },
   { id: "users", label: "Users", icon: Users, adminOnly: true },
@@ -81,15 +82,21 @@ const sidebarSections = [
     ],
   },
   {
+    label: "Billing / Finance",
+    items: [
+      { id: "accounting", label: "Accounting Center", icon: CreditCard, adminOnly: true },
+      { id: "billing", label: "Legacy Billing", icon: FileText, adminOnly: true },
+      { id: "tech-payments", label: "Tech Payments", icon: CreditCard, requires: "canViewTechPayments" },
+    ],
+  },
+  {
     label: "Operations",
     items: [
       { id: "technicians", label: "Technician Center", icon: Users, requires: "canViewTechnicianCenter" },
-      { id: "billing", label: "Billing", icon: CreditCard, adminOnly: true },
-      { id: "tech-payments", label: "Tech Payments", icon: CreditCard, requires: "canViewTechPayments" },
       { id: "flat-rate", label: "Flat Rate Guide", icon: BookOpen, roles: ["admin", "dispatcher", "supervisor"] },
       { id: "ai-labor", label: "AI Labor Guide", icon: Bot, roles: ["admin", "dispatcher", "supervisor", "technician_manager"] },
       { id: "parts-intelligence", label: "Parts Intelligence", icon: PackageSearch, roles: ["admin", "dispatcher", "supervisor"] },
-      { id: "invoices", label: "Invoices", icon: FileText, target: "billing", adminOnly: true },
+      { id: "invoices", label: "Invoices", icon: FileText, target: "accounting", adminOnly: true },
     ],
   },
   {
@@ -701,6 +708,7 @@ export default function App() {
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard onOpenJob={openJobDetailsFromView} />}
+        {canAccessActiveView && activeView === "accounting" && <AccountingCenter session={session} onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "tech-payments" && <TechnicianPaymentsReport session={session} role={role} canViewFinancial={role === "admin" || (role === "technician_manager" && permissions.canViewTechPayments)} canMarkPaid={permissions.canMarkTechPaymentsPaid} canExport={role === "admin"} onBack={() => setActiveView(role === "admin" ? "dashboard" : "dispatch")} onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
@@ -761,7 +769,7 @@ function canAccessView(view, role, permissions) {
   if (view === "ai-labor") return ["admin", "dispatcher", "supervisor", "technician_manager"].includes(role);
   if (view === "parts-intelligence") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (view === "tech-payments") return ["dispatcher", "supervisor"].includes(role) || Boolean(permissions.canViewTechPayments);
-  if (["billing", "administration", "users", "reports", "settings"].includes(view)) {
+  if (["accounting", "billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";
   }
   return false;
@@ -788,6 +796,7 @@ function viewTitle(view) {
     technicians: "Technician Center",
     customers: "Customers",
     billing: "Billing",
+    accounting: "Accounting Center",
     "tech-payments": "Technician Payments Pending",
     administration: "Administration",
     users: "Users",
