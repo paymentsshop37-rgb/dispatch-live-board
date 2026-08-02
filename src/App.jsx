@@ -454,7 +454,8 @@ export default function App() {
     ...getPermissions(role),
     canViewTechPayments: role === "admin" || Boolean(session.canViewTechPayments),
     canMarkTechPaymentsPaid: role === "admin" || Boolean(session.canMarkTechPaymentsPaid),
-  }), [role, session.canMarkTechPaymentsPaid, session.canViewTechPayments]);
+    canExportFinancialReports: role === "admin" || Boolean(session.canExportFinancialReports),
+  }), [role, session.canExportFinancialReports, session.canMarkTechPaymentsPaid, session.canViewTechPayments]);
   const isAdmin = role === "admin";
   const visibleSidebarSections = useMemo(
     () =>
@@ -776,7 +777,7 @@ function roleLabel(role) {
 
 function emptySession() {
   return {
-    id: "", authUserId: "", username: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, canViewTechPayments: false, canMarkTechPaymentsPaid: false, isAuthenticated: false,
+    id: "", authUserId: "", username: "", name: "", role: "", status: "Inactive", forcePasswordChange: false, canViewTechPayments: false, canMarkTechPaymentsPaid: false, canExportFinancialReports: false, isAuthenticated: false,
   };
 }
 

@@ -19,6 +19,8 @@ export function getPermissions(role) {
     canUseAiLaborGuide: false,
     canViewTechPayments: false,
     canMarkTechPaymentsPaid: false,
+    canExportOperationalReports: false,
+    canExportFinancialReports: false,
   };
 
   if (normalizedRole === "admin") {
@@ -32,6 +34,7 @@ export function getPermissions(role) {
       canAssignTechnicians: true,
       canViewCustomers: true,
       canUseAiLaborGuide: true,
+      canExportOperationalReports: true,
     };
   }
 

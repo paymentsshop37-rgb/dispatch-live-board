@@ -23,6 +23,7 @@ const emptyForm = {
   notes: "",
   canViewTechPayments: false,
   canMarkTechPaymentsPaid: false,
+  canExportFinancialReports: false,
 };
 
 export default function UserManagement({ currentUser }) {
@@ -236,6 +237,7 @@ export default function UserManagement({ currentUser }) {
               {form.role === "Technician Manager" && <>
                 <label className="flex gap-3 rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-900"><input type="checkbox" checked={form.canViewTechPayments} onChange={(event) => setForm((current) => ({ ...current, canViewTechPayments: event.target.checked, canMarkTechPaymentsPaid: event.target.checked ? current.canMarkTechPaymentsPaid : false }))} /> View pending technician payments</label>
                 <label className="flex gap-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-900"><input type="checkbox" checked={form.canMarkTechPaymentsPaid} onChange={(event) => setForm((current) => ({ ...current, canMarkTechPaymentsPaid: event.target.checked, canViewTechPayments: event.target.checked || current.canViewTechPayments }))} /> Mark technician payments paid</label>
+                <label className="flex gap-3 rounded-xl bg-amber-50 p-3 text-sm font-bold text-amber-900"><input type="checkbox" checked={form.canExportFinancialReports} onChange={(event) => setForm((current) => ({ ...current, canExportFinancialReports: event.target.checked }))} /> Export financial reports</label>
               </>}
               <button
                 disabled={busy === "create"}
@@ -255,7 +257,7 @@ export default function UserManagement({ currentUser }) {
               <table className="min-w-[1250px] text-left text-sm">
                 <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                   <tr>
-                    {["Name", "Username", "Role", "Status", "View Tech Payments", "Mark Paid", "Force Change", "Auth", "Last Login", "Notes", "Actions"].map((header) => (
+                    {["Name", "Username", "Role", "Status", "View Tech Payments", "Mark Paid", "Financial Export", "Force Change", "Auth", "Last Login", "Notes", "Actions"].map((header) => (
                       <th key={header} className="px-3 py-3">{header}</th>
                     ))}
                   </tr>
@@ -281,6 +283,7 @@ export default function UserManagement({ currentUser }) {
                       </td>
                       <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canViewTechPayments} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canViewTechPayments: checked, ...(checked ? {} : { canMarkTechPaymentsPaid: false }) })} /></td>
                       <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canMarkTechPaymentsPaid} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canMarkTechPaymentsPaid: checked, ...(checked ? { canViewTechPayments: true } : {}) })} /></td>
+                      <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canExportFinancialReports} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canExportFinancialReports: checked })} /></td>
                       <td className="px-3 py-3">
                         <span className={`rounded-full px-2 py-1 text-xs font-black ${user.forcePasswordChange ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
                           {user.forcePasswordChange ? "REQUIRED" : "NOT REQUIRED"}
@@ -586,6 +589,7 @@ function normalizeUser(row) {
     isDesynced: Boolean(row.is_desynced),
     canViewTechPayments: Boolean(row.can_view_tech_payments),
     canMarkTechPaymentsPaid: Boolean(row.can_mark_tech_payments_paid),
+    canExportFinancialReports: Boolean(row.can_export_financial_reports),
   };
 }
 
@@ -598,6 +602,7 @@ function normalizePatch(patch) {
   if (patch.status !== undefined) normalized.status = patch.status;
   if (patch.canViewTechPayments !== undefined) normalized.canViewTechPayments = Boolean(patch.canViewTechPayments);
   if (patch.canMarkTechPaymentsPaid !== undefined) normalized.canMarkTechPaymentsPaid = Boolean(patch.canMarkTechPaymentsPaid);
+  if (patch.canExportFinancialReports !== undefined) normalized.canExportFinancialReports = Boolean(patch.canExportFinancialReports);
   return normalized;
 }
 

@@ -7,12 +7,16 @@
     "dev": "vite",
     "build": "vite build && node scripts/build-sites.mjs",
     "test": "node --test tests/*.test.js",
+    "test:report-performance": "node scripts/benchmark-report.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.8",
     "@vitejs/plugin-react": "latest",
+    "exceljs": "^4.4.0",
     "framer-motion": "latest",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "lucide-react": "latest",
     "mapbox-gl": "^3.27.0",
     "react": "latest",

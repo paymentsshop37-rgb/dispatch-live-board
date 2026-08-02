@@ -23,6 +23,7 @@ export function profileToSession(profile, authSession) {
     loginCount: Number(profile?.login_count || 0),
     canViewTechPayments: Boolean(profile?.can_view_tech_payments),
     canMarkTechPaymentsPaid: Boolean(profile?.can_mark_tech_payments_paid),
+    canExportFinancialReports: Boolean(profile?.can_export_financial_reports),
     isAuthenticated: Boolean(authSession?.user && profile?.status === "Active"),
   };
 }

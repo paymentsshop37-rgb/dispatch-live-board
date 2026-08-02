@@ -90,7 +90,8 @@ Deno.serve(async (req) => {
       if (createError || !created.user) return json({ error: createError?.message?.toLowerCase().includes("registered") ? "This username is already in use." : "Unable to create user." }, createError?.message?.toLowerCase().includes("registered") ? 409 : 400);
       const canViewTechPayments = role === "technician_manager" && Boolean(body.canViewTechPayments || body.canMarkTechPaymentsPaid);
       const canMarkTechPaymentsPaid = role === "technician_manager" && Boolean(body.canMarkTechPaymentsPaid);
-      const { error: profileError } = await admin.from("app_users").insert({ id: created.user.id, auth_user_id: created.user.id, username, name, email, role, status, notes: clean(body.notes), force_password_change: body.forcePasswordChange !== false, can_view_tech_payments: canViewTechPayments, can_mark_tech_payments_paid: canMarkTechPaymentsPaid });
+      const canExportFinancialReports = role === "technician_manager" && Boolean(body.canExportFinancialReports);
+      const { error: profileError } = await admin.from("app_users").insert({ id: created.user.id, auth_user_id: created.user.id, username, name, email, role, status, notes: clean(body.notes), force_password_change: body.forcePasswordChange !== false, can_view_tech_payments: canViewTechPayments, can_mark_tech_payments_paid: canMarkTechPaymentsPaid, can_export_financial_reports: canExportFinancialReports });
       if (profileError) {
         await admin.auth.admin.deleteUser(created.user.id);
         const details = `${profileError.message || ""} ${profileError.details || ""}`.toLowerCase();
@@ -144,6 +145,7 @@ Deno.serve(async (req) => {
       if (body.forcePasswordChange !== undefined) allowed.force_password_change = Boolean(body.forcePasswordChange);
       if (body.canViewTechPayments !== undefined) allowed.can_view_tech_payments = Boolean(body.canViewTechPayments);
       if (body.canMarkTechPaymentsPaid !== undefined) allowed.can_mark_tech_payments_paid = Boolean(body.canMarkTechPaymentsPaid);
+      if (body.canExportFinancialReports !== undefined) allowed.can_export_financial_reports = Boolean(body.canExportFinancialReports);
       const before = await findProfile(admin, targetId);
       if (!before) return json({ error: "User not found." }, 404);
       if (allowed.name !== undefined && !allowed.name) return json({ error: "Invalid user data." }, 400);
@@ -152,6 +154,7 @@ Deno.serve(async (req) => {
       if (nextRole !== "technician_manager") {
         allowed.can_view_tech_payments = false;
         allowed.can_mark_tech_payments_paid = false;
+        allowed.can_export_financial_reports = false;
       } else if (allowed.can_mark_tech_payments_paid === true) {
         allowed.can_view_tech_payments = true;
       } else if (allowed.can_view_tech_payments === false) {

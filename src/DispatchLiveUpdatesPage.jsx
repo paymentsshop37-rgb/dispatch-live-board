@@ -26,7 +26,6 @@ import {
   Users,
   Database,
   Crown,
-  FileSpreadsheet,
   FileText,
   Bell,
   BellRing,
@@ -54,6 +53,7 @@ import CitiesWithoutJobsPanel from "./modules/coverage/CitiesWithoutJobsPanel";
 import { dateRangeForMode, loadCoverageCities, setCoverageCityActive } from "./modules/coverage/coverageCityService";
 import { loadServiceAreaConfiguration } from "./modules/coverage/serviceAreaService";
 import { AiLaborGuide } from "./modules/ai-labor";
+import { ExportReportMenu } from "./modules/reporting";
 
 const normalizeText = (value) => {
   return String(value || "")
@@ -242,135 +242,9 @@ function money(value) {
   }).format(Number(value || 0));
 }
 
-function exportJobsToCSV(jobs) {
-  const headers = [
-    "Date",
-    "Time",
-    "Reference #",
-    "Invoice",
-    "Dispatch",
-    "Company",
-    "Tech",
-    "Location",
-    "Status",
-    "Invoice Status",
-    "Payment Method",
-    "Received",
-    "Updates",
-    "Total Bill",
-    "Parts",
-    "Tech Labor",
-    "Tech Payment",
-    "Profit",
-  ];
-
-  const rows = jobs.map((job) => [
-    job.date,
-    formatTime12Hour(job.time),
-    job.jobReference || "—",
-    job.reference,
-    job.dispatch,
-    job.company,
-    job.tech,
-    job.location,
-    job.status,
-    job.invoice,
-    job.paymentMethod,
-    job.paymentReceiver,
-    job.updates,
-    job.totalBill,
-    job.parts,
-    job.techLabor,
-    techPaymentLabel(job.techPaymentStatus),
-    Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0),
-  ]);
-
-  const csvContent = [headers, ...rows]
-    .map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
-    .join("\n");
-
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `dispatch-report-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportJobsToPDF(jobs, showProfit = true) {
-  const reportWindow = window.open("", "_blank");
-  if (!reportWindow) {
-    alert("Please allow popups to export PDF.");
-    return;
-  }
-
-  const rows = jobs
-    .map((job) => {
-      const profit = Number(job.totalBill || 0) - Number(job.parts || 0) - Number(job.techLabor || 0);
-      return `
-        <tr>
-          <td>${job.date || ""}</td>
-          <td>${formatTime12Hour(job.time)}</td>
-          <td>${job.jobReference || "—"}</td>
-          <td>${job.reference || ""}</td>
-          <td>${job.company || ""}</td>
-          <td>${job.tech || ""}</td>
-          <td>${job.location || ""}</td>
-          <td>${job.status || ""}</td>
-          <td><span style="display:inline-block;padding:4px 8px;border-radius:999px;background:${techPaymentVisual(job.techPaymentStatus).backgroundColor};color:${techPaymentVisual(job.techPaymentStatus).color};font-weight:700">${techPaymentLabel(job.techPaymentStatus)}</span></td>
-          <td>$${Number(job.totalBill || 0).toFixed(2)}</td>
-          ${showProfit ? `<td>$${profit.toFixed(2)}</td>` : ""}
-        </tr>
-      `;
-    })
-    .join("");
-
-  reportWindow.document.write(`
-    <html>
-      <head>
-        <title>Dispatch Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 30px; color: #111827; }
-          h1 { margin-bottom: 5px; }
-          .subtitle { color: #6b7280; margin-bottom: 20px; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          th, td { border: 1px solid #d1d5db; padding: 8px; text-align: left; }
-          th { background: #f3f4f6; }
-          .footer { margin-top: 25px; font-size: 11px; color: #6b7280; }
-        </style>
-      </head>
-      <body>
-        <h1>Dispatch Live Report</h1>
-        <div class="subtitle">Generated ${formatDateTime12Hour(new Date())}</div>
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Reference #</th>
-              <th>Invoice #</th>
-              <th>Company</th>
-              <th>Tech</th>
-              <th>Location</th>
-              <th>Status</th>
-              <th>Tech Payment</th>
-              <th>Total Bill</th>
-              ${showProfit ? "<th>Profit</th>" : ""}
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-        <div class="footer">Dispatch Live Board · Professional Road Service Report</div>
-        <script>window.print();</script>
-      </body>
-    </html>
-  `);
-  reportWindow.document.close();
-}
-
 function fromDbJob(row) {
   return {
+    raw: row,
     photo_url: row.photo_url || "",
     id: row.id,
     displayNumber: row.display_number || row.job_number || "",
@@ -1173,6 +1047,14 @@ return (
     () => [...filteredJobs].sort(compareJobsChronologically),
     [filteredJobs]
   );
+  const reportFilterLabel = useMemo(() => buildReportFilterLabel({
+    search, statusFilter, periodFilter, cityFilter, fromDate, toDate, dispatchFilter,
+    techFilter, companyFilter, invoiceFilter, techPaymentFilter, internalControlFilter,
+  }), [search, statusFilter, periodFilter, cityFilter, fromDate, toDate, dispatchFilter, techFilter, companyFilter, invoiceFilter, techPaymentFilter, internalControlFilter]);
+  const showReportNotice = useCallback((message) => {
+    setToastMessage(message);
+    window.setTimeout(() => setToastMessage(""), 4500);
+  }, []);
 
   const dates = useMemo(
     () => [...new Set(jobs.map((job) => job.date).filter(Boolean))].sort((a, b) => new Date(a) - new Date(b)),
@@ -2447,16 +2329,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => exportJobsToCSV(sortedJobs)}
-                    className="flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700"
-                  >
-                    <FileSpreadsheet className="h-4 w-4" />
-                    Export Excel
-                  </button>
-                )}
+                <ExportReportMenu jobs={sortedJobs} role={normalizedUserRole} currentUser={currentUser} filterLabel={reportFilterLabel} onNotice={showReportNotice} />
                   <button
                     type="button"
                     onClick={() => {
@@ -2578,13 +2451,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   onChange={(e) => setFromDate(e.target.value)}
                 />
 
-                <button
-                  type="button"
-                  onClick={() => exportJobsToCSV(sortedJobs)}
-                  className="h-9 w-full whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700 2xl:col-span-1"
-                >
-                  Export
-                </button>
+                <div className="2xl:col-span-2"><ExportReportMenu jobs={sortedJobs} role={normalizedUserRole} currentUser={currentUser} filterLabel={reportFilterLabel} onNotice={showReportNotice} /></div>
 
                 <button
                   type="button"
@@ -3683,6 +3550,25 @@ function DispatchKpiCard({ icon: Icon, label, value, accent = "blue", onClick })
       <p className="mt-1 text-2xl font-black text-white">{value}</p>
     </Component>
   );
+}
+
+function buildReportFilterLabel(filters) {
+  const labels = [];
+  const add = (label, value) => {
+    if (value && value !== "All") labels.push(`${label}: ${value}`);
+  };
+  add("Period", filters.periodFilter);
+  add("Status", filters.statusFilter);
+  add("Dispatcher", filters.dispatchFilter);
+  add("Technician", filters.techFilter);
+  add("Company", filters.companyFilter);
+  add("City", filters.cityFilter);
+  add("Invoice", filters.invoiceFilter);
+  add("Tech Payment", filters.techPaymentFilter);
+  add("Internal Control", filters.internalControlFilter);
+  if (filters.fromDate || filters.toDate) labels.push(`Dates: ${filters.fromDate || "Start"} to ${filters.toDate || "Today"}`);
+  if (filters.search) labels.push(`Search: ${filters.search}`);
+  return labels.length ? labels.join(" | ") : "All jobs";
 }
 
 function AnalyticsCard({ title, data, total }) {
