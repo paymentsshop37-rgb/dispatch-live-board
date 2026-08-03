@@ -7,7 +7,7 @@ import {
   paymentPresetRange,
   summarizeTechnicianPayments,
 } from "../src/modules/billing/technicianPaymentData.js";
-import { getPermissions } from "../src/modules/permissions.js";
+import { canEditTechPayment, getPermissions, TECH_PAYMENT_EDITOR_ROLES } from "../src/modules/permissions.js";
 import { safeTechPaymentError, techPaymentStatusOptions } from "../src/utils/techPaymentStatus.js";
 
 const now = new Date("2026-07-31T12:00:00-06:00");
@@ -71,10 +71,14 @@ test("bulk and technician-group totals reconcile to the grand total", () => {
   assert.equal(groups.find((group) => group.technician === "Avery Tech").averageAmount, 275);
 });
 
-test("dispatcher and Technician Manager do not receive payment authority by role alone", () => {
-  assert.equal(getPermissions("admin").canMarkTechPaymentsPaid, true);
-  assert.equal(getPermissions("dispatcher").canMarkTechPaymentsPaid, false);
-  assert.equal(getPermissions("technician_manager").canMarkTechPaymentsPaid, false);
+test("all four operational roles receive Tech Payment authority from the shared role rule", () => {
+  assert.deepEqual(TECH_PAYMENT_EDITOR_ROLES, ["admin", "supervisor", "dispatcher", "technician_manager"]);
+  for (const role of TECH_PAYMENT_EDITOR_ROLES) {
+    assert.equal(canEditTechPayment(role), true, `${role} should edit Tech Payment`);
+    assert.equal(getPermissions(role).canViewTechPayments, true, `${role} should view Tech Payments`);
+    assert.equal(getPermissions(role).canMarkTechPaymentsPaid, true, `${role} should update Tech Payments`);
+  }
+  for (const role of ["technician", "customer", "readonly", ""]) assert.equal(canEditTechPayment(role), false);
 });
 
 test("dropdown values exactly match the production status constraint", () => {
@@ -82,7 +86,7 @@ test("dropdown values exactly match the production status constraint", () => {
 });
 
 test("technical payment errors map to safe actionable messages", () => {
-  assert.equal(safeTechPaymentError({ code: "42501" }), "Permission denied for Tech Payment updates.");
+  assert.equal(safeTechPaymentError({ code: "42501" }), "Your active role is read-only for Tech Payment. Allowed roles: Admin, Supervisor, Dispatcher, or Technician Manager.");
   assert.equal(safeTechPaymentError({ code: "23514" }), "Invalid payment status.");
   assert.equal(safeTechPaymentError({ code: "42703" }), "Missing database payment configuration.");
   assert.equal(safeTechPaymentError({ code: "28000" }), "Session expired. Please sign in again.");

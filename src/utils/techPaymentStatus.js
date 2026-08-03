@@ -31,7 +31,7 @@ export function safeTechPaymentError(error) {
   const code = String(error?.code || "");
   const message = String(error?.message || "").toLowerCase();
   if (["28000", "PGRST301"].includes(code) || message.includes("jwt") || message.includes("session")) return "Session expired. Please sign in again.";
-  if (code === "42501" || message.includes("permission") || message.includes("not authorized")) return "Permission denied for Tech Payment updates.";
+  if (code === "42501" || message.includes("permission") || message.includes("not authorized")) return "Your active role is read-only for Tech Payment. Allowed roles: Admin, Supervisor, Dispatcher, or Technician Manager.";
   if (code === "23514" || message.includes("invalid technician payment status")) return "Invalid payment status.";
   if (["42703", "PGRST202"].includes(code) || message.includes("column") || message.includes("function")) return "Missing database payment configuration.";
   return "Tech Payment status could not be saved. Please try again.";

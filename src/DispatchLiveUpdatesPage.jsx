@@ -35,7 +35,7 @@ import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
 import { logActivity } from "./modules/activity";
 import { compareTechniciansByAssignedNumber, loadTechnicians } from "./modules/technicians/technicianService";
-import { getPermissions, normalizeRole } from "./modules/permissions";
+import { canEditTechPayment as roleCanEditTechPayment, getPermissions, normalizeRole } from "./modules/permissions";
 import { compareJobsChronologically, normalizeJobDate } from "./utils/jobChronology";
 import { formatDateTime12Hour, formatTime12Hour } from "./utils/timeFormat";
 import AmPmTimeInput from "./components/AmPmTimeInput";
@@ -454,9 +454,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const isAdmin = normalizedUserRole === "admin";
   const canDeleteJobs = isAdmin;
   const canEditJobFinancial = isAdmin || normalizedUserRole === "dispatcher";
-  const canEditTechPayment = isAdmin
-    || normalizedUserRole === "dispatcher"
-    || (normalizedUserRole === "technician_manager" && Boolean(currentUser?.canMarkTechPaymentsPaid));
+  const canEditTechPayment = roleCanEditTechPayment(normalizedUserRole);
   const canEditInternalControl = ["admin", "supervisor", "dispatcher"].includes(normalizedUserRole);
   const draftKey = useMemo(() => addJobDraftKey(currentUser), [currentUser]);
   formStateRef.current = form;

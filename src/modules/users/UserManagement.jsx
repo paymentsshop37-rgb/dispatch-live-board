@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 
-const roles = ["Administrator", "Dispatcher", "Technician Manager"];
+const roles = ["Administrator", "Supervisor", "Dispatcher", "Technician Manager"];
 const statuses = ["Active", "Inactive"];
 const emptyForm = {
   name: "",
@@ -281,8 +281,8 @@ export default function UserManagement({ currentUser }) {
                           {user.status}
                         </span>
                       </td>
-                      <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canViewTechPayments} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canViewTechPayments: checked, ...(checked ? {} : { canMarkTechPaymentsPaid: false }) })} /></td>
-                      <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canMarkTechPaymentsPaid} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canMarkTechPaymentsPaid: checked, ...(checked ? { canViewTechPayments: true } : {}) })} /></td>
+                      <td className="px-3 py-3"><PermissionToggle checked={["Administrator", "Supervisor", "Dispatcher"].includes(user.role) || user.canViewTechPayments} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canViewTechPayments: checked, ...(checked ? {} : { canMarkTechPaymentsPaid: false }) })} /></td>
+                      <td className="px-3 py-3"><PermissionToggle checked={["Administrator", "Supervisor", "Dispatcher"].includes(user.role) || user.canMarkTechPaymentsPaid} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canMarkTechPaymentsPaid: checked, ...(checked ? { canViewTechPayments: true } : {}) })} /></td>
                       <td className="px-3 py-3"><PermissionToggle checked={user.role === "Administrator" || user.canExportFinancialReports} disabled={user.role !== "Technician Manager"} onChange={(checked) => updateUser(user, { canExportFinancialReports: checked })} /></td>
                       <td className="px-3 py-3">
                         <span className={`rounded-full px-2 py-1 text-xs font-black ${user.forcePasswordChange ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
@@ -580,7 +580,7 @@ function normalizeUser(row) {
     authUserId: row.auth_user_id || "",
     name: row.name || "",
     username: row.username || "",
-    role: normalizedRole === "admin" ? "Administrator" : normalizedRole === "technician_manager" ? "Technician Manager" : "Dispatcher",
+    role: normalizedRole === "admin" ? "Administrator" : normalizedRole === "supervisor" ? "Supervisor" : normalizedRole === "technician_manager" ? "Technician Manager" : "Dispatcher",
     status: row.status || "Inactive",
     forcePasswordChange: Boolean(row.force_password_change),
     lastLoginAt: row.last_login_at,
@@ -619,12 +619,12 @@ function isCurrentUser(user, currentUser) {
 function profilePatchToUi(patch) {
   return {
     ...patch,
-    ...(patch.role ? { role: patch.role === "admin" ? "Administrator" : patch.role === "technician_manager" ? "Technician Manager" : "Dispatcher" } : {}),
+    ...(patch.role ? { role: patch.role === "admin" ? "Administrator" : patch.role === "supervisor" ? "Supervisor" : patch.role === "technician_manager" ? "Technician Manager" : "Dispatcher" } : {}),
   };
 }
 
 function roleToDb(role) {
-  return role === "Administrator" ? "admin" : role === "Technician Manager" ? "technician_manager" : "dispatcher";
+  return role === "Administrator" ? "admin" : role === "Supervisor" ? "supervisor" : role === "Technician Manager" ? "technician_manager" : "dispatcher";
 }
 
 function PermissionToggle({ checked, disabled, onChange }) {

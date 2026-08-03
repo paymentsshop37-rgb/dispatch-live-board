@@ -42,7 +42,7 @@ import { PartsIntelligence } from "./modules/parts";
 import { AiLaborGuide } from "./modules/ai-labor";
 import AddJobRoute from "./modules/jobs/AddJobRoute";
 import DispatcherCoverageSummary from "./modules/coverage/DispatcherCoverageSummary";
-import { getPermissions, normalizeRole } from "./modules/permissions";
+import { canEditTechPayment, getPermissions, normalizeRole } from "./modules/permissions";
 import { supabase } from "./lib/supabase";
 import {
   buildSmartAlerts,
@@ -459,8 +459,8 @@ export default function App() {
   const role = normalizeRole(session.role);
   const permissions = useMemo(() => ({
     ...getPermissions(role),
-    canViewTechPayments: role === "admin" || Boolean(session.canViewTechPayments),
-    canMarkTechPaymentsPaid: role === "admin" || Boolean(session.canMarkTechPaymentsPaid),
+    canViewTechPayments: canEditTechPayment(role) || Boolean(session.canViewTechPayments),
+    canMarkTechPaymentsPaid: canEditTechPayment(role) || Boolean(session.canMarkTechPaymentsPaid),
     canExportFinancialReports: role === "admin" || Boolean(session.canExportFinancialReports),
   }), [role, session.canExportFinancialReports, session.canMarkTechPaymentsPaid, session.canViewTechPayments]);
   const isAdmin = role === "admin";
@@ -709,7 +709,7 @@ export default function App() {
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "accounting" && <AccountingCenter session={session} onOpenJob={openJobDetailsFromView} />}
-        {canAccessActiveView && activeView === "tech-payments" && <TechnicianPaymentsReport session={session} role={role} canViewFinancial={role === "admin" || (role === "technician_manager" && permissions.canViewTechPayments)} canMarkPaid={permissions.canMarkTechPaymentsPaid} canExport={role === "admin"} onBack={() => setActiveView(role === "admin" ? "dashboard" : "dispatch")} onOpenJob={openJobDetailsFromView} />}
+        {canAccessActiveView && activeView === "tech-payments" && <TechnicianPaymentsReport session={session} role={role} canViewFinancial={permissions.canViewTechPayments} canMarkPaid={permissions.canMarkTechPaymentsPaid} canExport={role === "admin"} onBack={() => setActiveView(role === "admin" ? "dashboard" : "dispatch")} onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}
         {canAccessActiveView && activeView === "activity" && <ActivityLogPage role={role} />}
@@ -768,7 +768,7 @@ function canAccessView(view, role, permissions) {
   if (view === "flat-rate") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (view === "ai-labor") return ["admin", "dispatcher", "supervisor", "technician_manager"].includes(role);
   if (view === "parts-intelligence") return ["admin", "dispatcher", "supervisor"].includes(role);
-  if (view === "tech-payments") return ["dispatcher", "supervisor"].includes(role) || Boolean(permissions.canViewTechPayments);
+  if (view === "tech-payments") return canEditTechPayment(role) || Boolean(permissions.canViewTechPayments);
   if (["accounting", "billing", "administration", "users", "reports", "settings"].includes(view)) {
     return role === "admin";
   }

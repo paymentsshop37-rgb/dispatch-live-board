@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     }
     if (req.method === "POST") {
       const name = clean(body.name), username = clean(body.username), email = internalEmailForUsername(username), password = String(body.temporaryPassword || ""), role = clean(body.role), status = clean(body.status);
-      if (!name || !username || !password || !["admin", "dispatcher", "technician_manager"].includes(role) || !["Active", "Inactive"].includes(status)) return json({ error: "Invalid user data." }, 400);
+      if (!name || !username || !password || !["admin", "supervisor", "dispatcher", "technician_manager"].includes(role) || !["Active", "Inactive"].includes(status)) return json({ error: "Invalid user data." }, 400);
       if (password.length < 8) return json({ error: "The password must contain at least 8 characters." }, 400);
       const [{ data: duplicateEmail }, { data: duplicateUsername }] = await Promise.all([
         admin.from("app_users").select("id").eq("email", email).maybeSingle(),
@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
     if (req.method === "PATCH") {
       const allowed: Record<string, unknown> = {};
       for (const key of ["name", "username", "notes"]) if (body[key] !== undefined) allowed[key] = clean(body[key]);
-      if (body.role !== undefined) { if (!["admin", "dispatcher", "technician_manager"].includes(body.role)) return json({ error: "Invalid role." }, 400); allowed.role = body.role; }
+      if (body.role !== undefined) { if (!["admin", "supervisor", "dispatcher", "technician_manager"].includes(body.role)) return json({ error: "Invalid role." }, 400); allowed.role = body.role; }
       if (body.status !== undefined) { if (!["Active", "Inactive"].includes(body.status)) return json({ error: "Invalid status." }, 400); allowed.status = body.status; }
       if (body.forcePasswordChange !== undefined) allowed.force_password_change = Boolean(body.forcePasswordChange);
       if (body.canViewTechPayments !== undefined) allowed.can_view_tech_payments = Boolean(body.canViewTechPayments);

@@ -2,6 +2,12 @@ export function normalizeRole(role) {
   return String(role || "").trim().toLowerCase();
 }
 
+export const TECH_PAYMENT_EDITOR_ROLES = Object.freeze(["admin", "supervisor", "dispatcher", "technician_manager"]);
+
+export function canEditTechPayment(role) {
+  return TECH_PAYMENT_EDITOR_ROLES.includes(normalizeRole(role));
+}
+
 export function getPermissions(role) {
   const normalizedRole = normalizeRole(role);
 
@@ -34,6 +40,8 @@ export function getPermissions(role) {
       canAssignTechnicians: true,
       canViewCustomers: true,
       canUseAiLaborGuide: true,
+      canViewTechPayments: true,
+      canMarkTechPaymentsPaid: true,
       canExportOperationalReports: true,
     };
   }
@@ -45,6 +53,8 @@ export function getPermissions(role) {
       canManageTechnicians: true,
       canViewPrivateTechnicianData: true,
       canUseAiLaborGuide: true,
+      canViewTechPayments: true,
+      canMarkTechPaymentsPaid: true,
     };
   }
 
