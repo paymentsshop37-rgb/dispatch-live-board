@@ -2,17 +2,19 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, Banknote, BarChart3, Building2, CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign,
   ClipboardList, Download, FileSpreadsheet, FileText, Gauge, History, LoaderCircle, ReceiptText, RefreshCw,
-  Search, Settings, ShieldAlert, SlidersHorizontal, Users, WalletCards, X,
+  Printer, Search, Settings, ShieldAlert, SlidersHorizontal, Users, WalletCards, X,
 } from "lucide-react";
 import {
-  ACCOUNTING_DATE_PRESETS, aggregatePerformance, accountingDateRange, buildAccountingModel, detailRowsForKpi,
-  estimatedProfit, isCancelled, isCompleted, isDryRun, isPendingTechPayment, lower, numberValue, profitMargin,
+  ACCOUNTING_DATE_PRESETS, OUTSTANDING_DATE_PRESETS, aggregatePerformance, accountingDateRange, buildAccountingModel,
+  buildOutstandingSentInvoices, buildProfitReconciliation, detailRowsForKpi, estimatedProfit, filterOutstandingInvoices,
+  isCancelled, isCompleted, isDryRun, isPendingTechPayment, lower, numberValue, profitMargin, summarizeOutstandingInvoices,
 } from "./accountingData.js";
 import {
   loadAccountingWorkspace, loadTransactionPage, logAccountingExport, recordInvoicePayment, recordTechnicianPayment,
   saveAccountingSettings, voidInvoicePayment, voidTechnicianPayment,
 } from "./accountingService.js";
 import AccountingExportCenter from "./AccountingExportCenter.jsx";
+import { exportOutstandingInvoices } from "./outstandingInvoiceExports.js";
 
 const tabs = ["Overview", "Customer Invoices", "Accounts Receivable", "Technician Payments", "Profitability", "Internal Control", "Accounting Exports", "Settings"];
 const moneyFormat = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -21,14 +23,16 @@ export default function AccountingCenter({ session, onOpenJob }) {
   const [activeTab, setActiveTab] = useState("Overview");
   const [datePreset, setDatePreset] = useState("This Month");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
-  const [workspace, setWorkspace] = useState({ jobs: [], pendingTechJobs: [], redJobs: [], paymentSummaries: [], settings: null, recentAudit: [] });
+  const [workspace, setWorkspace] = useState({ jobs: [], allJobs: [], pendingTechJobs: [], redJobs: [], paymentSummaries: [], settings: null, recentAudit: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [drilldown, setDrilldown] = useState(null);
+  const [outstandingOpen, setOutstandingOpen] = useState(false);
   const defaultRangeApplied = useRef(false);
   const range = useMemo(() => accountingDateRange(datePreset, customRange), [datePreset, customRange]);
   const model = useMemo(() => buildAccountingModel(workspace.jobs, workspace.paymentSummaries), [workspace.jobs, workspace.paymentSummaries]);
+  const outstanding = useMemo(() => buildOutstandingSentInvoices(workspace.allJobs, workspace.paymentSummaries), [workspace.allJobs, workspace.paymentSummaries]);
 
   async function refresh() {
     setLoading(true); setError("");
@@ -39,7 +43,7 @@ export default function AccountingCenter({ session, onOpenJob }) {
   useEffect(() => { refresh(); }, [range?.from, range?.to]);
   useEffect(() => { const configured=workspace.settings?.default_report_date_range; if(!defaultRangeApplied.current&&ACCOUNTING_DATE_PRESETS.includes(configured)){defaultRangeApplied.current=true;setDatePreset(configured)} }, [workspace.settings]);
   function show(message) { setNotice(message); window.setTimeout(() => setNotice(""), 4500); }
-  function openKpi(key, label) { setDrilldown({ label, rows: detailRowsForKpi(model, key), key }); }
+  function openKpi(kpiKey, label) { setDrilldown({ label, rows: detailRowsForKpi(model, kpiKey), kpiKey }); }
 
   return (
     <div className="min-h-screen bg-[#eef2f7] p-3 sm:p-5 xl:p-7">
@@ -61,7 +65,7 @@ export default function AccountingCenter({ session, onOpenJob }) {
         {notice && <div className="fixed right-5 top-5 z-[180] rounded-xl bg-emerald-600 px-5 py-3 font-black text-white shadow-xl">{notice}</div>}
         {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 font-bold text-red-800">{error}</div>}
         {loading && !workspace.jobs.length ? <LoadingPanel /> : <>
-          {activeTab === "Overview" && <Overview model={model} audit={workspace.recentAudit} onKpi={openKpi} onTab={setActiveTab} />}
+          {activeTab === "Overview" && <Overview model={model} outstanding={outstanding} audit={workspace.recentAudit} onKpi={openKpi} onOutstanding={() => setOutstandingOpen(true)} onTab={setActiveTab} />}
           {activeTab === "Customer Invoices" && <CustomerInvoices jobs={model.jobs} onOpenJob={onOpenJob} />}
           {activeTab === "Accounts Receivable" && <AccountsReceivable model={model} settings={workspace.settings} onOpenJob={onOpenJob} onChanged={async (message) => { show(message); await refresh(); }} />}
           {activeTab === "Technician Payments" && <TechnicianPayments jobs={model.jobs} allPendingJobs={workspace.pendingTechJobs} settings={workspace.settings} onOpenJob={onOpenJob} onChanged={async (message) => { show(message); await refresh(); }} />}
@@ -71,12 +75,13 @@ export default function AccountingCenter({ session, onOpenJob }) {
           {activeTab === "Settings" && <AccountingSettings settings={workspace.settings} onSaved={(settings) => { setWorkspace((current) => ({ ...current, settings })); show("Accounting settings saved."); }} />}
         </>}
       </div>
-      {drilldown && <KpiDrilldown {...drilldown} onClose={() => setDrilldown(null)} onOpenJob={onOpenJob} />}
+      {drilldown && <SmartKpiDrilldown {...drilldown} onClose={() => setDrilldown(null)} onOpenJob={onOpenJob} />}
+      {outstandingOpen && <OutstandingSentInvoicesReport source={outstanding} settings={workspace.settings} session={session} onClose={() => setOutstandingOpen(false)} onOpenJob={onOpenJob} onChanged={async (message) => { show(message); await refresh(); }} />}
     </div>
   );
 }
 
-function Overview({ model, audit, onKpi, onTab }) {
+function Overview({ model, outstanding, audit, onKpi, onOutstanding, onTab }) {
   const cards = [
     ["totalBilled", "Total Billed", model.kpis.totalBilled, CircleDollarSign, "money", "blue"], ["partsExpense", "Parts Expense", model.kpis.partsExpense, ReceiptText, "money", "slate"],
     ["techLaborExpense", "Tech Labor Expense", model.kpis.techLaborExpense, Users, "money", "slate"], ["estimatedProfit", "Estimated Profit", model.kpis.estimatedProfit, BarChart3, "money", "green"],
@@ -86,7 +91,7 @@ function Overview({ model, audit, onKpi, onTab }) {
     ["redInternalControlJobs", "Red Internal Control Jobs", model.kpis.redInternalControlJobs, ShieldAlert, "count", "red"], ["openCustomerInvoices", "Open Customer Invoices", model.kpis.openCustomerInvoices, FileText, "count", "blue"],
   ];
   return <div className="space-y-5">
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">{cards.map(([key,label,value,Icon,type,tone]) => <KpiCard key={key} label={label} value={type === "money" ? money(value) : number(value)} icon={Icon} tone={tone} onClick={() => onKpi(key,label)} />)}</section>
+    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6"><OutstandingKpiCard value={outstanding.totalOutstanding} count={outstanding.invoiceCount} onClick={onOutstanding} />{cards.map(([key,label,value,Icon,type,tone]) => <KpiCard key={key} label={label} value={type === "money" ? money(value) : number(value)} icon={Icon} tone={tone} onClick={() => onKpi(key,label)} />)}</section>
     {model.warnings.length > 0 && <button type="button" onClick={() => onTab("Internal Control")} className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left"><span className="flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-amber-600" /><span><strong className="block text-amber-950">{model.warnings.length} accounting data-quality warnings</strong><span className="text-sm text-amber-800">Review exceptions without modifying source records.</span></span></span><ChevronRight className="h-5 w-5 text-amber-700" /></button>}
     <section className="grid gap-4 xl:grid-cols-3"><SummaryPanel title="Revenue & Expenses" rows={[["Total Billed",money(model.kpis.totalBilled)],["Parts Expense",money(model.kpis.partsExpense)],["Tech Labor Expense",money(model.kpis.techLaborExpense)],["Estimated Job Profit",money(model.kpis.estimatedProfit)]]} /><BreakdownPanel title="Job Status" values={model.statusBreakdown} /><BreakdownPanel title="Invoice Status" values={model.invoiceBreakdown} /></section>
     <section className="grid gap-4 xl:grid-cols-4"><Ranking title="Top Customers" rows={model.topCustomers} /><Ranking title="Top Technicians" rows={model.topTechnicians} /><Ranking title="Top Cities" rows={model.topCities} /><Ranking title="Top Dispatchers" rows={model.topDispatchers} /></section>
@@ -157,3 +162,22 @@ function money(value){return moneyFormat.format(numberValue(value))} function nu
 function date(value){if(!value)return "-";return new Intl.DateTimeFormat("en-US",{dateStyle:"medium"}).format(new Date(`${String(value).slice(0,10)}T00:00:00`))} function dateTime(value){if(!value)return "-";return new Intl.DateTimeFormat("en-US",{dateStyle:"medium",timeStyle:"short"}).format(new Date(value))}
 function daysSince(value){if(!value)return 0;const start=new Date(String(value).length===10?`${value}T00:00:00`:value);return Math.max(0,Math.floor((Date.now()-start.getTime())/86400000))}
 function rangeLabel(preset,custom){return preset==="Custom Range"?`${custom.from||"Start"} to ${custom.to||"Today"}`:preset}
+
+function OutstandingSentInvoicesReport({ source, settings, session, onClose, onOpenJob, onChanged }) {
+  const [mode,setMode]=useState("All Outstanding"); const [preset,setPreset]=useState("This Month"); const [custom,setCustom]=useState({from:"",to:""}); const [paymentJob,setPaymentJob]=useState(null); const [busy,setBusy]=useState("");
+  const rows=useMemo(()=>filterOutstandingInvoices(source.rows,mode==="All Outstanding"?"All Outstanding":preset,custom),[source.rows,mode,preset,custom.from,custom.to]);
+  const summary=useMemo(()=>summarizeOutstandingInvoices(rows),[rows]); const filterLabel=mode==="All Outstanding"?"All Outstanding":rangeLabel(preset,custom);
+  async function runExport(format){setBusy(format);try{await exportOutstandingInvoices({rows,summary,filterLabel,generatedBy:session?.name||session?.username||"Administrator",footer:settings?.pdf_footer},format);await logAccountingExport("outstanding-sent-invoices",{format,range:filterLabel,invoice_count:summary.invoiceCount,total_outstanding:summary.totalOutstanding});}catch(error){alert(error.message||"Export failed.");}finally{setBusy("")}}
+  return <Modal wide title="Outstanding Sent Invoices Report" onClose={onClose}><div className="mb-4 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 xl:flex-row xl:items-center xl:justify-between"><div><p className="font-black text-amber-950">Sent • Awaiting Customer Payment</p><p className="text-sm font-semibold text-amber-800">Amount due is Total Bill minus non-voided customer payment transactions.</p></div><div className="flex flex-wrap gap-2"><ExportButton label="Export PDF" icon={FileText} busy={busy} onClick={()=>runExport("pdf")}/><ExportButton label="Export Excel" icon={FileSpreadsheet} busy={busy} onClick={()=>runExport("xlsx")}/><ExportButton label="Print" icon={Printer} busy={busy} onClick={()=>runExport("print")}/></div></div>
+    <div className="mb-4 flex flex-wrap items-end gap-2"><ModeButton active={mode==="All Outstanding"} onClick={()=>setMode("All Outstanding")}>All Outstanding</ModeButton><ModeButton active={mode==="Current Date Filter"} onClick={()=>setMode("Current Date Filter")}>Current Date Filter</ModeButton>{mode==="Current Date Filter"&&<><select value={preset} onChange={(event)=>setPreset(event.target.value)} className="h-10 rounded-xl border px-3 text-sm font-bold">{OUTSTANDING_DATE_PRESETS.map((value)=><option key={value}>{value}</option>)}</select>{preset==="Custom Range"&&<><Setting label="From" type="date" value={custom.from} onChange={(value)=>setCustom({...custom,from:value})}/><Setting label="To" type="date" value={custom.to} onChange={(value)=>setCustom({...custom,to:value})}/></>}</>}</div>
+    <section className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5"><MiniKpi label="Total Sent / Unpaid Invoices" value={number(summary.invoiceCount)}/><MiniKpi label="Total Outstanding Amount" value={money(summary.totalOutstanding)} warning/><MiniKpi label="Average Invoice" value={money(summary.averageInvoice)}/><MiniKpi label="Oldest Outstanding Invoice" value={summary.oldestOutstanding==null?"Not available":`${summary.oldestOutstanding} days`}/><MiniKpi label="Average Days Outstanding" value={summary.averageDaysOutstanding==null?"Not available":summary.averageDaysOutstanding.toFixed(1)}/></section>
+    <WideTable headers={["Invoice #","Date","Company","Reference #","Location","Dispatcher","Technician","Invoice Status","Payment Status","Payment Method","Total Bill","Amount Paid","Amount Due","Days Outstanding","Updates","Actions"]}>{rows.map((row)=><tr key={row.id} className="border-t border-amber-100 even:bg-amber-50/40"><LinkCell label={row.invoiceNumber||"-"} job={row} onOpenJob={onOpenJob}/><Cell>{date(row.date)}</Cell><Cell strong>{row.company||"-"}</Cell><LinkCell label={row.referenceNumber||"-"} job={row} onOpenJob={onOpenJob}/><Cell>{row.location||"-"}</Cell><Cell>{row.dispatcher||"-"}</Cell><Cell>{row.technician||"-"}</Cell><Cell><Status value={row.invoiceStatus}/></Cell><Cell><Status value={row.paymentStatus}/></Cell><Cell>{row.paymentMethod||"-"}</Cell><MoneyCell value={row.totalBill}/><MoneyCell value={row.amountPaid}/><MoneyCell value={row.balanceDue} strong/><Cell>{row.daysOutstanding??"Not available"}</Cell><Cell wide>{row.updates||"-"}</Cell><Cell><div className="flex gap-2"><button onClick={()=>setPaymentJob(row)} className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-black text-white">Record Payment</button><button onClick={()=>onOpenJob?.(row.id)} className="font-black text-blue-700">Open</button></div></Cell></tr>)}</WideTable>
+    <div className="mt-3 flex justify-end rounded-xl bg-slate-950 px-4 py-3 text-white"><span className="mr-8 font-black">Grand Total</span><span className="font-black text-amber-300">{money(summary.totalOutstanding)}</span></div>{paymentJob&&<PaymentModal kind="invoice" job={paymentJob} settings={settings} onClose={()=>setPaymentJob(null)} onSaved={async()=>{setPaymentJob(null);await onChanged("Invoice payment recorded with audit history.");}}/>}</Modal>;
+}
+
+function SmartKpiDrilldown(props){return props.kpiKey==="estimatedProfit"?<ProfitReconciliation rows={props.rows} onClose={props.onClose} onOpenJob={props.onOpenJob}/>:<GenericKpiDrilldown {...props}/>}
+function GenericKpiDrilldown({label,rows,kpiKey,onClose,onOpenJob}){const countOnly=kpiKey.includes("Jobs")||["totalJobs","pendingTechPaymentJobs","redInternalControlJobs","openCustomerInvoices","dryRuns"].includes(kpiKey);const total=rows.reduce((sum,job)=>sum+(kpiKey==="partsExpense"?job.parts:kpiKey==="techLaborExpense"||kpiKey==="techPaymentsDue"?job.techLabor:job.totalBill),0);return <Modal wide title={`${label} - Reconciliation Detail`} onClose={onClose}><p className="mb-4 rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-900">{rows.length} matching jobs{countOnly?"":` · Reconciled total ${money(total)}`}</p><WideTable headers={["Date","Invoice #","Company","Reference #","Status","Invoice Status","Tech Payment","Total Bill","Parts","Tech Labor","Estimated Profit"]}>{rows.map((job)=><tr key={job.id} className="border-t even:bg-slate-50"><Cell>{date(job.date)}</Cell><LinkCell label={job.invoiceNumber||"-"} job={job} onOpenJob={onOpenJob}/><Cell strong>{job.company}</Cell><LinkCell label={job.referenceNumber||"-"} job={job} onOpenJob={onOpenJob}/><Cell><Status value={job.status}/></Cell><Cell><Status value={job.invoiceStatus}/></Cell><Cell><Status value={job.techPaymentStatus}/></Cell><MoneyCell value={job.totalBill}/><MoneyCell value={job.parts}/><MoneyCell value={job.techLabor}/><MoneyCell value={estimatedProfit(job)} strong/></tr>)}</WideTable></Modal>}
+function ProfitReconciliation({rows,onClose,onOpenJob}){const r=buildProfitReconciliation(rows);return <Modal wide title="Estimated Profit Reconciliation" onClose={onClose}><p className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm font-black text-emerald-900">Estimated Profit = Total Bill − Parts − Tech Labor. The detailed rows below use this production formula and reconcile exactly to the KPI.</p><section className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><MiniKpi label="Total Billed" value={money(r.totalBilled)}/><MiniKpi label="Total Parts" value={money(r.totalParts)}/><MiniKpi label="Total Tech Labor" value={money(r.totalTechLabor)}/><MiniKpi label="Estimated Profit" value={money(r.estimatedProfit)}/><MiniKpi label="Number of Jobs Included" value={number(r.jobsIncluded)}/><MiniKpi label="Negative-Profit Jobs" value={number(r.negativeProfitJobs)} warning={r.negativeProfitJobs>0}/><MiniKpi label="Jobs with Missing Parts" value={number(r.missingPartsJobs)} warning={r.missingPartsJobs>0}/><MiniKpi label="Jobs with Missing Tech Labor" value={number(r.missingTechLaborJobs)} warning={r.missingTechLaborJobs>0}/></section><WideTable headers={["Job #","Date","Invoice #","Reference #","Company","Technician","Total Bill","Parts","Tech Labor","Estimated Profit","Status"]}>{rows.map((job)=><tr key={job.id} className={`border-t even:bg-slate-50 ${estimatedProfit(job)<0?"bg-red-50":""}`}><LinkCell label={job.jobNumber} job={job} onOpenJob={onOpenJob}/><Cell>{date(job.date)}</Cell><LinkCell label={job.invoiceNumber||"-"} job={job} onOpenJob={onOpenJob}/><LinkCell label={job.referenceNumber||"-"} job={job} onOpenJob={onOpenJob}/><Cell strong>{job.company||"-"}</Cell><Cell>{job.technician||"-"}</Cell><MoneyCell value={job.totalBill}/><MoneyCell value={job.parts}/><MoneyCell value={job.techLabor}/><MoneyCell value={estimatedProfit(job)} strong/><Cell><Status value={job.status}/></Cell></tr>)}</WideTable><div className="mt-3 flex justify-end rounded-xl bg-slate-950 px-4 py-3 text-white"><span className="mr-8 font-black">Reconciled Estimated Profit</span><span className="font-black text-emerald-300">{money(r.estimatedProfit)}</span></div></Modal>}
+function OutstandingKpiCard({value,count,onClick}){return <button type="button" onClick={onClick} className="group min-h-32 rounded-2xl border border-amber-300 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"><span className="inline-flex rounded-xl bg-amber-50 p-2 text-amber-700"><ShieldAlert className="h-5 w-5"/></span><p className="mt-3 text-[10px] font-black uppercase tracking-wide text-slate-500">Outstanding Sent Invoices</p><p className="mt-1 text-2xl font-black text-slate-950">{money(value)}</p><p className="text-xs font-black uppercase text-amber-700">{number(count)} invoices</p><p className="mt-1 text-[10px] font-bold text-amber-700">Sent • Awaiting Customer Payment</p></button>}
+function ExportButton({label,icon:Icon,busy,onClick}){return <button onClick={onClick} disabled={Boolean(busy)} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-black text-slate-800 disabled:opacity-40"><Icon className="h-4 w-4"/>{label}</button>}
+function ModeButton({active,onClick,children}){return <button onClick={onClick} className={`rounded-xl px-4 py-2.5 text-sm font-black ${active?"bg-amber-600 text-white":"bg-slate-100 text-slate-700"}`}>{children}</button>}

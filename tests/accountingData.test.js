@@ -6,12 +6,16 @@ import {
   accountingDateRange,
   agingBucket,
   buildAccountingModel,
+  buildOutstandingSentInvoices,
+  buildProfitReconciliation,
   buildReceivable,
   detailRowsForKpi,
   estimatedProfit,
+  filterOutstandingInvoices,
   normalizeAccountingJob,
 } from "../src/modules/accounting/accountingData.js";
 import { createAccountingWorkbookBuffer } from "../src/modules/accounting/accountingWorkbook.js";
+import { outstandingInvoiceTable } from "../src/modules/accounting/outstandingInvoiceExports.js";
 
 const rawJobs = [
   { id: "1", display_number: "J-1", job_date: "2026-07-01", invoice_number: "INV-1", reference_number: "REF-1", company: "Acme", status: "Completed", invoice_status: "Paid", tech_payment_status: "Paid", tech_payment_paid_at: "2026-07-03", total_bill: 1000, parts: 200, tech_labor: 300, internal_control_color: "red", invoice_due_date: "2026-07-15", tech: "Taylor", dispatch: "Dana", job_city: "Denver" },
@@ -31,6 +35,40 @@ test("reconciles all twelve headline KPIs from filtered job rows", () => {
   const model = buildAccountingModel(jobs, payments, new Date("2026-08-02T12:00:00"));
   assert.deepEqual(model.kpis, { totalBilled: 1700, partsExpense: 275, techLaborExpense: 450, estimatedProfit: 975, totalJobs: 3, completedJobs: 1, cancelledJobs: 1, dryRuns: 1, techPaymentsDue: 100, pendingTechPaymentJobs: 1, redInternalControlJobs: 1, openCustomerInvoices: 1 });
   for (const key of Object.keys(model.kpis)) assert.ok(Array.isArray(detailRowsForKpi(model, key)));
+});
+
+test("estimated-profit reconciliation uses the exact KPI formula and source rows", () => {
+  const reconciliation = buildProfitReconciliation(jobs);
+  assert.equal(reconciliation.totalBilled, 1700);
+  assert.equal(reconciliation.totalParts, 275);
+  assert.equal(reconciliation.totalTechLabor, 450);
+  assert.equal(reconciliation.estimatedProfit, 975);
+  assert.equal(reconciliation.estimatedProfit, buildAccountingModel(jobs, payments).kpis.estimatedProfit);
+  assert.equal(reconciliation.jobsIncluded, 3);
+});
+
+test("outstanding sent invoices include sent unpaid balances and exclude paid and cancelled invoices", () => {
+  const report = buildOutstandingSentInvoices(jobs, payments, new Date("2026-08-02T12:00:00"));
+  assert.equal(report.invoiceCount, 1);
+  assert.equal(report.rows[0].invoiceNumber, "INV-2");
+  assert.equal(report.rows[0].amountPaid, 125);
+  assert.equal(report.rows[0].balanceDue, 375);
+  assert.equal(report.totalOutstanding, 375);
+  assert.ok(!report.rows.some((row) => ["INV-1", "INV-3"].includes(row.invoiceNumber)));
+});
+
+test("all outstanding ignores job date while current date presets filter the same report rows", () => {
+  const report = buildOutstandingSentInvoices(jobs, payments, new Date("2026-08-02T12:00:00"));
+  assert.equal(filterOutstandingInvoices(report.rows, "All Outstanding", {}, new Date("2026-08-02T12:00:00")).length, 1);
+  assert.equal(filterOutstandingInvoices(report.rows, "Today", {}, new Date("2026-08-02T12:00:00")).length, 0);
+  assert.equal(filterOutstandingInvoices(report.rows, "Last 30 Days", {}, new Date("2026-08-02T12:00:00")).length, 1);
+});
+
+test("outstanding export grand total matches the visible report sum", () => {
+  const report = buildOutstandingSentInvoices(jobs, payments, new Date("2026-08-02T12:00:00"));
+  const table = outstandingInvoiceTable(report.rows);
+  assert.equal(table.rows.at(-1)[0], "GRAND TOTAL");
+  assert.equal(table.rows.at(-1)[12], report.totalOutstanding);
 });
 
 test("accounts receivable uses non-voided transaction summaries and never shows a negative balance", () => {

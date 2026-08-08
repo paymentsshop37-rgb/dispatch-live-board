@@ -2,6 +2,7 @@ const DAY_MS = 86400000;
 export const ACCOUNTING_DATE_PRESETS = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Last Year", "Custom Range", "All Time"];
 export const INVOICE_STATUSES = ["Sent", "Pending", "Paid", "Cancelled"];
 export const TECH_PAYMENT_STATUSES = ["Pending", "Paid", "Cancelled"];
+export const OUTSTANDING_DATE_PRESETS = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"];
 
 export function numberValue(value) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 export function textValue(value) { return String(value ?? "").trim(); }
@@ -71,6 +72,59 @@ export function buildAccountingModel(jobs, paymentSummaries = [], now = new Date
   };
 }
 
+export function buildProfitReconciliation(jobs) {
+  const totalBilled = sum(jobs, "totalBill");
+  const totalParts = sum(jobs, "parts");
+  const totalTechLabor = sum(jobs, "techLabor");
+  return {
+    rows: jobs,
+    totalBilled,
+    totalParts,
+    totalTechLabor,
+    estimatedProfit: totalBilled - totalParts - totalTechLabor,
+    jobsIncluded: jobs.length,
+    negativeProfitJobs: jobs.filter((job) => estimatedProfit(job) < 0).length,
+    missingPartsJobs: jobs.filter((job) => isMissingSourceValue(job.raw?.parts)).length,
+    missingTechLaborJobs: jobs.filter((job) => isMissingSourceValue(job.raw?.tech_labor)).length,
+  };
+}
+
+export function buildOutstandingSentInvoices(jobs, paymentSummaries = [], now = new Date()) {
+  const summaryByJob = new Map(paymentSummaries.map((row) => [row.job_id, row]));
+  const rows = jobs
+    .map((job) => {
+      const receivable = buildReceivable(job, summaryByJob.get(job.id), now);
+      const outstandingFrom = job.invoiceDate || job.date || job.createdAt;
+      return { ...receivable, daysOutstanding: outstandingFrom ? Math.max(0, daysBetween(outstandingFrom, now)) : null };
+    })
+    .filter((row) => lower(row.invoiceStatus) === "sent"
+      && lower(row.customerPaymentStatus) !== "paid"
+      && !["paid", "overpaid", "cancelled"].includes(lower(row.paymentStatus))
+      && row.balanceDue > 0)
+    .sort((a, b) => (b.daysOutstanding ?? -1) - (a.daysOutstanding ?? -1) || textValue(a.invoiceNumber).localeCompare(textValue(b.invoiceNumber)));
+  return summarizeOutstandingInvoices(rows);
+}
+
+export function filterOutstandingInvoices(rows, preset, custom = {}, now = new Date()) {
+  if (!preset || preset === "All Outstanding") return rows;
+  const range = accountingDateRange(preset, custom, now);
+  if (!range) return rows;
+  return rows.filter((row) => (!range.from || row.date >= range.from) && (!range.to || row.date <= range.to));
+}
+
+export function summarizeOutstandingInvoices(rows) {
+  const totalOutstanding = rows.reduce((total, row) => total + numberValue(row.balanceDue), 0);
+  const trackedDays = rows.map((row) => row.daysOutstanding).filter((value) => value !== null && value !== undefined);
+  return {
+    rows,
+    invoiceCount: rows.length,
+    totalOutstanding,
+    averageInvoice: rows.length ? totalOutstanding / rows.length : 0,
+    oldestOutstanding: trackedDays.length ? Math.max(...trackedDays) : null,
+    averageDaysOutstanding: trackedDays.length ? trackedDays.reduce((total, value) => total + value, 0) / trackedDays.length : null,
+  };
+}
+
 export function buildReceivable(job, paymentSummary = {}, now = new Date()) {
   const amountPaid = numberValue(paymentSummary?.amount_paid);
   const rawBalance = numberValue(job.totalBill) - amountPaid;
@@ -129,6 +183,7 @@ export function aggregatePerformance(jobs, key) {
 }
 
 function warning(type, job) { return { type, jobId: job.id, invoiceNumber: job.invoiceNumber, referenceNumber: job.referenceNumber, company: job.company }; }
+function isMissingSourceValue(value) { return value === null || value === undefined || textValue(value) === ""; }
 function countBy(rows, picker) { return rows.reduce((acc, row) => { const key = picker(row); acc[key] = (acc[key] || 0) + 1; return acc; }, {}); }
 function sum(rows, key) { return rows.reduce((total, row) => total + numberValue(row[key]), 0); }
 function daysBetween(from, to) { const date = new Date(String(from).length === 10 ? `${from}T00:00:00` : from); if (Number.isNaN(date.getTime())) return 0; return Math.floor((startOfDay(to) - startOfDay(date)) / DAY_MS); }
