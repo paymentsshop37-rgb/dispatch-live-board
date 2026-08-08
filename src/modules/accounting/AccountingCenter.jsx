@@ -10,20 +10,20 @@ import {
   isCancelled, isCompleted, isDryRun, isPendingTechPayment, lower, numberValue, profitMargin, summarizeOutstandingInvoices,
 } from "./accountingData.js";
 import {
-  loadAccountingWorkspace, loadTransactionPage, logAccountingExport, recordInvoicePayment, recordTechnicianPayment,
+  loadAccountingWorkspace, loadAuditPage, loadTransactionPage, logAccountingExport, recordInvoicePayment, recordTechnicianPayment,
   saveAccountingSettings, voidInvoicePayment, voidTechnicianPayment,
 } from "./accountingService.js";
 import AccountingExportCenter from "./AccountingExportCenter.jsx";
 import { exportOutstandingInvoices } from "./outstandingInvoiceExports.js";
 
-const tabs = ["Overview", "Customer Invoices", "Accounts Receivable", "Technician Payments", "Profitability", "Internal Control", "Accounting Exports", "Settings"];
+const tabs = ["Overview", "Customer Invoices", "Accounts Receivable", "Technician Payments", "Profitability", "Internal Control", "Accounting Exports", "Audit Log", "Settings"];
 const moneyFormat = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 export default function AccountingCenter({ session, onOpenJob }) {
   const [activeTab, setActiveTab] = useState("Overview");
   const [datePreset, setDatePreset] = useState("This Month");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
-  const [workspace, setWorkspace] = useState({ jobs: [], allJobs: [], pendingTechJobs: [], redJobs: [], paymentSummaries: [], settings: null, recentAudit: [] });
+  const [workspace, setWorkspace] = useState({ jobs: [], allJobs: [], pendingTechJobs: [], redJobs: [], paymentSummaries: [], settings: null });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -66,13 +66,14 @@ export default function AccountingCenter({ session, onOpenJob }) {
         {notice && <div className="fixed right-5 top-5 z-[180] rounded-xl bg-emerald-600 px-5 py-3 font-black text-white shadow-xl">{notice}</div>}
         {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 font-bold text-red-800">{error}</div>}
         {loading && !workspace.jobs.length ? <LoadingPanel /> : <>
-          {activeTab === "Overview" && <Overview model={model} outstanding={filteredOutstanding} audit={workspace.recentAudit} onKpi={openKpi} onOutstanding={() => setOutstandingOpen({ mode: datePreset === "All Time" ? "All Outstanding" : "Current Date Filter", preset: datePreset, custom: customRange })} onTab={setActiveTab} />}
+          {activeTab === "Overview" && <Overview model={model} outstanding={filteredOutstanding} onKpi={openKpi} onOutstanding={() => setOutstandingOpen({ mode: datePreset === "All Time" ? "All Outstanding" : "Current Date Filter", preset: datePreset, custom: customRange })} onTab={setActiveTab} />}
           {activeTab === "Customer Invoices" && <CustomerInvoices jobs={model.jobs} onOpenJob={onOpenJob} />}
           {activeTab === "Accounts Receivable" && <AccountsReceivable model={model} settings={workspace.settings} onOpenJob={onOpenJob} onChanged={async (message) => { show(message); await refresh(); }} />}
           {activeTab === "Technician Payments" && <TechnicianPayments jobs={model.jobs} allPendingJobs={workspace.pendingTechJobs} settings={workspace.settings} onOpenJob={onOpenJob} onChanged={async (message) => { show(message); await refresh(); }} />}
           {activeTab === "Profitability" && <Profitability jobs={model.jobs} onOpenJob={onOpenJob} />}
           {activeTab === "Internal Control" && <InternalControl jobs={workspace.redJobs} onOpenJob={onOpenJob} />}
           {activeTab === "Accounting Exports" && <AccountingExportCenter model={model} settings={workspace.settings} session={session} rangeLabel={rangeLabel(datePreset, customRange)} onNotice={show} />}
+          {activeTab === "Audit Log" && <AuditLog />}
           {activeTab === "Settings" && <AccountingSettings settings={workspace.settings} onSaved={(settings) => { setWorkspace((current) => ({ ...current, settings })); show("Accounting settings saved."); }} />}
         </>}
       </div>
@@ -82,7 +83,7 @@ export default function AccountingCenter({ session, onOpenJob }) {
   );
 }
 
-function Overview({ model, outstanding, audit, onKpi, onOutstanding, onTab }) {
+function Overview({ model, outstanding, onKpi, onOutstanding, onTab }) {
   const cards = [
     ["totalBilled", "Total Billed", model.kpis.totalBilled, CircleDollarSign, "money", "blue"], ["partsExpense", "Parts Expense", model.kpis.partsExpense, ReceiptText, "money", "slate"],
     ["techLaborExpense", "Tech Labor Expense", model.kpis.techLaborExpense, Users, "money", "slate"], ["estimatedProfit", "Estimated Profit", model.kpis.estimatedProfit, BarChart3, "money", "green"],
@@ -96,7 +97,7 @@ function Overview({ model, outstanding, audit, onKpi, onOutstanding, onTab }) {
     {model.warnings.length > 0 && <button type="button" onClick={() => onTab("Internal Control")} className="flex w-full items-center justify-between rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left"><span className="flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-amber-600" /><span><strong className="block text-amber-950">{model.warnings.length} accounting data-quality warnings</strong><span className="text-sm text-amber-800">Review exceptions without modifying source records.</span></span></span><ChevronRight className="h-5 w-5 text-amber-700" /></button>}
     <section className="grid gap-4 xl:grid-cols-3"><SummaryPanel title="Revenue & Expenses" rows={[["Total Billed",money(model.kpis.totalBilled)],{label:"Outstanding Sent Invoices",value:money(outstanding.totalOutstanding),warning:true,onClick:onOutstanding},["Parts Expense",money(model.kpis.partsExpense)],["Tech Labor Expense",money(model.kpis.techLaborExpense)],["Estimated Job Profit",money(model.kpis.estimatedProfit)]]} /><BreakdownPanel title="Job Status" values={model.statusBreakdown} /><BreakdownPanel title="Invoice Status" values={model.invoiceBreakdown} /></section>
     <section className="grid gap-4 xl:grid-cols-4"><Ranking title="Top Customers" rows={model.topCustomers} /><Ranking title="Top Technicians" rows={model.topTechnicians} /><Ranking title="Top Cities" rows={model.topCities} /><Ranking title="Top Dispatchers" rows={model.topDispatchers} /></section>
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-black text-slate-950">Recent Financial Activity</h2><div className="mt-3 divide-y divide-slate-100">{audit.length ? audit.slice(0,8).map((item) => <div key={item.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:justify-between"><div><p className="font-bold text-slate-800">{item.action}</p><p className="text-xs text-slate-500">{item.performed_by_name} · {item.record_type}</p></div><span className="text-xs font-semibold text-slate-500">{dateTime(item.created_at)}</span></div>) : <Empty label="No Accounting Center activity recorded yet." />}</div></section>
+    <FinancialDashboardDetails outstanding={outstanding} model={model} onOutstanding={onOutstanding} />
   </div>;
 }
 
@@ -182,3 +183,15 @@ function ProfitReconciliation({rows,onClose,onOpenJob}){const r=buildProfitRecon
 function OutstandingKpiCard({value,count,onClick}){return <button type="button" onClick={onClick} className="group min-h-32 rounded-2xl border border-amber-300 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"><span className="inline-flex rounded-xl bg-amber-50 p-2 text-amber-700"><ShieldAlert className="h-5 w-5"/></span><p className="mt-3 text-[10px] font-black uppercase tracking-wide text-slate-500">Outstanding Sent Invoices</p><p className="mt-1 text-2xl font-black text-slate-950">{money(value)}</p><p className="text-xs font-black uppercase text-amber-700">{number(count)} invoices</p><p className="mt-1 text-[10px] font-bold text-amber-700">Sent • Awaiting Customer Payment</p></button>}
 function ExportButton({label,icon:Icon,busy,onClick}){return <button onClick={onClick} disabled={Boolean(busy)} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-black text-slate-800 disabled:opacity-40"><Icon className="h-4 w-4"/>{label}</button>}
 function ModeButton({active,onClick,children}){return <button onClick={onClick} className={`rounded-xl px-4 py-2.5 text-sm font-black ${active?"bg-amber-600 text-white":"bg-slate-100 text-slate-700"}`}>{children}</button>}
+
+function FinancialDashboardDetails({outstanding,model,onOutstanding}) {
+  const customers=topOutstandingCustomers(outstanding.rows); const oldest=[...outstanding.rows].sort((a,b)=>(b.daysOutstanding??-1)-(a.daysOutstanding??-1)).slice(0,10); const largest=model.receivables.filter((row)=>row.balanceDue>0&&row.paymentStatus!=="Cancelled").sort((a,b)=>b.balanceDue-a.balanceDue).slice(0,10);
+  return <section className="space-y-4" aria-label="Financial dashboard details"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><button type="button" onClick={onOutstanding} className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-left transition hover:shadow-md"><p className="text-[10px] font-black uppercase text-amber-800">Outstanding Sent Invoices</p><p className="mt-2 text-2xl font-black text-slate-950">{number(outstanding.invoiceCount)} invoices</p><p className="mt-1 text-lg font-black text-amber-700">{money(outstanding.totalOutstanding)}</p></button><MiniKpi label="Technician Payments Due · Pending Jobs" value={number(model.kpis.pendingTechPaymentJobs)} warning={model.kpis.pendingTechPaymentJobs>0}/><MiniKpi label="Technician Payments Due · Total Amount Owed" value={money(model.kpis.techPaymentsDue)} warning={model.kpis.techPaymentsDue>0}/></div><div className="grid gap-4 xl:grid-cols-3"><FinancialList title="Top 10 Outstanding Customers" headers={["Company","Outstanding Amount","Invoice Count"]} empty="No outstanding customers.">{customers.map((row)=><tr key={row.company} className="border-t even:bg-slate-50"><Cell strong>{row.company}</Cell><MoneyCell value={row.amount} strong/><Cell>{number(row.invoiceCount)}</Cell></tr>)}</FinancialList><FinancialList title="Oldest Outstanding Invoices" headers={["Invoice #","Company","Days Outstanding","Amount"]} empty="No outstanding invoices.">{oldest.map((row)=><tr key={row.id} className="border-t even:bg-slate-50"><Cell strong>{row.invoiceNumber||"-"}</Cell><Cell>{row.company||"-"}</Cell><Cell>{row.daysOutstanding??"Not available"}</Cell><MoneyCell value={row.balanceDue} strong/></tr>)}</FinancialList><FinancialList title="Largest Open Invoices" headers={["Invoice #","Company","Amount"]} empty="No open invoices.">{largest.map((row)=><tr key={row.id} className="border-t even:bg-slate-50"><Cell strong>{row.invoiceNumber||"-"}</Cell><Cell>{row.company||"-"}</Cell><MoneyCell value={row.balanceDue} strong/></tr>)}</FinancialList></div></section>;
+}
+
+function FinancialList({title,headers,empty,children}){const hasRows=React.Children.count(children)>0;return <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><header className="border-b border-slate-200 px-4 py-3"><h2 className="font-black text-slate-950">{title}</h2></header><div className="p-3">{hasRows?<WideTable headers={headers}>{children}</WideTable>:<Empty label={empty}/>}</div></div>}
+function topOutstandingCustomers(rows){const groups=new Map();for(const row of rows){const company=row.company||"Unassigned";const current=groups.get(company)||{company,amount:0,invoiceCount:0};current.amount+=numberValue(row.balanceDue);current.invoiceCount+=1;groups.set(company,current)}return [...groups.values()].sort((a,b)=>b.amount-a.amount||b.invoiceCount-a.invoiceCount||a.company.localeCompare(b.company)).slice(0,10)}
+
+function AuditLog(){const [page,setPage]=useState(0);const [data,setData]=useState({rows:[],count:0});const [loading,setLoading]=useState(true);const [error,setError]=useState("");const pageSize=50;useEffect(()=>{let active=true;setLoading(true);setError("");loadAuditPage({page,pageSize}).then((result)=>{if(active)setData(result)}).catch((loadError)=>{if(active)setError(loadError.message||"Unable to load accounting audit events.")}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[page]);return <ReportSection title="Accounting Audit Log" subtitle="Immutable accounting events are retained here, separate from the financial dashboard" icon={History}>{error&&<div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 font-bold text-red-700">{error}</div>}{loading?<LoadingPanel/>:<><WideTable headers={["Date / Time","Action","Record Type","Record ID","Job ID","Performed By","Reason","Change Details"]}>{data.rows.map((row)=><tr key={row.id} className="border-t even:bg-slate-50"><Cell>{dateTime(row.created_at)}</Cell><Cell strong>{row.action}</Cell><Cell>{row.record_type}</Cell><Cell>{row.record_id||"-"}</Cell><Cell>{row.job_id?String(row.job_id).slice(0,8):"-"}</Cell><Cell>{row.performed_by_name||"System"}</Cell><Cell wide>{row.reason||"-"}</Cell><Cell wide><AuditChangeDetails previous={row.previous_value} next={row.new_value}/></Cell></tr>)}</WideTable><div className="mt-4 flex items-center justify-between"><span className="text-sm font-bold text-slate-500">{number(data.count)} audit events</span><div className="flex gap-2"><button type="button" disabled={page===0} onClick={()=>setPage((value)=>value-1)} className="rounded-lg border px-3 py-2 font-bold disabled:opacity-40">Previous</button><button type="button" disabled={(page+1)*pageSize>=data.count} onClick={()=>setPage((value)=>value+1)} className="rounded-lg border px-3 py-2 font-bold disabled:opacity-40">Next</button></div></div></>}</ReportSection>}
+function AuditChangeDetails({previous,next}){if(previous==null&&next==null)return "-";return <details><summary className="cursor-pointer font-black text-blue-700">View changes</summary><div className="mt-2 space-y-2 whitespace-normal text-[10px]"><AuditJson label="Previous" value={previous}/><AuditJson label="New" value={next}/></div></details>}
+function AuditJson({label,value}){return value==null?null:<div><strong className="block text-slate-500">{label}</strong><pre className="mt-1 max-w-md overflow-auto rounded bg-slate-950 p-2 text-slate-100">{JSON.stringify(value,null,2)}</pre></div>}

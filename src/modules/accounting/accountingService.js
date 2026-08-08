@@ -2,19 +2,24 @@ import { supabase } from "../../lib/supabase";
 import { normalizeAccountingJob } from "./accountingData.js";
 
 export async function loadAccountingWorkspace(range) {
-  const [jobsResult, allJobsResult, summaryResult, pendingTechResult, redJobsResult, settingsResult, recentAuditResult] = await Promise.all([
+  const [jobsResult, allJobsResult, summaryResult, pendingTechResult, redJobsResult, settingsResult] = await Promise.all([
     supabase.rpc("get_accounting_jobs", { p_from_date: range?.from || null, p_to_date: range?.to || null }),
     range ? supabase.rpc("get_accounting_jobs", { p_from_date: null, p_to_date: null }) : Promise.resolve(null),
     supabase.rpc("get_invoice_payment_summary"),
     supabase.rpc("get_pending_technician_payment_jobs"),
     supabase.rpc("get_red_internal_control_jobs"),
     supabase.from("accounting_settings").select("*").eq("singleton", true).maybeSingle(),
-    supabase.from("accounting_audit_log").select("*").order("created_at", { ascending: false }).limit(30),
   ]);
   const error = jobsResult.error || allJobsResult?.error || summaryResult.error || pendingTechResult.error || redJobsResult.error || settingsResult.error;
   if (error) throw error;
   const allRows = allJobsResult?.data || jobsResult.data || [];
-  return { jobs: (jobsResult.data || []).map(normalizeAccountingJob), allJobs: allRows.map(normalizeAccountingJob), pendingTechJobs: (pendingTechResult.data || []).map(normalizeAccountingJob), redJobs: (redJobsResult.data || []).map(normalizeAccountingJob), paymentSummaries: summaryResult.data || [], settings: settingsResult.data || null, recentAudit: recentAuditResult.data || [] };
+  return { jobs: (jobsResult.data || []).map(normalizeAccountingJob), allJobs: allRows.map(normalizeAccountingJob), pendingTechJobs: (pendingTechResult.data || []).map(normalizeAccountingJob), redJobs: (redJobsResult.data || []).map(normalizeAccountingJob), paymentSummaries: summaryResult.data || [], settings: settingsResult.data || null };
+}
+
+export async function loadAuditPage({ page = 0, pageSize = 50 } = {}) {
+  const { data, error, count } = await supabase.from("accounting_audit_log").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(page * pageSize, page * pageSize + pageSize - 1);
+  if (error) throw error;
+  return { rows: data || [], count: count || 0 };
 }
 
 export async function loadTransactionPage(table, { page = 0, pageSize = 100, includeVoided = true } = {}) {
