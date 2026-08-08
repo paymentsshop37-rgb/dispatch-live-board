@@ -12,7 +12,10 @@ import {
   detailRowsForKpi,
   estimatedProfit,
   filterOutstandingInvoices,
+  largestOutstandingInvoices,
   normalizeAccountingJob,
+  oldestOutstandingInvoices,
+  rankOutstandingCustomers,
   summarizeOutstandingInvoices,
 } from "../src/modules/accounting/accountingData.js";
 import { createAccountingWorkbookBuffer } from "../src/modules/accounting/accountingWorkbook.js";
@@ -72,6 +75,20 @@ test("outstanding export grand total matches the visible report sum", () => {
   const table = outstandingInvoiceTable(report.rows);
   assert.equal(table.rows.at(-1)[0], "GRAND TOTAL");
   assert.equal(table.rows.at(-1)[12], report.totalOutstanding);
+});
+
+test("financial-priority customer, oldest, and largest rankings reconcile and sort correctly", () => {
+  const rows = [
+    { id: "a", company: "Alpha", invoiceNumber: "INV-A", balanceDue: 400, daysOutstanding: 20 },
+    { id: "b", company: "Alpha", invoiceNumber: "INV-B", balanceDue: 100, daysOutstanding: 45 },
+    { id: "c", company: "Beta", invoiceNumber: "INV-C", balanceDue: 700, daysOutstanding: 10 },
+  ];
+  const customers = rankOutstandingCustomers(rows);
+  assert.deepEqual(customers.map((row) => [row.company, row.amount, row.invoiceCount]), [["Beta", 700, 1], ["Alpha", 500, 2]]);
+  assert.equal(customers.reduce((sum, row) => sum + row.amount, 0), rows.reduce((sum, row) => sum + row.balanceDue, 0));
+  assert.equal(customers[1].oldestInvoice, "INV-B");
+  assert.deepEqual(oldestOutstandingInvoices(rows).map((row) => row.id), ["b", "a", "c"]);
+  assert.deepEqual(largestOutstandingInvoices(rows).map((row) => row.id), ["c", "a", "b"]);
 });
 
 test("accounts receivable uses non-voided transaction summaries and never shows a negative balance", () => {

@@ -125,6 +125,25 @@ export function summarizeOutstandingInvoices(rows) {
   };
 }
 
+export function rankOutstandingCustomers(rows, limit = 10) {
+  const groups = new Map();
+  for (const row of rows) {
+    const company = textValue(row.company) || "Unassigned";
+    const current = groups.get(company) || { company, amount: 0, invoiceCount: 0, oldestDays: null, oldestInvoice: "" };
+    current.amount += numberValue(row.balanceDue);
+    current.invoiceCount += 1;
+    if (row.daysOutstanding != null && (current.oldestDays == null || row.daysOutstanding > current.oldestDays)) {
+      current.oldestDays = row.daysOutstanding;
+      current.oldestInvoice = row.invoiceNumber || "-";
+    }
+    groups.set(company, current);
+  }
+  return [...groups.values()].sort((a, b) => b.amount - a.amount || b.invoiceCount - a.invoiceCount || a.company.localeCompare(b.company)).slice(0, limit);
+}
+
+export function oldestOutstandingInvoices(rows, limit = 10) { return [...rows].sort((a, b) => (b.daysOutstanding ?? -1) - (a.daysOutstanding ?? -1)).slice(0, limit); }
+export function largestOutstandingInvoices(rows, limit = 10) { return [...rows].sort((a, b) => numberValue(b.balanceDue) - numberValue(a.balanceDue)).slice(0, limit); }
+
 export function buildReceivable(job, paymentSummary = {}, now = new Date()) {
   const amountPaid = numberValue(paymentSummary?.amount_paid);
   const rawBalance = numberValue(job.totalBill) - amountPaid;
