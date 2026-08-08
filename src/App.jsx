@@ -111,6 +111,7 @@ const sidebarSections = [
 
 export default function App() {
   const [activeView, setActiveView] = useState("dispatch");
+  const [accountingOutstandingRequest, setAccountingOutstandingRequest] = useState(null);
   const [session, setSession] = useState(emptySession());
   const [authLoading, setAuthLoading] = useState(true);
   const [authMessage, setAuthMessage] = useState("");
@@ -703,12 +704,12 @@ export default function App() {
         />
 
         {!canAccessActiveView && <AccessDenied view={viewTitle(activeView)} />}
-        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} onOpenTechPayments={() => setActiveView("tech-payments")} /> : <DispatcherDashboard role={role} onOpenJob={openJobDetailsFromView} />)}
+        {canAccessActiveView && activeView === "dashboard" && (isAdmin ? <ExecutiveDashboard onOpenActivity={() => setActiveView("activity")} onOpenJob={openJobDetailsFromView} onOpenTechnicians={() => setActiveView("technicians")} onOpenTechPayments={() => setActiveView("tech-payments")} onOpenOutstanding={(view) => { setAccountingOutstandingRequest({ ...view, id: Date.now() }); setActiveView("accounting"); }} /> : <DispatcherDashboard role={role} onOpenJob={openJobDetailsFromView} />)}
         {canAccessActiveView && activeView === "dispatch" && <DispatchLiveUpdatesPage currentUser={session} jobSearchRequest={jobSearchRequest} onOpenAddJob={navigateToAddJob} onLogout={() => handleLogout("manual_logout")} onOpenFlatRate={() => setActiveView("flat-rate")} onOpenParts={() => setActiveView("parts-intelligence")} onOpenTechnicians={() => setActiveView("technicians")} onOpenTechPayments={() => setActiveView("tech-payments")} />}
         {canAccessActiveView && activeView === "technicians" && <TechnicianCenter currentUser={session} />}
         {canAccessActiveView && activeView === "customers" && <CustomerCRM onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "billing" && <BillingDashboard onOpenJob={openJobDetailsFromView} />}
-        {canAccessActiveView && activeView === "accounting" && <AccountingCenter session={session} onOpenJob={openJobDetailsFromView} />}
+        {canAccessActiveView && activeView === "accounting" && <AccountingCenter session={session} onOpenJob={openJobDetailsFromView} initialOutstandingRequest={accountingOutstandingRequest} onOutstandingRequestHandled={() => setAccountingOutstandingRequest(null)} />}
         {canAccessActiveView && activeView === "tech-payments" && <TechnicianPaymentsReport session={session} role={role} canViewFinancial={permissions.canViewTechPayments} canMarkPaid={permissions.canMarkTechPaymentsPaid} canExport={role === "admin"} onBack={() => setActiveView(role === "admin" ? "dashboard" : "dispatch")} onOpenJob={openJobDetailsFromView} />}
         {canAccessActiveView && activeView === "administration" && <AdministrationDashboard session={session} role={role} />}
         {canAccessActiveView && activeView === "users" && <UserManagement currentUser={session} />}

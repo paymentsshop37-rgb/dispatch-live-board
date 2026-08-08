@@ -122,11 +122,15 @@ test("warnings identify source-data reconciliation issues", () => {
 
 test("complete accounting workbook contains exactly the required twelve sheets and live formulas", async () => {
   const model = buildAccountingModel(jobs, payments, new Date("2026-08-02T12:00:00"));
-  const buffer = await createAccountingWorkbookBuffer({ model, pendingTechJobs: [jobs[1]], invoicePayments: [], techTransactions: [] }, { reportId: "complete-workbook", generatedAt: "2026-08-02T12:00:00Z", generatedBy: "Test Admin", filterLabel: "All Time" });
+  const outstandingSentInvoices = buildOutstandingSentInvoices(jobs, payments, new Date("2026-08-02T12:00:00"));
+  const buffer = await createAccountingWorkbookBuffer({ model: { ...model, outstandingSentInvoices }, pendingTechJobs: [jobs[1]], invoicePayments: [], techTransactions: [] }, { reportId: "complete-workbook", generatedAt: "2026-08-02T12:00:00Z", generatedBy: "Test Admin", filterLabel: "All Time" });
   const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(buffer);
   assert.deepEqual(workbook.worksheets.map((sheet) => sheet.name), ["Executive Summary","Customer Invoices","Accounts Receivable","Payment Transactions","Technician Payments Due","Technician Payment History","Profitability","Completed Jobs","Cancelled Jobs","Dry Runs","Red Internal Control","Raw Data"]);
   assert.equal(workbook.getWorksheet("Profitability").getCell("J7").formula, "G7-H7-I7");
   assert.equal(workbook.getWorksheet("Executive Summary").getCell("A8").value, 1700);
+  assert.equal(workbook.getWorksheet("Executive Summary").getCell("A10").value, "OUTSTANDING SENT");
+  assert.equal(workbook.getWorksheet("Executive Summary").getCell("A11").value, outstandingSentInvoices.totalOutstanding);
+  assert.equal(workbook.getWorksheet("Executive Summary").getCell("D11").value, outstandingSentInvoices.invoiceCount);
 });
 
 test("migration exposes authenticated-only accounting APIs, immutable ledgers, and audited voids", async () => {

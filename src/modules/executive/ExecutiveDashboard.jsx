@@ -30,6 +30,7 @@ import {
 } from "../../utils/techPaymentStatus";
 import { InternalControlQueue } from "./InternalControlQueue";
 import StatusJobsReport from "./StatusJobsReport";
+import { buildOutstandingSentInvoices, normalizeAccountingJob } from "../accounting/accountingData.js";
 
 const columnAliases = {
   id: ["id"],
@@ -57,7 +58,7 @@ const columnAliases = {
 const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"];
 const defaultFilterMode = "This Week";
 
-export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpenTechPayments }) {
+export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpenTechPayments, onOpenOutstanding }) {
   const [jobs, setJobs] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
   const [serviceAreaAliases, setServiceAreaAliases] = useState([]);
   const [coverageSettingsOpen, setCoverageSettingsOpen] = useState(false);
   const [statusReport, setStatusReport] = useState(null);
+  const [invoicePaymentSummaries, setInvoicePaymentSummaries] = useState([]);
   const internalControlQueueRef = useRef(null);
 
   useEffect(() => {
@@ -101,8 +103,9 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
 
   async function loadDashboard() {
     setLoading(true);
-    const [{ data, error }, coverageResult, technicianResult, serviceAreaResult] = await Promise.all([
+    const [{ data, error }, paymentSummaryResult, coverageResult, technicianResult, serviceAreaResult] = await Promise.all([
       supabase.from("jobs").select("*"),
+      supabase.rpc("get_invoice_payment_summary"),
       loadCoverageCities({ includeInactive: true }).then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
       loadTechnicians().then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
       loadServiceAreaConfiguration({ includeInactive: true }).then((value) => ({ value })).catch((loadError) => ({ error: loadError })),
@@ -117,6 +120,8 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
       const rows = data || [];
       setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
     }
+    if (paymentSummaryResult.error) nextWarnings.push(`Outstanding invoice balances unavailable: ${paymentSummaryResult.error.message}`);
+    else setInvoicePaymentSummaries(paymentSummaryResult.data || []);
     if (coverageResult.error) nextWarnings.push(`Coverage cities unavailable: ${coverageResult.error.message}`);
     else setCoverageCities(coverageResult.rows);
     if (technicianResult.error) nextWarnings.push(`Active technicians unavailable: ${technicianResult.error.message}`);
@@ -135,6 +140,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
   const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange]);
   const filteredJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, dateRange)), [jobs, dateRange]);
   const analytics = useMemo(() => buildAnalytics(filteredJobs), [filteredJobs]);
+  const outstanding = useMemo(() => buildOutstandingSentInvoices(filteredJobs.map((job) => normalizeAccountingJob(job.raw)), invoicePaymentSummaries), [filteredJobs, invoicePaymentSummaries]);
   const statusReportJobs = useMemo(
     () => statusReport ? filteredJobs.filter((job) => matchesStatusMetric(job.status, statusReport.key)) : [],
     [filteredJobs, statusReport]
@@ -266,8 +272,8 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
                 </div>
               </Panel>
 
-              <Panel title="Financial Performance" subtitle="Revenue, expenses and profit" icon={CircleDollarSign}>
-                <FinancialBars revenue={analytics.revenue} expenses={analytics.expenses} profit={analytics.profit} />
+              <Panel title="Financial Performance" subtitle="Revenue, expenses, profit and outstanding sent invoices" icon={CircleDollarSign}>
+                <FinancialBars revenue={analytics.revenue} expenses={analytics.expenses} profit={analytics.profit} outstanding={outstanding} onOutstanding={()=>onOpenOutstanding?.({preset:filterMode,custom:customRange})} />
               </Panel>
             </section>
 
@@ -500,11 +506,12 @@ function DonutChart({ segments, total }) {
   );
 }
 
-function FinancialBars({ revenue, expenses, profit }) {
+function FinancialBars({ revenue, expenses, profit, outstanding, onOutstanding }) {
   const rows = [
     { label: "Revenue", value: revenue, tone: "bg-blue-400" },
     { label: "Expenses", value: expenses, tone: "bg-orange-400" },
     { label: "Profit", value: profit, tone: profit >= 0 ? "bg-emerald-400" : "bg-red-400" },
+    { label: "Outstanding Sent Invoices", value: outstanding.totalOutstanding, tone: "bg-red-500", onClick: onOutstanding, tooltip: `Outstanding Sent Invoices\nInvoices: ${outstanding.invoiceCount}\nAmount Due: ${money(outstanding.totalOutstanding)}` },
   ];
   const max = Math.max(...rows.map((row) => Math.abs(row.value)), 1);
 
@@ -512,8 +519,7 @@ function FinancialBars({ revenue, expenses, profit }) {
     <div className="space-y-5">
       {rows.map((row) => {
         const width = Math.max(4, (Math.abs(row.value) / max) * 100);
-        return (
-          <div key={row.label}>
+        const content = <>
             <div className="mb-2 flex items-center justify-between gap-4">
               <span className="text-sm font-black text-slate-300">{row.label}</span>
               <span className="text-sm font-black text-white">{money(row.value)}</span>
@@ -521,13 +527,14 @@ function FinancialBars({ revenue, expenses, profit }) {
             <div className="h-12 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] p-2">
               <div className={`h-full rounded-xl ${row.tone} shadow-lg`} style={{ width: `${width}%` }} />
             </div>
-          </div>
-        );
+          </>;
+        return row.onClick?<button type="button" key={row.label} title={row.tooltip} onClick={row.onClick} className="block w-full rounded-xl text-left outline-none transition hover:bg-white/[0.03] focus-visible:ring-2 focus-visible:ring-red-400">{content}</button>:<div key={row.label}>{content}</div>;
       })}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <MiniStat label="Revenue" value={money(revenue)} tone="blue" />
         <MiniStat label="Expenses" value={money(expenses)} tone="orange" />
         <MiniStat label="Profit" value={money(profit)} tone={profit >= 0 ? "green" : "red"} />
+        <MiniStat label="Outstanding Sent" value={money(outstanding.totalOutstanding)} detail={`${outstanding.invoiceCount} invoices`} tone="red" onClick={onOutstanding} title={`Outstanding Sent Invoices\nInvoices: ${outstanding.invoiceCount}\nAmount Due: ${money(outstanding.totalOutstanding)}`} />
       </div>
     </div>
   );
@@ -819,19 +826,19 @@ function MetricBar({ label, value, total, tone, onClick }) {
   );
 }
 
-function MiniStat({ label, value, tone = "blue" }) {
+function MiniStat({ label, value, detail, tone = "blue", onClick, title }) {
   const tones = {
     blue: "border-blue-400/20 bg-blue-400/10 text-blue-200",
     green: "border-emerald-400/20 bg-emerald-400/10 text-emerald-200",
     orange: "border-orange-400/20 bg-orange-400/10 text-orange-200",
     red: "border-red-400/20 bg-red-400/10 text-red-200",
   };
-  return (
-    <div className={`rounded-2xl border p-4 ${tones[tone] || tones.blue}`}>
+  const content = <>
       <p className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</p>
       <p className="mt-2 truncate text-xl font-black text-white">{value}</p>
-    </div>
-  );
+      {detail&&<p className="mt-1 text-xs font-black uppercase text-red-200">{detail}</p>}
+    </>;
+  return onClick?<button type="button" title={title} onClick={onClick} className={`rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-red-400 ${tones[tone] || tones.blue}`}>{content}</button>:<div className={`rounded-2xl border p-4 ${tones[tone] || tones.blue}`}>{content}</div>;
 }
 
 function DateInput({ label, value, disabled, onChange }) {

@@ -20,7 +20,7 @@ import { exportOutstandingInvoices } from "./outstandingInvoiceExports.js";
 const tabs = ["Overview", "Customer Invoices", "Accounts Receivable", "Technician Payments", "Profitability", "Internal Control", "Accounting Exports", "Audit Log", "Settings"];
 const moneyFormat = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
-export default function AccountingCenter({ session, onOpenJob }) {
+export default function AccountingCenter({ session, onOpenJob, initialOutstandingRequest, onOutstandingRequestHandled }) {
   const [activeTab, setActiveTab] = useState("Overview");
   const [datePreset, setDatePreset] = useState("This Month");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
@@ -45,6 +45,7 @@ export default function AccountingCenter({ session, onOpenJob }) {
   }
   useEffect(() => { refresh(); }, [range?.from, range?.to]);
   useEffect(() => { const configured=workspace.settings?.default_report_date_range; if(!defaultRangeApplied.current&&ACCOUNTING_DATE_PRESETS.includes(configured)){defaultRangeApplied.current=true;setDatePreset(configured)} }, [workspace.settings]);
+  useEffect(() => { if(!initialOutstandingRequest)return;defaultRangeApplied.current=true;setDatePreset(initialOutstandingRequest.preset||"This Month");setCustomRange(initialOutstandingRequest.custom||{from:"",to:""});setOutstandingOpen({mode:"Current Date Filter",preset:initialOutstandingRequest.preset||"This Month",custom:initialOutstandingRequest.custom||{from:"",to:""},company:null});onOutstandingRequestHandled?.(); }, [initialOutstandingRequest?.id]);
   function show(message) { setNotice(message); window.setTimeout(() => setNotice(""), 4500); }
   function openKpi(kpiKey, label) { setDrilldown({ label, rows: detailRowsForKpi(model, kpiKey), kpiKey }); }
   function openOutstanding(company = null) { setOutstandingOpen({ mode: datePreset === "All Time" ? "All Outstanding" : "Current Date Filter", preset: datePreset, custom: customRange, company }); }
@@ -75,7 +76,7 @@ export default function AccountingCenter({ session, onOpenJob }) {
           {activeTab === "Technician Payments" && <TechnicianPayments jobs={model.jobs} allPendingJobs={workspace.pendingTechJobs} settings={workspace.settings} onOpenJob={onOpenJob} onChanged={async (message) => { show(message); await refresh(); }} />}
           {activeTab === "Profitability" && <Profitability jobs={model.jobs} onOpenJob={onOpenJob} />}
           {activeTab === "Internal Control" && <InternalControl jobs={workspace.redJobs} onOpenJob={onOpenJob} />}
-          {activeTab === "Accounting Exports" && <AccountingExportCenter model={model} settings={workspace.settings} session={session} rangeLabel={rangeLabel(datePreset, customRange)} onNotice={show} />}
+          {activeTab === "Accounting Exports" && <AccountingExportCenter model={model} outstanding={filteredOutstanding} settings={workspace.settings} session={session} rangeLabel={rangeLabel(datePreset, customRange)} onNotice={show} />}
           {activeTab === "Audit Log" && <AuditLog />}
           {activeTab === "Settings" && <AccountingSettings settings={workspace.settings} onSaved={(settings) => { setWorkspace((current) => ({ ...current, settings })); show("Accounting settings saved."); }} />}
         </>}

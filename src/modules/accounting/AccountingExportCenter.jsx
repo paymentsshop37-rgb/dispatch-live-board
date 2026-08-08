@@ -9,11 +9,11 @@ const reports = [
   ["completed-jobs", "Completed Jobs"], ["cancelled-jobs", "Cancelled Jobs"], ["dry-runs", "Dry Runs"], ["complete-workbook", "Complete Accounting Workbook"],
 ];
 
-export default function AccountingExportCenter({ model, settings, session, rangeLabel, onNotice }) {
+export default function AccountingExportCenter({ model, outstanding, settings, session, rangeLabel, onNotice }) {
   const [busy, setBusy] = useState("");
   async function prepare() {
     const [invoicePayments, techTransactions] = await Promise.all([loadAllTransactionRows("invoice_payments"), loadAllTransactionRows("technician_payment_transactions")]);
-    return { model, settings, pendingTechJobs: model.techDueJobs, invoicePayments, techTransactions };
+    return { model: { ...model, outstandingSentInvoices: outstanding }, settings, pendingTechJobs: model.techDueJobs, invoicePayments, techTransactions };
   }
   async function run(id, label, format) {
     const key = `${id}-${format}`; setBusy(key);
@@ -28,7 +28,7 @@ export default function AccountingExportCenter({ model, settings, session, range
         if (format === "csv") download(new Blob([csv(data.headers, data.rows)], { type: "text/csv;charset=utf-8" }), filename(label, "csv"));
         else {
           const { createAccountingPdf } = await import("./accountingPdf.js");
-          const blob = createAccountingPdf({ title: label, ...data, model: id === "executive-accounting" ? model : null, generatedBy: options.generatedBy, filterLabel: rangeLabel, footer: settings?.pdf_footer || "Confidential - NTTR" });
+          const blob = createAccountingPdf({ title: label, ...data, model: id === "executive-accounting" ? payload.model : null, generatedBy: options.generatedBy, filterLabel: rangeLabel, footer: settings?.pdf_footer || "Confidential - NTTR" });
           if (format === "print") { const url = URL.createObjectURL(blob); window.open(url, "_blank", "noopener,noreferrer"); window.setTimeout(() => URL.revokeObjectURL(url), 60000); }
           else download(blob, filename(label, "pdf"));
         }
