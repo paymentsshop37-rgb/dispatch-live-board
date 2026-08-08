@@ -13,6 +13,7 @@ import {
   estimatedProfit,
   filterOutstandingInvoices,
   normalizeAccountingJob,
+  summarizeOutstandingInvoices,
 } from "../src/modules/accounting/accountingData.js";
 import { createAccountingWorkbookBuffer } from "../src/modules/accounting/accountingWorkbook.js";
 import { outstandingInvoiceTable } from "../src/modules/accounting/outstandingInvoiceExports.js";
@@ -61,7 +62,9 @@ test("all outstanding ignores job date while current date presets filter the sam
   const report = buildOutstandingSentInvoices(jobs, payments, new Date("2026-08-02T12:00:00"));
   assert.equal(filterOutstandingInvoices(report.rows, "All Outstanding", {}, new Date("2026-08-02T12:00:00")).length, 1);
   assert.equal(filterOutstandingInvoices(report.rows, "Today", {}, new Date("2026-08-02T12:00:00")).length, 0);
-  assert.equal(filterOutstandingInvoices(report.rows, "Last 30 Days", {}, new Date("2026-08-02T12:00:00")).length, 1);
+  const visibleRows = filterOutstandingInvoices(report.rows, "Last 30 Days", {}, new Date("2026-08-02T12:00:00"));
+  assert.equal(visibleRows.length, 1);
+  assert.equal(summarizeOutstandingInvoices(visibleRows).totalOutstanding, buildOutstandingSentInvoices(jobs.filter((job) => job.date >= "2026-07-04"), payments, new Date("2026-08-02T12:00:00")).totalOutstanding);
 });
 
 test("outstanding export grand total matches the visible report sum", () => {
