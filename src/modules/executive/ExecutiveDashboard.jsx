@@ -58,7 +58,7 @@ const columnAliases = {
 const filterPresets = ["Today", "This Week", "Last Week", "This Month", "Last Month", "Last 30 Days", "Last 90 Days", "This Year", "Custom Range"];
 const defaultFilterMode = "This Week";
 
-export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpenTechPayments, onOpenOutstanding }) {
+export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpenTechPayments, onOpenOutstanding, generatedBy, canViewFinancial = false }) {
   const [jobs, setJobs] = useState([]);
   const [warnings, setWarnings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -249,7 +249,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
           <KpiCard title="Tech Payments Due" value={paymentMoney(pendingTechPayments.amount)} detail={`${pendingTechPayments.count} PENDING`} icon={CircleDollarSign} tone={pendingTechPayments.overdue || pendingTechPayments.missing ? "red" : "green"} trend={pendingTechPayments.missing} suffix="MISSING AMOUNTS" onClick={onOpenTechPayments} />
         </section>
 
-        <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} />
+        <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} generatedBy={generatedBy} canViewFinancial={canViewFinancial} />
 
         <div>
           <main className="space-y-6">

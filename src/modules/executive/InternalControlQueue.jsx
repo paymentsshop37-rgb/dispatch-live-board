@@ -1,14 +1,17 @@
-import React, { forwardRef, useMemo, useState } from "react";
+import React, { forwardRef, useEffect, useMemo, useState } from "react";
 import { Download, FileText, Printer, Search } from "lucide-react";
 import { formatDateTime12Hour, formatTime12Hour } from "../../utils/timeFormat";
 
 const queueFilters = ["All Red Jobs", "Today", "This Week", "Last Week", "This Month", "Last Month", "Custom Range"];
 const headers = ["Job #", "Date", "Time", "Reference #", "Invoice #", "Dispatcher", "Company", "Technician", "Location", "Job Status", "Invoice Status", "Payment Status", "Updates", "Internal Control Color", "Days Since Marked"];
 
-export const InternalControlQueue = forwardRef(function InternalControlQueue({ jobs, onOpenJob }, ref) {
+export const InternalControlQueue = forwardRef(function InternalControlQueue({ jobs, onOpenJob, generatedBy = "Administrator", canViewFinancial = false }, ref) {
   const [search, setSearch] = useState("");
   const [filterMode, setFilterMode] = useState("All Red Jobs");
   const [customRange, setCustomRange] = useState({ from: "", to: "" });
+  const [exportMessage, setExportMessage] = useState("");
+  const [pdfBusy, setPdfBusy] = useState(false);
+  useEffect(() => { if(!exportMessage)return;const timer=window.setTimeout(()=>setExportMessage(""),6000);return()=>window.clearTimeout(timer); }, [exportMessage]);
 
   const redJobs = useMemo(
     () => jobs.map(normalizeQueueJob).filter((job) => job.internalControlColor === "red"),
@@ -30,6 +33,9 @@ export const InternalControlQueue = forwardRef(function InternalControlQueue({ j
     return {
       count: visibleJobs.length,
       totalBill: visibleJobs.reduce((sum, job) => sum + job.totalBill, 0),
+      totalParts: visibleJobs.reduce((sum, job) => sum + job.parts, 0),
+      totalTechLabor: visibleJobs.reduce((sum, job) => sum + job.techLabor, 0),
+      totalProfit: visibleJobs.reduce((sum, job) => sum + job.profit, 0),
       averageDays: days.length ? Math.round((days.reduce((sum, value) => sum + value, 0) / days.length) * 10) / 10 : 0,
       oldest: visibleJobs.reduce((oldest, job) => !oldest || job.markedAt < oldest.markedAt ? job : oldest, null),
       newest: visibleJobs.reduce((newest, job) => !newest || job.markedAt > newest.markedAt ? job : newest, null),
@@ -42,14 +48,20 @@ export const InternalControlQueue = forwardRef(function InternalControlQueue({ j
     job.invoiceStatus, job.paymentStatus, job.updates, "Red", job.daysSinceMarked,
   ]);
   const exportExcel = () => {
-    const html = exportTableHtml(exportRows(), summary);
+    const html = exportTableHtml(exportRows(), summary, canViewFinancial);
     download(new Blob([`\ufeff${html}`], { type: "application/vnd.ms-excel;charset=utf-8" }), `internal-control-queue-${today()}.xls`);
   };
-  const printReport = (autoPrint = true) => {
-    const report = window.open("", "_blank", "noopener,noreferrer");
-    if (!report) return;
-    report.document.write(reportHtml(exportRows(), summary, autoPrint));
-    report.document.close();
+  const exportPdf = async (mode = "download") => {
+    if (!visibleJobs.length) { setExportMessage("No Internal Control jobs match the current filters."); return; }
+    setPdfBusy(true); setExportMessage("");
+    try {
+      const { createInternalControlQueuePdf } = await import("./internalControlQueuePdf.js");
+      const blob = createInternalControlQueuePdf({ jobs: visibleJobs, summary, generatedBy, activeFilter: filterMode, dateRange: queueRangeLabel(filterMode, customRange), searchText: search, canViewFinancial });
+      if (mode === "print") { const url=URL.createObjectURL(blob); const report=window.open(url,"_blank"); if(!report)throw new Error("PDF preview was blocked. Please allow pop-ups and try again."); report.opener=null; window.setTimeout(()=>URL.revokeObjectURL(url),60000); }
+      else download(blob, `NTTR-Internal-Control-Queue-${today()}.pdf`);
+      setExportMessage(mode === "print" ? "Printable Internal Control Queue PDF opened." : "Internal Control Queue PDF generated.");
+    } catch (error) { setExportMessage(`PDF export failed: ${safeExportError(error)}`); }
+    finally { setPdfBusy(false); }
   };
 
   return (
@@ -63,15 +75,16 @@ export const InternalControlQueue = forwardRef(function InternalControlQueue({ j
           </div>
           <div className="flex flex-wrap gap-2">
             <QueueButton icon={Download} label="Export Excel" onClick={exportExcel} />
-            <QueueButton icon={FileText} label="Export PDF" onClick={() => printReport(true)} />
-            <QueueButton icon={Printer} label="Print" onClick={() => printReport(true)} />
+            <QueueButton icon={FileText} label={pdfBusy ? "Generating PDF..." : "Export PDF"} onClick={() => exportPdf("download")} disabled={pdfBusy} />
+            <QueueButton icon={Printer} label="Print" onClick={() => exportPdf("print")} disabled={pdfBusy} />
           </div>
         </div>
       </header>
+      {exportMessage&&<div role="status" className={`mx-5 mt-4 rounded-xl border px-4 py-3 text-sm font-bold ${exportMessage.startsWith("PDF export failed")||exportMessage.startsWith("No Internal")?"border-red-400/40 bg-red-500/15 text-red-100":"border-emerald-400/30 bg-emerald-500/10 text-emerald-100"}`}>{exportMessage}</div>}
 
       <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
         <QueueMetric label="Total Red Jobs" value={summary.count} />
-        <QueueMetric label="Total Bill" value={money(summary.totalBill)} />
+        <QueueMetric label="Total Bill" value={canViewFinancial ? money(summary.totalBill) : "Restricted"} />
         <QueueMetric label="Average Days in Queue" value={summary.averageDays} />
         <QueueMetric label="Oldest Red Job" value={summary.oldest ? `${summary.oldest.jobNumber} · ${summary.oldest.daysSinceMarked}d` : "—"} />
         <QueueMetric label="Newest Red Job" value={summary.newest ? `${summary.newest.jobNumber} · ${summary.newest.daysSinceMarked}d` : "—"} />
@@ -140,10 +153,16 @@ function normalizeQueueJob(job) {
     location: job.location || raw.location || "",
     jobStatus: job.status || raw.status || "—",
     invoiceStatus: job.invoiceStatus || raw.invoice_status || "Pending",
-    paymentStatus: paymentState(job.invoiceStatus || raw.invoice_status),
+    paymentStatus: job.customerPaymentStatus || raw.customer_payment_status || paymentState(job.invoiceStatus || raw.invoice_status),
+    techPaymentStatus: job.techPaymentStatus || raw.tech_payment_status || "Pending",
     updates: job.updates || raw.updates || "",
     internalControlColor: String(job.internalControlColor || raw.internal_control_color || "none").toLowerCase(),
     totalBill: Number(job.totalBill ?? raw.total_bill ?? 0),
+    parts: Number(job.parts ?? raw.parts ?? 0),
+    techLabor: Number(job.techLabor ?? raw.tech_labor ?? 0),
+    profit: Number(job.totalBill ?? raw.total_bill ?? 0) - Number(job.parts ?? raw.parts ?? 0) - Number(job.techLabor ?? raw.tech_labor ?? 0),
+    markedRedBy: raw.internal_control_marked_by_name || raw.internal_control_marked_by || raw.marked_red_by || "",
+    markedRedAt: raw.internal_control_marked_at || raw.marked_red_at || "",
     markedAt: updatedAt,
     updatedAt,
     sortKey: `${date} ${raw.job_time || job.time || ""} ${updatedAt}`,
@@ -188,11 +207,12 @@ function localDate(date) { return new Date(date.getTime() - date.getTimezoneOffs
 function today() { return localDate(new Date()); }
 function money(value) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value || 0)); }
 function QueueMetric({ label, value }) { return <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4"><p className="text-[10px] font-black uppercase tracking-wide text-red-200">{label}</p><p className="mt-2 text-xl font-black text-white">{value}</p></div>; }
-function QueueButton({ icon: Icon, label, onClick }) { return <button type="button" onClick={onClick} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/20 px-3 text-xs font-black text-white hover:bg-red-500/30"><Icon className="h-4 w-4" />{label}</button>; }
+function QueueButton({ icon: Icon, label, onClick, disabled }) { return <button type="button" onClick={onClick} disabled={disabled} className="inline-flex h-10 items-center gap-2 rounded-xl border border-red-400/30 bg-red-500/20 px-3 text-xs font-black text-white hover:bg-red-500/30 disabled:cursor-wait disabled:opacity-50"><Icon className="h-4 w-4" />{label}</button>; }
 function QueueCell({ children }) { return <td className="border-b border-red-200/20 px-3 py-3 align-middle">{children}</td>; }
 function JobLink({ label, job, onOpenJob }) { return <button type="button" onClick={() => onOpenJob?.(job.id)} className="font-black text-white underline decoration-white/50 underline-offset-4 hover:text-red-100">{label}</button>; }
 function StatusPill({ label }) { return <span className="rounded-full border border-white/20 bg-[#0b1728] px-2 py-1 font-bold text-white">{label || "—"}</span>; }
 function download(blob, filename) { const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
-function exportTableHtml(rows, summary) { return `<h1>INTERNAL CONTROL QUEUE</h1><p>${summary.count} red jobs · Total Bill ${escapeHtml(money(summary.totalBill))} · Average ${summary.averageDays} days</p><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`; }
-function reportHtml(rows, summary, autoPrint) { return `<!doctype html><html><head><title>Internal Control Queue</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#111}table{width:100%;border-collapse:collapse;font-size:9px}th,td{border:1px solid #bbb;padding:6px;text-align:left}th{background:#fee2e2}h1{color:#b91c1c}</style></head><body>${exportTableHtml(rows, summary)}${autoPrint ? "<script>window.onload=()=>window.print()</script>" : ""}</body></html>`; }
+function exportTableHtml(rows, summary, canViewFinancial) { return `<h1>INTERNAL CONTROL QUEUE</h1><p>${summary.count} red jobs${canViewFinancial?` · Total Bill ${escapeHtml(money(summary.totalBill))}`:""} · Average ${summary.averageDays} days</p><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`; }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character])); }
+function queueRangeLabel(mode,customRange){if(mode==="All Red Jobs")return "All dates";const range=queueDateRange(mode,customRange);return `${range.from} to ${range.to}`}
+function safeExportError(error){const message=String(error?.message||error||"Unknown PDF generation error.").replace(/[\r\n]+/g," ").trim();return message.slice(0,240)||"Unknown PDF generation error."}
