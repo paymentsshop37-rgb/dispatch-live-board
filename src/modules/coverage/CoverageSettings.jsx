@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { MapPin, Plus, Save, Trash2, X } from "lucide-react";
 import { addServiceAreaAlias, loadServiceAreaConfiguration, removeServiceAreaAlias, saveServiceArea } from "./serviceAreaService";
+import { ServiceAreaValidationError, validateServiceArea } from "./serviceAreaPayload";
 
 const emptyArea = { area_name: "", primary_city: "", state: "", latitude: "", longitude: "", coverage_radius_miles: 75, is_active: true };
 
@@ -20,10 +21,11 @@ export default function CoverageSettings({ embedded = false, onClose, onChanged 
     } catch (error) { setMessage(`Unable to load service areas: ${error.message}`); }
   }
   async function save() {
-    if (!editing?.area_name || !editing?.primary_city || !editing?.state) return setMessage("Area name, primary city, and state are required.");
+    const validationMessage = validateServiceArea(editing);
+    if (validationMessage) return setMessage(validationMessage);
     setBusy(true);
     try { await saveServiceArea(editing); await refresh(); setEditing(null); setMessage("Service area saved."); onChanged?.(); }
-    catch (error) { setMessage(`Unable to save service area: ${error.message}`); }
+    catch (error) { setMessage(error instanceof ServiceAreaValidationError ? error.message : "Unable to save service area. Please review the form and try again."); }
     finally { setBusy(false); }
   }
   async function addAlias(area) {

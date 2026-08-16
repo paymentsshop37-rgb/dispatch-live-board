@@ -1,5 +1,6 @@
 import { supabase } from "../../lib/supabase";
 import { normalizeCoverageCity, normalizeState } from "./coverageCityService";
+import { buildServiceAreaPayload } from "./serviceAreaPayload";
 
 export async function loadServiceAreaConfiguration({ includeInactive = false } = {}) {
   let areaQuery = supabase.from("service_areas").select("*");
@@ -14,17 +15,13 @@ export async function loadServiceAreaConfiguration({ includeInactive = false } =
 }
 
 export async function saveServiceArea(area) {
-  const payload = {
-    area_name: String(area.area_name || "").trim(),
-    primary_city: String(area.primary_city || "").trim(),
-    state: normalizeState(area.state),
-    normalized_primary_city: normalizeCoverageCity(area.primary_city),
-    latitude: nullableNumber(area.latitude),
-    longitude: nullableNumber(area.longitude),
-    coverage_radius_miles: nullableNumber(area.coverage_radius_miles) || 75,
-    is_active: area.is_active !== false,
-    updated_at: new Date().toISOString(),
-  };
+  const payload = buildServiceAreaPayload(area);
+  if (import.meta.env.DEV) {
+    console.debug("[CoverageSettings] final service_areas payload", {
+      operation: area.id ? "update" : "insert",
+      payload,
+    });
+  }
   const query = area.id
     ? supabase.from("service_areas").update(payload).eq("id", area.id).select().single()
     : supabase.from("service_areas").insert(payload).select().single();
@@ -155,7 +152,6 @@ export function haversineMiles(lat1, lon1, lat2, lon2) {
 function assignment(area, method, distance) {
   return { area, method, distance: distance === null || distance === undefined ? null : Number(distance), closestArea: area, closestDistance: distance };
 }
-function nullableNumber(value) { return value === "" || value === null || value === undefined ? null : Number(value); }
 function finite(value) { return Number.isFinite(Number(value)); }
 function daysSince(value) { return value ? Math.max(0, Math.floor((Date.now() - new Date(`${value}T00:00:00`)) / 86400000)) : null; }
 function localDate(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
