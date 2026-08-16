@@ -25,7 +25,10 @@ export default function CoverageSettings({ embedded = false, onClose, onChanged 
     if (validationMessage) return setMessage(validationMessage);
     setBusy(true);
     try { await saveServiceArea(editing); await refresh(); setEditing(null); setMessage("Service area saved."); onChanged?.(); }
-    catch (error) { setMessage(error instanceof ServiceAreaValidationError ? error.message : "Unable to save service area. Please review the form and try again."); }
+    catch (error) {
+      if (import.meta.env.DEV) console.error("[CoverageSettings] service area save failed", error);
+      setMessage(error instanceof ServiceAreaValidationError ? error.message : "Unable to save service area. Please verify the information and try again.");
+    }
     finally { setBusy(false); }
   }
   async function addAlias(area) {
