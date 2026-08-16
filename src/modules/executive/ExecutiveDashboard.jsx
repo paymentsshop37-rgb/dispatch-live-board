@@ -340,10 +340,9 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
               if (city) localStorage.setItem("nttr-technician-city-filter", city.city || city.normalizedCity);
               onOpenTechnicians?.();
             }}
-            onPreviousJobs={(city) => {
+            onPreviousJobs={(_city, job) => {
               setCitiesWithoutJobsOpen(false);
-              const matchingJob = jobs.find((job) => String(job.city || "").toUpperCase().includes(city.normalizedCity));
-              if (matchingJob && onOpenJob) onOpenJob(matchingJob.id);
+              if (job && onOpenJob) onOpenJob(job.id);
             }}
             onToggleCity={async (city, active) => {
               try {

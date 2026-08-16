@@ -60,8 +60,10 @@ export function assignServiceArea(job, areas, aliases) {
 }
 
 export function buildServiceAreaRows({ jobs, previousJobs, areas, aliases, technicians }) {
-  const allJobs = jobs.map((job) => ({ ...job, areaAssignment: assignServiceArea(job, areas, aliases) }));
-  const prior = previousJobs.map((job) => ({ ...job, areaAssignment: assignServiceArea(job, areas, aliases) }));
+  const currentAssignments = assignJobsToServiceAreas(jobs, areas, aliases);
+  const previousAssignments = assignJobsToServiceAreas(previousJobs, areas, aliases);
+  const allJobs = currentAssignments.assignedJobs;
+  const prior = previousAssignments.assignedJobs;
   const total = allJobs.length;
   const rows = areas.filter((area) => area.is_active !== false).map((area) => {
     const areaJobs = allJobs.filter((job) => String(job.areaAssignment.area?.id) === String(area.id));
@@ -91,6 +93,19 @@ export function buildServiceAreaRows({ jobs, previousJobs, areas, aliases, techn
   });
   const unassignedJobs = allJobs.filter((job) => !job.areaAssignment.area);
   return { rows, unassignedJobs, assignedJobs: allJobs };
+}
+
+export function assignJobsToServiceAreas(jobs, areas, aliases) {
+  const assignedJobs = jobs.map((job) => ({ ...job, areaAssignment: assignServiceArea(job, areas, aliases) }));
+  const jobsByAreaId = new Map(areas.filter((area) => area.is_active !== false).map((area) => [String(area.id), []]));
+  assignedJobs.forEach((job) => {
+    const areaId = job.areaAssignment.area?.id;
+    if (areaId === null || areaId === undefined) return;
+    const key = String(areaId);
+    if (!jobsByAreaId.has(key)) jobsByAreaId.set(key, []);
+    jobsByAreaId.get(key).push(job);
+  });
+  return { assignedJobs, jobsByAreaId, unassignedJobs: assignedJobs.filter((job) => !job.areaAssignment.area) };
 }
 
 export function statusCounts(jobs) {

@@ -2,7 +2,7 @@ import { supabase } from "../../lib/supabase";
 import { normalizeCoverageCity, normalizeState } from "./coverageNormalization";
 import { buildServiceAreaPayload } from "./serviceAreaPayload";
 
-export { assignServiceArea, buildServiceAreaRows, coverageStatusBucket, haversineMiles, previousDateRange, statusCounts } from "./serviceAreaAssignment";
+export { assignJobsToServiceAreas, assignServiceArea, buildServiceAreaRows, coverageStatusBucket, haversineMiles, previousDateRange, statusCounts } from "./serviceAreaAssignment";
 
 export async function loadServiceAreaConfiguration({ includeInactive = false } = {}) {
   let areaQuery = supabase.from("service_areas").select("*");

@@ -2985,9 +2985,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   if (city) localStorage.setItem("nttr-technician-city-filter", city.city || city.normalizedCity);
                   onOpenTechnicians?.();
                 }}
-                onPreviousJobs={(city) => {
+                onPreviousJobs={(city, job) => {
                   setCitiesWithoutJobsOpen(false);
-                  setSearch(city.normalizedCity);
+                  setSearch(job?.reference || job?.invoiceNumber || job?.id || city.normalizedCity);
                   setPeriodFilter("All");
                   setFromDate("");
                   setToDate("");
