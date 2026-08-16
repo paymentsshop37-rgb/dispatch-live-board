@@ -11,7 +11,7 @@ const dallas = {
   normalized_state: "TX",
   latitude: "32.7767",
   longitude: "-96.7970",
-  coverage_radius_miles: "85",
+  coverage_radius_miles: 150,
   is_active: true,
 };
 const waco = {
@@ -23,7 +23,7 @@ const waco = {
   normalized_state: "TX",
   latitude: 31.5493,
   longitude: -97.1467,
-  coverage_radius_miles: 75,
+  coverage_radius_miles: 150,
   is_active: true,
 };
 const fortWorthAlias = {
@@ -65,17 +65,16 @@ test("configured aliases override stale automatic assignments but not manual ass
   assert.equal(manual.area?.id, "waco");
 });
 
-test("radius matching chooses the nearest qualifying area rather than the nearest area overall", () => {
-  const nearestButTooSmall = { ...dallas, id: "small", primary_city: "Small", normalized_primary_city: "SMALL", state: "AA", normalized_state: "AA", latitude: 0, longitude: 0, coverage_radius_miles: 1 };
-  const fartherButQualified = { ...waco, id: "wide", primary_city: "Wide", normalized_primary_city: "WIDE", state: "BB", normalized_state: "BB", latitude: 0, longitude: 0.2, coverage_radius_miles: 20 };
-  const result = assignServiceArea({ city: "Unknown", state: "ZZ", latitude: 0, longitude: 0.08 }, [nearestButTooSmall, fartherButQualified], []);
-  assert.equal(result.area?.id, "wide");
+test("radius matching uses 150 miles even when a stale record contains a smaller radius", () => {
+  const staleRadius = { ...dallas, id: "stale", primary_city: "Stale", normalized_primary_city: "STALE", state: "AA", normalized_state: "AA", latitude: 0, longitude: 0, coverage_radius_miles: 1 };
+  const result = assignServiceArea({ city: "Unknown", state: "ZZ", latitude: 0, longitude: 2 }, [staleRadius], []);
+  assert.equal(result.area?.id, "stale");
   assert.equal(result.method, "nearest_radius");
 });
 
 test("overlapping radiuses assign a job once to the nearest qualifying area", () => {
-  const first = { ...dallas, id: "first", primary_city: "First", normalized_primary_city: "FIRST", state: "AA", normalized_state: "AA", latitude: 0, longitude: 0, coverage_radius_miles: 20 };
-  const second = { ...waco, id: "second", primary_city: "Second", normalized_primary_city: "SECOND", state: "BB", normalized_state: "BB", latitude: 0, longitude: 0.2, coverage_radius_miles: 20 };
+  const first = { ...dallas, id: "first", primary_city: "First", normalized_primary_city: "FIRST", state: "AA", normalized_state: "AA", latitude: 0, longitude: 0 };
+  const second = { ...waco, id: "second", primary_city: "Second", normalized_primary_city: "SECOND", state: "BB", normalized_state: "BB", latitude: 0, longitude: 0.2 };
   const result = buildServiceAreaRows({
     jobs: [{ id: "job", city: "Unknown", state: "ZZ", latitude: 0, longitude: 0.05, status: "Completed", date: "2026-08-16" }],
     previousJobs: [],

@@ -3,6 +3,7 @@ import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { Crosshair, LocateFixed, X } from "lucide-react";
 import { coverageStatusBucket } from "./serviceAreaService";
+import { SERVICE_AREA_RADIUS_MILES } from "./coverageConstants";
 
 const EMPTY_COLLECTION = { type: "FeatureCollection", features: [] };
 const STATUS_OPTIONS = [
@@ -182,7 +183,7 @@ function buildMapData(rows, average) {
     areas.push(pointFeature(row.longitude, row.latitude, {
       id: String(row.id), areaName: row.area_name, count, color,
     }));
-    radii.push(circleFeature(Number(row.longitude), Number(row.latitude), Number(row.coverage_radius_miles || 75), {
+    radii.push(circleFeature(Number(row.longitude), Number(row.latitude), SERVICE_AREA_RADIUS_MILES, {
       id: String(row.id), color,
     }));
     row.mapJobs.forEach((job) => {
@@ -281,7 +282,7 @@ function AreaSheet({ row, onClose, onDrilldown, onFit }) {
     ["total", "Total Jobs"], ["completed", "Completed"], ["cancelled", "Cancelled"],
     ["dryRuns", "Dry Runs"], ["active", "Active"], ["pending", "Pending"],
   ];
-  return <div className="fixed inset-0 z-[140] bg-black/70" onClick={onClose}><aside className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-[#091827] p-5 text-white shadow-2xl md:inset-y-0 md:left-auto md:w-full md:max-w-xl md:rounded-none" onClick={(event) => event.stopPropagation()}><header className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase text-blue-300">Service Area</p><h3 className="mt-1 text-2xl font-black">{row.area_name}</h3><p className="text-slate-400">{row.primary_city ? `${row.primary_city}, ${row.state}` : "Jobs requiring geographic review"}</p></div><button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><X className="h-5 w-5" /></button></header>{hasCoordinates(row) && <button type="button" onClick={onFit} className="mt-4 min-h-11 rounded-xl bg-blue-500 px-4 font-black">Fit selected service area</button>}<div className="mt-5 grid grid-cols-2 gap-3">{metrics.map(([key, label]) => <button key={key} type="button" onClick={() => onDrilldown({ row, bucket: key })} className="rounded-xl bg-white/5 p-3 text-left"><span className="block text-[10px] font-black uppercase text-slate-500">{label}</span><strong className="text-xl text-blue-300">{row[key] ?? (key === "total" ? row.jobs?.length : 0)}</strong></button>)}</div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Info label="Exact cities included" value={row.exactCities?.join(", ") || "None"} /><Info label="Active technicians" value={row.activeTechnicians?.length || 0} /><Info label="Last job date" value={row.lastJobDate || "Never"} /><Info label="Coverage radius" value={row.coverage_radius_miles ? `${row.coverage_radius_miles} miles` : "Not configured"} /></div></aside></div>;
+  return <div className="fixed inset-0 z-[140] bg-black/70" onClick={onClose}><aside className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-[#091827] p-5 text-white shadow-2xl md:inset-y-0 md:left-auto md:w-full md:max-w-xl md:rounded-none" onClick={(event) => event.stopPropagation()}><header className="flex items-start justify-between gap-4"><div><p className="text-xs font-black uppercase text-blue-300">Service Area</p><h3 className="mt-1 text-2xl font-black">{row.area_name}</h3><p className="text-slate-400">{row.primary_city ? `${row.primary_city}, ${row.state}` : "Jobs requiring geographic review"}</p></div><button type="button" onClick={onClose} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><X className="h-5 w-5" /></button></header>{hasCoordinates(row) && <button type="button" onClick={onFit} className="mt-4 min-h-11 rounded-xl bg-blue-500 px-4 font-black">Fit selected service area</button>}<div className="mt-5 grid grid-cols-2 gap-3">{metrics.map(([key, label]) => <button key={key} type="button" onClick={() => onDrilldown({ row, bucket: key })} className="rounded-xl bg-white/5 p-3 text-left"><span className="block text-[10px] font-black uppercase text-slate-500">{label}</span><strong className="text-xl text-blue-300">{row[key] ?? (key === "total" ? row.jobs?.length : 0)}</strong></button>)}</div><div className="mt-5 grid gap-3 sm:grid-cols-2"><Info label="Exact cities included" value={row.exactCities?.join(", ") || "None"} /><Info label="Active technicians" value={row.activeTechnicians?.length || 0} /><Info label="Last job date" value={row.lastJobDate || "Never"} /><Info label="Coverage radius" value={`${SERVICE_AREA_RADIUS_MILES} miles`} /></div></aside></div>;
 }
 
 function Toggle({ label, value, onChange }) { return <button type="button" onClick={onChange} className={`min-h-11 rounded-xl border px-3 text-xs font-black ${value ? "border-blue-400 bg-blue-500/20 text-blue-200" : "border-white/10 bg-white/5 text-slate-400"}`}>{label}</button>; }
@@ -319,4 +320,3 @@ function fitRows(map, rows) {
 }
 function unassignedRow(jobs) { return { area_name: "Outside Coverage / Unassigned", jobs, total: jobs.length, completed: jobs.filter((job) => coverageStatusBucket(job.status) === "completed").length, cancelled: jobs.filter((job) => coverageStatusBucket(job.status) === "cancelled").length, dryRuns: jobs.filter((job) => coverageStatusBucket(job.status) === "dryRuns").length, active: jobs.filter((job) => coverageStatusBucket(job.status) === "active").length, pending: jobs.filter((job) => coverageStatusBucket(job.status) === "pending").length, exactCities: [], activeTechnicians: [] }; }
 function escapeHtml(value) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character])); }
-

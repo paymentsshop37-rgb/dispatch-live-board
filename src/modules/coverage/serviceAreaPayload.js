@@ -1,3 +1,5 @@
+import { SERVICE_AREA_RADIUS_MILES } from "./coverageConstants.js";
+
 export class ServiceAreaValidationError extends Error {
   constructor(message) {
     super(message);
@@ -35,7 +37,7 @@ export function buildServiceAreaPayload(area, updatedAt = new Date().toISOString
     normalized_primary_city: normalizePrimaryCity(area.primary_city),
     latitude: nullableNumber(area.latitude),
     longitude: nullableNumber(area.longitude),
-    coverage_radius_miles: nullableNumber(area.coverage_radius_miles) || 75,
+    coverage_radius_miles: SERVICE_AREA_RADIUS_MILES,
     is_active: area.is_active !== false,
     updated_at: updatedAt,
   };

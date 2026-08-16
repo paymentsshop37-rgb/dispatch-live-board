@@ -1,4 +1,5 @@
 import { normalizeCoverageCity, normalizeState } from "./coverageNormalization.js";
+import { SERVICE_AREA_RADIUS_MILES } from "./coverageConstants.js";
 
 export function assignServiceArea(job, areas, aliases) {
   const activeAreas = areas.filter((area) => area.is_active !== false);
@@ -36,7 +37,7 @@ export function assignServiceArea(job, areas, aliases) {
         return {
           area,
           distance: haversineMiles(latitude, longitude, areaLatitude, areaLongitude),
-          radius: positiveNumber(area.coverage_radius_miles, 75),
+          radius: SERVICE_AREA_RADIUS_MILES,
         };
       })
       .filter(Boolean)
@@ -157,6 +158,5 @@ function assignment(area, method, distance) {
 }
 function firstValue(...values) { return values.find((value) => String(value ?? "").trim()) || ""; }
 function coordinate(value, minimum, maximum) { const number = Number(value); return value === null || value === undefined || value === "" || !Number.isFinite(number) || number < minimum || number > maximum ? null : number; }
-function positiveNumber(value, fallback) { const number = Number(value); return Number.isFinite(number) && number > 0 ? number : fallback; }
 function daysSince(value) { return value ? Math.max(0, Math.floor((Date.now() - new Date(`${value}T00:00:00`)) / 86400000)) : null; }
 function localDate(date) { return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`; }
