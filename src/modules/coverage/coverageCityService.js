@@ -1,4 +1,7 @@
 import { supabase } from "../../lib/supabase";
+import { normalizeCoverageCity, normalizeState } from "./coverageNormalization";
+
+export { normalizeCoverageCity, normalizeState } from "./coverageNormalization";
 
 export async function loadCoverageCities({ includeInactive = false } = {}) {
   let query = supabase.from("coverage_cities").select("*");
@@ -14,22 +17,6 @@ export async function setCoverageCityActive(id, isActive) {
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
-}
-
-export function normalizeCoverageCity(value) {
-  let city = String(value || "")
-    .toUpperCase()
-    .replace(/\bALBURQUERQUE\b/g, "ALBUQUERQUE")
-    .replace(/\bFT[.\s]+/g, "FORT ")
-    .replace(/[^A-Z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  city = city.replace(/^FORT\s+WORTH$/, "FORT WORTH").replace(/^FORT\s+STOCKTON$/, "FORT STOCKTON");
-  return city;
-}
-
-export function normalizeState(value) {
-  return String(value || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
 }
 
 export function cityParts(record) {
