@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const migrationUrl = new URL("../supabase/migrations/20260821000100_safe_job_deletion.sql", import.meta.url);
+const accountingAuditMigrationUrl = new URL(
+  "../supabase/migrations/20260821000200_allow_accounting_audit_job_detach.sql",
+  import.meta.url
+);
 const uiUrl = new URL("../src/DispatchLiveUpdatesPage.jsx", import.meta.url);
 
 test("safe job deletion is an admin-only atomic RPC with financial safeguards", async () => {
@@ -53,4 +57,16 @@ test("Delete Job modal calls the RPC and never displays raw PostgreSQL errors", 
   assert.match(ui, /role="alert"/);
   assert.match(ui, /\{isDeletingJob \? "Deleting\.\.\." : "Delete Job"\}/);
   assert.doesNotMatch(ui, /alert\("Error deleting job: " \+ error\.message\)/);
+});
+
+test("accounting audit history is preserved and only its job FK may be detached by the delete RPC", async () => {
+  const sql = await readFile(accountingAuditMigrationUrl, "utf8");
+
+  assert.match(sql, /create or replace function public\.prevent_accounting_audit_mutation\(\)/i);
+  assert.match(sql, /current_setting\('app\.safe_job_delete'/i);
+  assert.match(sql, /old\.job_id is not null/i);
+  assert.match(sql, /new\.job_id is null/i);
+  assert.match(sql, /to_jsonb\(new\) - 'job_id'.*=.*to_jsonb\(old\) - 'job_id'/i);
+  assert.doesNotMatch(sql, /delete from public\.accounting_audit_log/i);
+  assert.match(sql, /Accounting audit history is immutable\./i);
 });
