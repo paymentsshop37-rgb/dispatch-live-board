@@ -105,6 +105,23 @@ const invoiceStyles = {
   "Need Review": "bg-orange-100 text-orange-700",
 };
 
+function safeJobDeletionError(error) {
+  const message = String(error?.message || "").toLowerCase();
+  if (message.includes("payment or financial records")) {
+    return "This job cannot be deleted because it contains payment or financial records that must be preserved.";
+  }
+  if (message.includes("files or documents")) {
+    return "This job cannot be deleted while it has files or documents. Review and remove them first.";
+  }
+  if (message.includes("permission")) {
+    return "You do not have permission to delete jobs.";
+  }
+  if (message.includes("not found") || message.includes("already been deleted")) {
+    return "The job was not found or has already been deleted.";
+  }
+  return "This job could not be deleted because it has related records that must be preserved.";
+}
+
 const activeAddJobSessions = new Set();
 
 function addJobDraftKey(currentUser) {
@@ -392,6 +409,8 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const [internalControlFilter, setInternalControlFilter] = useState("All");
   const [form, setForm] = useState(emptyForm());
   const [jobToDelete, setJobToDelete] = useState(null);
+  const [deleteJobError, setDeleteJobError] = useState("");
+  const [isDeletingJob, setIsDeletingJob] = useState(false);
   const [deleteRestrictedOpen, setDeleteRestrictedOpen] = useState(false);
   const [mobileVisibleCount, setMobileVisibleCount] = useState(50);
   const [mobileMoreJobId, setMobileMoreJobId] = useState(null);
@@ -1584,14 +1603,20 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
 
     const deletedJob = jobs.find((job) => job.id === id);
 
-    const { data: deletedRows, error } = await supabase.from("jobs").delete().eq("id", id).select("id");
+    setDeleteJobError("");
+    setIsDeletingJob(true);
+
+    const { data: deletedId, error } = await supabase.rpc("delete_job_safely", { p_job_id: id });
 
     if (error) {
-      alert("Error deleting job: " + error.message);
+      console.error("Safe job deletion failed", { jobId: id, code: error.code });
+      setDeleteJobError(safeJobDeletionError(error));
+      setIsDeletingJob(false);
       return;
     }
-    if (!deletedRows?.length) {
-      alert("The job was not deleted. Your session may not have administrator permission.");
+    if (deletedId !== id) {
+      setDeleteJobError("The job was not deleted. Please refresh the page and try again.");
+      setIsDeletingJob(false);
       return;
     }
 const newActivity = {
@@ -1614,6 +1639,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
 ]);
     setJobs((currentJobs) => currentJobs.filter((job) => job.id !== id));
     setJobToDelete(null);
+    setIsDeletingJob(false);
   }
 
   async function requestDelete(job) {
@@ -1638,6 +1664,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
       });
       return;
     }
+    setDeleteJobError("");
     setJobToDelete(job);
   }
 
@@ -2936,10 +2963,20 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <p className="text-slate-500">{jobToDelete.location}</p>
                   </div>
 
+                  {deleteJobError && (
+                    <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                      {deleteJobError}
+                    </p>
+                  )}
+
                   <div className="mt-5 flex justify-end gap-3">
                     <button
                       type="button"
-                      onClick={() => setJobToDelete(null)}
+                      onClick={() => {
+                        setDeleteJobError("");
+                        setJobToDelete(null);
+                      }}
+                      disabled={isDeletingJob}
                       className="rounded-xl border border-slate-200 px-4 py-2 font-bold text-slate-700 hover:bg-slate-50"
                     >
                       Cancel
@@ -2948,9 +2985,10 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                     <button
                       type="button"
                       onClick={() => deleteJob(jobToDelete.id)}
-                      className="rounded-xl bg-red-600 px-4 py-2 font-bold text-white hover:bg-red-700"
+                      disabled={isDeletingJob}
+                      className="rounded-xl bg-red-600 px-4 py-2 font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Delete Job
+                      {isDeletingJob ? "Deleting..." : "Delete Job"}
                     </button>
                   </div>
                 </div>
