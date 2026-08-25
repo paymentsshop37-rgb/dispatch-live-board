@@ -177,3 +177,13 @@ test("migration preserves related history with explicit detachment rules", async
   assert.match(migration, /app\.user_profile_delete/);
   assert.doesNotMatch(migration, /alter table public\.session_audit_log/i);
 });
+
+test("follow-up migration updates the trigger function actually attached to paid jobs", async () => {
+  const migration = await readFile(new URL("../supabase/migrations/20260824000200_allow_user_detach_from_paid_jobs.sql", import.meta.url), "utf8");
+  assert.match(migration, /create or replace function public\.protect_technician_payment_fields\(\)/);
+  assert.match(migration, /app\.user_profile_delete/);
+  assert.match(migration, /old\.tech_payment_paid_by is not null/);
+  assert.match(migration, /new\.tech_payment_paid_by is null/);
+  assert.match(migration, /new\.tech_payment_paid_at is not distinct from old\.tech_payment_paid_at/);
+  assert.match(migration, /new\.tech_payment_status is not distinct from old\.tech_payment_status/);
+});
