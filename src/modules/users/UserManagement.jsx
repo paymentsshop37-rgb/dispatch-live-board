@@ -155,12 +155,20 @@ export default function UserManagement({ currentUser }) {
       return;
     }
 
-    setBusy(`delete-${deleteUser.id}`);
+    const target = deleteUser;
+    setBusy(`delete-${target.id}`);
     try {
-      await request("DELETE", { id: deleteUser.id, profileOnly: deleteUser.isDesynced });
+      const result = await request("DELETE", { id: target.id });
+      setUsers((list) => list.filter((user) => user.id !== target.id));
       setDeleteUser(null);
-      await loadUsers();
-      show(deleteUser.isDesynced ? "User profile deleted successfully." : "User deleted successfully.");
+      setResetUser((current) => (current?.id === target.id ? null : current));
+      setSyncUser((current) => (current?.id === target.id ? null : current));
+      setSaveState((current) => {
+        const next = { ...current };
+        delete next[target.id];
+        return next;
+      });
+      show(result.deletionType === "ORPHAN_PROFILE" ? "User profile deleted successfully." : "User deleted successfully.");
     } catch (error) {
       show(error.message || "Unable to delete user.", true);
     } finally {
@@ -290,8 +298,8 @@ export default function UserManagement({ currentUser }) {
                         </span>
                       </td>
                       <td className="px-3 py-3">
-                        <span className={`rounded-full px-2 py-1 text-xs font-black ${user.isDesynced ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-800"}`}>
-                          {user.isDesynced ? "DESYNCED" : "LINKED"}
+                        <span className={`rounded-full px-2 py-1 text-xs font-black ${authStatusClass(user.authStatus)}`}>
+                          {authStatusLabel(user.authStatus)}
                         </span>
                       </td>
                       <td className="px-3 py-3 text-slate-600">{formatDate(user.lastLoginAt)}</td>
@@ -309,7 +317,7 @@ export default function UserManagement({ currentUser }) {
                             <RotateCcw className="h-4 w-4" />
                             Reset Password
                           </button>
-                          {user.isDesynced && (
+                          {user.canSyncAuth && (
                             <button
                               type="button"
                               disabled={Boolean(busy)}
@@ -332,7 +340,7 @@ export default function UserManagement({ currentUser }) {
                             className="flex items-center justify-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-xs font-bold text-white disabled:bg-slate-300"
                           >
                             <Trash2 className="h-4 w-4" />
-                            {user.isDesynced ? "Delete Profile" : "Delete User"}
+                            {user.authStatus === "LINKED" ? "Delete User" : "Delete Profile"}
                           </button>
                         </div>
                       </td>
@@ -367,11 +375,11 @@ export default function UserManagement({ currentUser }) {
       )}
 
       {deleteUser && (
-        <Modal title="Delete User" onClose={() => setDeleteUser(null)}>
+        <Modal title={deleteUser.authStatus === "LINKED" ? "Delete User" : "Delete Profile"} onClose={() => setDeleteUser(null)}>
           <p>
-            {deleteUser.isDesynced
-              ? "This profile is not linked to a Supabase Auth account. Delete only the app_users profile, or cancel and sync it first."
-              : "Are you sure you want to delete this user? This will permanently remove their access to the system."}
+            {deleteUser.authStatus === "LINKED"
+              ? "This will permanently delete the user's login account and application profile."
+              : "This user has no linked login account. Only the application profile will be deleted."}
           </p>
           <div className="mt-6 flex justify-end gap-3">
             <button type="button" onClick={() => setDeleteUser(null)} className="rounded-xl border px-4 py-2 font-bold">
@@ -383,7 +391,7 @@ export default function UserManagement({ currentUser }) {
               disabled={busy === `delete-${deleteUser.id}`}
               className="rounded-xl bg-red-600 px-4 py-2 font-bold text-white disabled:bg-slate-300"
             >
-              {busy === `delete-${deleteUser.id}` ? "Deleting..." : deleteUser.isDesynced ? "Delete Profile" : "Delete User"}
+              {busy === `delete-${deleteUser.id}` ? "Deleting..." : deleteUser.authStatus === "LINKED" ? "Delete User" : "Delete Profile"}
             </button>
           </div>
         </Modal>
@@ -575,6 +583,7 @@ function Metric({ icon: Icon, label, value }) {
 
 function normalizeUser(row) {
   const normalizedRole = String(row.role || "").toLowerCase();
+  const authStatus = row.auth_status || (row.auth_user_id ? (row.auth_exists ? "LINKED" : "OUT_OF_SYNC") : "NO_AUTH");
   return {
     id: row.id,
     authUserId: row.auth_user_id || "",
@@ -586,7 +595,9 @@ function normalizeUser(row) {
     lastLoginAt: row.last_login_at,
     notes: row.notes || "",
     authExists: Boolean(row.auth_exists),
-    isDesynced: Boolean(row.is_desynced),
+    authStatus,
+    isDesynced: authStatus !== "LINKED",
+    canSyncAuth: row.can_sync_auth ?? authStatus !== "LINKED",
     canViewTechPayments: Boolean(row.can_view_tech_payments),
     canMarkTechPaymentsPaid: Boolean(row.can_mark_tech_payments_paid),
     canExportFinancialReports: Boolean(row.can_export_financial_reports),
@@ -611,9 +622,18 @@ function isCurrentUser(user, currentUser) {
   return Boolean(
     (currentUser.id && user.id === currentUser.id) ||
       (currentUser.authUserId && user.authUserId === currentUser.authUserId) ||
-      (currentUser.authUserId && user.id === currentUser.authUserId) ||
-      (currentUser.username && user.username === currentUser.username)
+      (currentUser.authUserId && user.id === currentUser.authUserId)
   );
+}
+
+function authStatusLabel(status) {
+  return status === "LINKED" ? "LINKED" : status === "OUT_OF_SYNC" ? "OUT OF SYNC" : "NO AUTH";
+}
+
+function authStatusClass(status) {
+  if (status === "LINKED") return "bg-emerald-100 text-emerald-800";
+  if (status === "OUT_OF_SYNC") return "bg-red-100 text-red-800";
+  return "bg-slate-100 text-slate-700";
 }
 
 function profilePatchToUi(patch) {
