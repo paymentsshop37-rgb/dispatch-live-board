@@ -57,15 +57,23 @@ Deno.serve(async (req) => {
     if (req.method === "POST" && body.action === "reset-password") {
       const target = await findProfile(admin, clean(body.id));
       if (!target) return json({ error: "User not found." }, 404);
-      const authUserId = clean(target.auth_user_id);
+      const authUserId = validAuthUserId(target.auth_user_id);
       if (!authUserId) return json({ error: "This user is out of sync. Sync the user with Supabase Auth before resetting the password.", code: "USER_DESYNCED" }, 409);
       if (clean(body.password).length < 8) return json({ error: "The password must contain at least 8 characters." }, 400);
-      const { error } = await admin.auth.admin.updateUserById(authUserId, { password: body.password });
+      const { data: existingAuth, error: lookupError } = await admin.auth.admin.getUserById(authUserId);
+      if (lookupError || existingAuth?.user?.id !== authUserId) {
+        return json({ error: "This user is out of sync. Sync the user with Supabase Auth before resetting the password.", code: "USER_DESYNCED" }, 409);
+      }
+      const authEmail = clean(existingAuth.user.email).toLowerCase();
+      console.info("admin-users password reset target", { profile_id: target.id, username: target.username, auth_user_id: authUserId, auth_email: authEmail });
+      const { data: updatedAuth, error } = await admin.auth.admin.updateUserById(authUserId, { password: body.password });
       if (error) return json({ error: error.message || "Unable to reset password." }, 500);
+      if (updatedAuth?.user?.id !== authUserId) return json({ error: "Supabase Auth returned an unexpected account after the password reset." }, 502);
       const { error: profileError } = await admin.from("app_users").update({ force_password_change: body.forcePasswordChange !== false }).eq("id", target.id);
       if (profileError) return json({ error: profileError.message || "Unable to reset password." }, 500);
-      await audit(admin, "PASSWORD_RESET", target.id, user.id, { auth_user_id: authUserId });
-      return json({ ok: true });
+      const auditRecorded = await audit(admin, "PASSWORD_RESET", target.id, user.id, { auth_user_id: authUserId, auth_email: authEmail });
+      console.info("admin-users password reset result", { profile_id: target.id, auth_user_id: authUserId, auth_email: authEmail, result: "success", audit_recorded: auditRecorded });
+      return json({ ok: true, auth_user_id: authUserId, auth_email: authEmail, audit_recorded: auditRecorded });
     }
     if (req.method === "POST" && body.action === "sync-auth") {
       const target = await findProfile(admin, clean(body.id));
@@ -272,11 +280,16 @@ async function audit(client: any, action: string, target: string, actor: string,
   try {
     const payload = { entity_type: "user", entity_id: target, action, description: action.replaceAll("_", " "), created_by: actor, metadata: { target_user_id: target, performed_by: actor, ...details } };
     const { error } = await client.from("activity_log").insert(payload);
-    if (!error) return;
+    if (!error) return true;
     const { metadata: _metadata, ...fallback } = payload;
     const fallbackResult = await client.from("activity_log").insert(fallback);
-    if (fallbackResult.error) console.error("admin-users audit:", fallbackResult.error.message);
+    if (fallbackResult.error) {
+      console.error("admin-users audit:", fallbackResult.error.message);
+      return false;
+    }
+    return true;
   } catch (error) {
     console.error("admin-users audit:", error instanceof Error ? error.message : error);
+    return false;
   }
 }

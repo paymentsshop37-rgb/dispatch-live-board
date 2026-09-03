@@ -361,10 +361,13 @@ export default function UserManagement({ currentUser }) {
           onSave={async (password, force) => {
             setBusy(`reset-${resetUser.id}`);
             try {
-              await request("POST", { action: "reset-password", id: resetUser.id, password, forcePasswordChange: force });
+              const result = await request("POST", { action: "reset-password", id: resetUser.id, password, forcePasswordChange: force });
+              if (!result?.ok || result.auth_user_id !== resetUser.authUserId) {
+                throw new Error("The password reset could not be verified against the linked Auth account.");
+              }
               setResetUser(null);
               await loadUsers();
-              show("Password reset successfully.");
+              show(result.audit_recorded === false ? "Password reset succeeded, but its audit record could not be written." : "Password reset successfully.", result.audit_recorded === false);
             } catch (error) {
               show(error.message || "Unable to reset password.", true);
             } finally {
