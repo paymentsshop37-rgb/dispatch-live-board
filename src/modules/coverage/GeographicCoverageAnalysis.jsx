@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from "react";
+import React, { lazy, Suspense, useMemo, useState } from "react";
 import { Download, Map, MapPin, Settings2, X } from "lucide-react";
 import { coverageStatusBucket } from "./serviceAreaService";
 import { assignJobServiceArea } from "./serviceAreaService";
 import CoverageRoadMap from "./CoverageRoadMap";
+const ServiceAreaReport = lazy(() => import("./ServiceAreaReport"));
 
 const statusColumns = [
   ["total", "Total Jobs"], ["completed", "Completed"], ["cancelled", "Cancelled"],
@@ -24,6 +25,7 @@ export default function GeographicCoverageAnalysis({
   onChanged,
 }) {
   const [tab, setTab] = useState(defaultTab);
+  const [reportScope, setReportScope] = useState(null);
   return (
     <section className="overflow-hidden rounded-[1.75rem] border border-white/10 bg-[#0a1830] shadow-xl">
       <header className="border-b border-white/10 p-5 md:p-6">
@@ -49,14 +51,15 @@ export default function GeographicCoverageAnalysis({
       </header>
       <div className="p-4 md:p-6">
         {tab === "exact" && onExactCities}
-        {tab === "areas" && <ServiceAreasTable rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} isAdmin={isAdmin} onChanged={onChanged} />}
-        {tab === "map" && <CoverageRoadMap rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} onExport={() => printAreas(serviceAreaRows)} />}
+        {tab === "areas" && <ServiceAreasTable rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} isAdmin={isAdmin} onChanged={onChanged} onReport={setReportScope} />}
+        {tab === "map" && <CoverageRoadMap rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} onExport={setReportScope} />}
       </div>
+      {reportScope && <Suspense fallback={<p role="status" className="p-4 text-white">Preparing service area report…</p>}><ServiceAreaReport rows={reportScope.rows} unassignedJobs={reportScope.unassignedJobs || []} scopeLabel={reportScope.label} periodLabel={rangeLabel} onClose={() => setReportScope(null)} /></Suspense>}
     </section>
   );
 }
 
-function ServiceAreasTable({ rows, unassignedJobs, onDrilldown, isAdmin, onChanged }) {
+function ServiceAreasTable({ rows, unassignedJobs, onDrilldown, isAdmin, onChanged, onReport }) {
   const [search, setSearch] = useState("");
   const [state, setState] = useState("All");
   const states = useMemo(() => ["All", ...new Set(rows.map((row) => row.state))].sort(), [rows]);
@@ -70,10 +73,10 @@ function ServiceAreasTable({ rows, unassignedJobs, onDrilldown, isAdmin, onChang
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search service area" className="min-h-11 rounded-xl border border-white/10 bg-[#111f33] px-3 text-white outline-none" />
         <select value={state} onChange={(event) => setState(event.target.value)} className="min-h-11 rounded-xl border border-white/10 bg-[#111f33] px-3 font-bold text-white">{states.map((value) => <option key={value}>{value}</option>)}</select>
         <button type="button" onClick={() => exportAreaCsv(filtered)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-500 px-4 font-black text-white"><Download className="h-4 w-4" />CSV</button>
-        <button type="button" onClick={() => printAreas(filtered)} className="min-h-11 rounded-xl bg-white/10 px-4 font-black text-white">Export PDF</button>
+        <button type="button" onClick={() => onReport({rows:filtered,unassignedJobs:state === 'All' && !search.trim() ? unassignedJobs : [],label:state === 'All' && !search.trim() ? 'All service areas · Includes unassigned jobs' : `Filtered areas · State: ${state}${search.trim() ? ' · Search: '+search.trim() : ''} · Unassigned excluded`})} className="min-h-11 rounded-xl bg-white/10 px-4 font-black text-white">Professional Report</button>
       </div>
       <div className="grid gap-3 lg:hidden">
-        {filtered.map((row) => <AreaCard key={row.id} row={row} onDrilldown={onDrilldown} />)}
+        {filtered.map((row) => <div key={row.id}><AreaCard row={row} onDrilldown={onDrilldown} /><button type="button" onClick={() => onReport({rows:[row],label:row.area_name})} className="mt-2 min-h-11 rounded-xl bg-blue-600 px-4 font-bold text-white">Area Report</button></div>)}
         <UnassignedCard jobs={unassignedJobs} onDrilldown={onDrilldown} />
       </div>
       <div className="hidden max-h-[620px] overflow-auto rounded-xl border border-white/10 lg:block">
@@ -81,7 +84,7 @@ function ServiceAreasTable({ rows, unassignedJobs, onDrilldown, isAdmin, onChang
           <thead className="sticky top-0 z-10 bg-[#11233a] uppercase text-slate-300"><tr>{["Service Area", "Primary City", "State", ...statusColumns.map(([, label]) => label), "Exact Cities Included", "Active Techs", "Last Job", "Days Since", "% All Jobs", "Change vs Previous"].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}</tr></thead>
           <tbody>
             {filtered.map((row) => <tr key={row.id} className="border-t border-white/10 odd:bg-white/[0.025]">
-              <td className="px-3 py-3 font-black text-white">{row.area_name}</td><td className="px-3 py-3">{row.primary_city}</td><td className="px-3 py-3">{row.state}</td>
+              <td className="px-3 py-3 font-black text-white">{row.area_name}<button type="button" onClick={() => onReport({rows:[row],label:row.area_name})} className="mt-2 block min-h-9 rounded-lg bg-blue-500/15 px-3 text-blue-200">Area Report</button></td><td className="px-3 py-3">{row.primary_city}</td><td className="px-3 py-3">{row.state}</td>
               {statusColumns.map(([key]) => <td key={key} className="px-3 py-3 text-right"><Count value={row[key]} onClick={() => onDrilldown({ row, bucket: key })} /></td>)}
               <td className="max-w-[260px] px-3 py-3">{row.exactCities.join(", ") || "Primary city only"}</td>
               <td className="px-3 py-3 text-right">{row.activeTechnicians.length}</td><td className="px-3 py-3">{row.lastJobDate || "Never"}</td><td className="px-3 py-3 text-right">{row.daysSinceLastJob ?? "—"}</td><td className="px-3 py-3 text-right">{row.percentage.toFixed(1)}%</td><td className={`px-3 py-3 text-right font-black ${row.change >= 0 ? "text-emerald-300" : "text-red-300"}`}>{row.change >= 0 ? "+" : ""}{row.change.toFixed(1)}%</td>

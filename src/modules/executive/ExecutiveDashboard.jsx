@@ -315,7 +315,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
                 exactRows={cityStatusRows}
                 serviceAreaRows={serviceAreaAnalysis.rows}
                 unassignedJobs={serviceAreaAnalysis.unassignedJobs}
-                rangeLabel={filterMode}
+                rangeLabel={periodLabel}
                 onExactCities={<CityStatusBreakdown rows={cityStatusRows} onDrilldown={setCityJobDrilldown} />}
                 onDrilldown={setCityJobDrilldown}
                 onOpenSettings={() => setCoverageSettingsOpen(true)}

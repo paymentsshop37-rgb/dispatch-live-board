@@ -127,7 +127,7 @@ export default function CoverageRoadMap({ rows, unassignedJobs, onDrilldown, onE
           <select value={state} onChange={(event) => setState(event.target.value)} className={selectClass}>{states.map((value) => <option key={value}>{value}</option>)}</select>
           <select value={areaId} onChange={(event) => setAreaId(event.target.value)} className={selectClass}><option value="All">All service areas</option>{rows.map((row) => <option key={row.id} value={row.id}>{row.area_name}</option>)}</select>
           <select value={status} onChange={(event) => setStatus(event.target.value)} className={selectClass}>{STATUS_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
-          <button type="button" onClick={onExport} className="min-h-11 rounded-xl bg-blue-500 px-4 font-black text-white">Export Coverage PDF</button>
+          <button type="button" onClick={() => onExport({rows:filteredAreaJobs.map(row=>({...row,jobs:row.mapJobs})),unassignedJobs:state==='All'&&areaId==='All'?unassignedJobs.filter(job=>jobIncluded(job,status,includeCancelled,includeDryRuns)):[],label:`Map scope · State: ${state} · ${areaId==='All'?'All areas':filteredRows[0]?.area_name||'Selected area'} · Status: ${status} · Cancelled ${includeCancelled?'included':'excluded'} · Dry runs ${includeDryRuns?'included':'excluded'}`})} className="min-h-11 rounded-xl bg-blue-500 px-4 font-black text-white">Professional Report</button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {[
