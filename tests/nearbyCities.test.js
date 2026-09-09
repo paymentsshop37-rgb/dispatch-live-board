@@ -33,6 +33,24 @@ test('manual alias takes precedence over overlapping synced aliases', () => {
   const aliases = [{id:'1',service_area_id:'a',city:'Example',state:'TX',assignment_type:'nearby_sync'}, {id:'2',service_area_id:'b',city:'Example',state:'TX',assignment_type:'manual'}];
   assert.equal(assignServiceArea({city:'Example',state:'TX'},areas,aliases).area.id,'b');
 });
+
+test('large alias lists report incremental progress with at most four requests in flight', async () => {
+  const rows = Array.from({length:20304}, (_,id)=>({id}));
+  let active=0, peak=0;
+  const progress=[];
+  const client={from() { return {select(){return this;},order(){return this;},async range(a,b){
+    active++; peak=Math.max(peak,active);
+    await new Promise(resolve=>setTimeout(resolve,1));
+    active--; return {data:rows.slice(a,b+1)};
+  }}; }};
+  const result=await loadAllAliases(client, page=>progress.push(page.length));
+  assert.equal(result.length,20304);
+  assert.equal(new Set(result.map(r=>r.id)).size,20304);
+  assert.equal(peak,4);
+  assert.equal(progress[0],2000);
+  assert.equal(progress.at(-1),20304);
+  assert(progress.length>1);
+});
 test('invalid radiuses are rejected before saving', () => {
   for (const coverage_radius_miles of [null, '', 0, -1, Infinity, 'NaN']) {
     assert.match(validateServiceArea({area_name:'Test',primary_city:'Test',state:'TX',coverage_radius_miles}), /Radius/);

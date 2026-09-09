@@ -5,12 +5,15 @@ import { loadAllAliases } from "./loadAllAliases.js";
 
 export { assignJobsToServiceAreas, assignServiceArea, buildServiceAreaRows, coverageStatusBucket, haversineMiles, previousDateRange, statusCounts } from "./serviceAreaAssignment";
 
-export async function loadServiceAreaConfiguration({ includeInactive = false } = {}) {
+export async function loadServiceAreaConfiguration({ includeInactive = false, onAreas, onAliases } = {}) {
   let areaQuery = supabase.from("service_areas").select("*");
   if (!includeInactive) areaQuery = areaQuery.eq("is_active", true);
   const [{ data: areas, error: areaError }, aliases] = await Promise.all([
-    areaQuery.order("state").order("area_name"),
-    loadAllAliases(supabase),
+    areaQuery.order("state").order("area_name").then(result => {
+      if (!result.error) onAreas?.(result.data || []);
+      return result;
+    }),
+    loadAllAliases(supabase, onAliases),
   ]);
   if (areaError) throw areaError;
   return { areas: areas || [], aliases: aliases || [] };
