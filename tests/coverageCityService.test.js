@@ -35,7 +35,8 @@ function coverageCity({ id, city, state, latitude, longitude, aliases = [] }) {
 
 const allDates = { from: "", to: "" };
 
-test("job count, last job, days, and Previous Jobs share one assigned-job set", () => {
+test("job count, last job, days, and Previous Jobs share one assigned-job set", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-08-16T12:00:00") });
   const dallas = coverageCity({
     id: "dallas",
     city: "Dallas",

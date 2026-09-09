@@ -203,7 +203,7 @@ export default function CitiesWithoutJobsPanel({
               Coverage Area Job Activity
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Every metric uses the same 150-mile assignment and selected
+              Every metric uses the configured service-area radiuses and selected
               period.
             </p>
           </div>

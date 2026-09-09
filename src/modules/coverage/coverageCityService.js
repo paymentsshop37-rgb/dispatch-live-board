@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabase";
+import { loadAllAliases } from "./loadAllAliases.js";
 
 export {
   normalizeCoverageCity,
@@ -19,19 +20,15 @@ export async function loadCoverageCities({ includeInactive = false } = {}) {
       .order("state", { ascending: true })
       .order("city", { ascending: true }),
     supabase.from("service_areas").select("*"),
-    supabase
-      .from("service_area_city_aliases")
-      .select("*")
-      .order("created_at", { ascending: true }),
+    loadAllAliases(supabase),
   ]);
   if (cityResult.error) throw cityResult.error;
   if (areaResult.error) throw areaResult.error;
-  if (aliasResult.error) throw aliasResult.error;
   const areasById = new Map(
     (areaResult.data || []).map((area) => [String(area.id), area]),
   );
   const aliasesByAreaId = new Map();
-  (aliasResult.data || []).forEach((alias) => {
+  aliasResult.forEach((alias) => {
     const key = String(alias.service_area_id);
     if (!aliasesByAreaId.has(key)) aliasesByAreaId.set(key, []);
     aliasesByAreaId.get(key).push(alias);

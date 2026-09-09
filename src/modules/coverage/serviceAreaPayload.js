@@ -1,4 +1,3 @@
-import { SERVICE_AREA_RADIUS_MILES } from "./coverageConstants.js";
 
 export class ServiceAreaValidationError extends Error {
   constructor(message) {
@@ -21,6 +20,7 @@ export function validateServiceArea(area) {
 
   const latitudeError = validateCoordinate(area?.latitude, "Latitude", -90, 90);
   if (latitudeError) return latitudeError;
+  if (!Number.isFinite(Number(area?.coverage_radius_miles)) || Number(area?.coverage_radius_miles) <= 0) return "Radius must be a positive number of miles.";
   return validateCoordinate(area?.longitude, "Longitude", -180, 180);
 }
 
@@ -37,7 +37,7 @@ export function buildServiceAreaPayload(area, updatedAt = new Date().toISOString
     normalized_primary_city: normalizePrimaryCity(area.primary_city),
     latitude: nullableNumber(area.latitude),
     longitude: nullableNumber(area.longitude),
-    coverage_radius_miles: SERVICE_AREA_RADIUS_MILES,
+    coverage_radius_miles: Number(area.coverage_radius_miles),
     is_active: area.is_active !== false,
     updated_at: updatedAt,
   };

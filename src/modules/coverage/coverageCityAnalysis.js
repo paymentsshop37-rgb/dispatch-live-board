@@ -3,7 +3,6 @@ import {
   normalizeState,
 } from "./coverageNormalization.js";
 import { assignJobsToServiceAreas } from "./serviceAreaAssignment.js";
-import { SERVICE_AREA_RADIUS_MILES } from "./coverageConstants.js";
 
 export function cityParts(record) {
   const directCity = record?.city || record?.normalized_city;
@@ -173,13 +172,10 @@ function coverageConfiguration(coverageCities) {
       normalized_state: city.normalized_state,
       latitude: city.latitude,
       longitude: city.longitude,
-      coverage_radius_miles: SERVICE_AREA_RADIUS_MILES,
+      coverage_radius_miles: city.coverage_radius_miles,
       is_active: city.is_active,
     };
-    areasById.set(id, {
-      ...area,
-      coverage_radius_miles: SERVICE_AREA_RADIUS_MILES,
-    });
+    areasById.set(id, area);
     const exactCityAlias = {
       service_area_id: id,
       city: city.city,

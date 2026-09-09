@@ -20,13 +20,13 @@ test("service area payload includes a normalized state for creates and updates",
   assert.equal(created.normalized_state, "TX");
   assert.equal(updated.state, "CO");
   assert.equal(updated.normalized_state, "CO");
-  assert.equal(created.coverage_radius_miles, 150);
-  assert.equal(updated.coverage_radius_miles, 150);
+  assert.equal(created.coverage_radius_miles, 75);
+  assert.equal(updated.coverage_radius_miles, 75);
 });
 
-test("service area payload always enforces the fixed 150-mile radius", () => {
-  assert.equal(buildServiceAreaPayload({ ...validArea, coverage_radius_miles: 25 }).coverage_radius_miles, 150);
-  assert.equal(buildServiceAreaPayload({ ...validArea, coverage_radius_miles: 500 }).coverage_radius_miles, 150);
+test("service area payload preserves each configured radius", () => {
+  assert.equal(buildServiceAreaPayload({ ...validArea, coverage_radius_miles: 25 }).coverage_radius_miles, 25);
+  assert.equal(buildServiceAreaPayload({ ...validArea, coverage_radius_miles: 500 }).coverage_radius_miles, 500);
 });
 
 test("service area validation requires a two-letter state", () => {

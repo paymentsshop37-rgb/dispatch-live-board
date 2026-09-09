@@ -1,5 +1,4 @@
 import { normalizeCoverageCity, normalizeState } from "./coverageNormalization.js";
-import { SERVICE_AREA_RADIUS_MILES } from "./coverageConstants.js";
 
 export function assignServiceArea(job, areas, aliases) {
   const activeAreas = areas.filter((area) => area.is_active !== false);
@@ -13,10 +12,18 @@ export function assignServiceArea(job, areas, aliases) {
   }
 
   const location = normalizedJobLocation(job);
-  const alias = aliases.find((item) => (
+  const alias = aliases.filter((item) => (
     normalizeCoverageCity(item.normalized_city || item.city) === location.city
     && normalizeState(item.normalized_state || item.state) === location.state
-  ));
+    && activeAreas.some(area => String(area.id) === String(item.service_area_id))
+  )).sort((a, b) => {
+    const priority = item => {
+      const area = activeAreas.find(area => String(area.id) === String(item.service_area_id));
+      const primary = normalizeCoverageCity(area.primary_city) === location.city && normalizeState(area.state) === location.state;
+      return (item.assignment_type === "nearby_sync" ? 2 : 0) + (primary ? 0 : 1);
+    };
+    return priority(a) - priority(b) || String(a.created_at || "").localeCompare(String(b.created_at || "")) || String(a.id || "").localeCompare(String(b.id || ""));
+  })[0];
   const aliasArea = alias && activeAreas.find((area) => String(area.id) === String(alias.service_area_id));
   if (aliasArea) return assignment(aliasArea, "alias", 0);
 
@@ -37,7 +44,7 @@ export function assignServiceArea(job, areas, aliases) {
         return {
           area,
           distance: haversineMiles(latitude, longitude, areaLatitude, areaLongitude),
-          radius: SERVICE_AREA_RADIUS_MILES,
+          radius: Number(area.coverage_radius_miles),
         };
       })
       .filter(Boolean)
@@ -143,7 +150,7 @@ export function haversineMiles(lat1, lon1, lat2, lon2) {
   const dLat = radians(lat2 - lat1);
   const dLon = radians(lon2 - lon1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(radians(lat1)) * Math.cos(radians(lat2)) * Math.sin(dLon / 2) ** 2;
-  return 3958.7613 * 2 * Math.asin(Math.sqrt(a));
+  return 3958.7613 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, a))));
 }
 
 function normalizedJobLocation(job) {

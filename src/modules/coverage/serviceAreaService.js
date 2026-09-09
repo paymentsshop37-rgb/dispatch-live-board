@@ -1,19 +1,31 @@
 import { supabase } from "../../lib/supabase";
 import { normalizeCoverageCity, normalizeState } from "./coverageNormalization";
 import { buildServiceAreaPayload } from "./serviceAreaPayload";
+import { loadAllAliases } from "./loadAllAliases.js";
 
 export { assignJobsToServiceAreas, assignServiceArea, buildServiceAreaRows, coverageStatusBucket, haversineMiles, previousDateRange, statusCounts } from "./serviceAreaAssignment";
 
 export async function loadServiceAreaConfiguration({ includeInactive = false } = {}) {
   let areaQuery = supabase.from("service_areas").select("*");
   if (!includeInactive) areaQuery = areaQuery.eq("is_active", true);
-  const [{ data: areas, error: areaError }, { data: aliases, error: aliasError }] = await Promise.all([
+  const [{ data: areas, error: areaError }, aliases] = await Promise.all([
     areaQuery.order("state").order("area_name"),
-    supabase.from("service_area_city_aliases").select("*").order("state").order("city"),
+    loadAllAliases(supabase),
   ]);
   if (areaError) throw areaError;
-  if (aliasError) throw aliasError;
   return { areas: areas || [], aliases: aliases || [] };
+}
+
+export async function canManageServiceAreaAliases() {
+  const { data, error } = await supabase.rpc("nttr_is_active_admin");
+  if (error) throw error;
+  return data === true;
+}
+
+export async function syncNearbyCities(serviceAreaId) {
+  const { data, error } = await supabase.rpc("sync_nearby_cities", { target_area_id: serviceAreaId });
+  if (error) throw error;
+  return data;
 }
 
 export async function saveServiceArea(area) {

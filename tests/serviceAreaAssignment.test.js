@@ -65,11 +65,11 @@ test("configured aliases override stale automatic assignments but not manual ass
   assert.equal(manual.area?.id, "waco");
 });
 
-test("radius matching uses 150 miles even when a stale record contains a smaller radius", () => {
+test("radius matching respects the configured smaller radius", () => {
   const staleRadius = { ...dallas, id: "stale", primary_city: "Stale", normalized_primary_city: "STALE", state: "AA", normalized_state: "AA", latitude: 0, longitude: 0, coverage_radius_miles: 1 };
   const result = assignServiceArea({ city: "Unknown", state: "ZZ", latitude: 0, longitude: 2 }, [staleRadius], []);
-  assert.equal(result.area?.id, "stale");
-  assert.equal(result.method, "nearest_radius");
+  assert.equal(result.area, null);
+  assert.equal(result.method, "unassigned");
 });
 
 test("overlapping radiuses assign a job once to the nearest qualifying area", () => {
