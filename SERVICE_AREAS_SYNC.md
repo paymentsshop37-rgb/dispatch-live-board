@@ -1,5 +1,19 @@
 # Service Areas: sincronización de Nearby Cities
 
+## Corrección del timeout de lectura
+
+Se aplicó en producción `20260909000300_optimize_alias_read_policies.sql`.
+Las políticas conservan sus mismas funciones de autorización, evaluadas mediante
+subconsultas escalares una vez por sentencia en lugar de por cada alias. Se agregó
+el índice `(created_at, id)` usado por la paginación. No se amplió ningún permiso.
+El plan real ahora usa Index Scan e InitPlans de autorización. Las pruebas de
+lectura bajo el rol authenticated sin identidad (acceso denegado) tardaron
+13,5 ms y 10,3 ms para los offsets 0 y 20.000; estas mediciones no representan una
+sesión Administrator del navegador. El conteo real permaneció en 20.304 aliases.
+Las pruebas PostgreSQL locales confirman lectura paginada de 500 filas por un
+usuario activo, 0 filas por uno inactivo, y restricciones de escritura intactas.
+Esta corrección es de base de datos y no necesita otro despliegue de frontend.
+
 ## Estado de entrega actualizado: producción
 
 Las dos migraciones están aplicadas en Supabase y registradas en su historial.
