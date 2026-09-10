@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useMemo, useState } from "react";
 import { Download, Map, MapPin, Settings2, X } from "lucide-react";
 import { coverageStatusBucket } from "./serviceAreaService";
 import { assignJobServiceArea } from "./serviceAreaService";
-import CoverageRoadMap from "./CoverageRoadMap";
+const CoverageRoadMap = lazy(() => import("./CoverageRoadMap"));
 const ServiceAreaReport = lazy(() => import("./ServiceAreaReport"));
 
 const statusColumns = [
@@ -52,7 +52,7 @@ export default function GeographicCoverageAnalysis({
       <div className="p-4 md:p-6">
         {tab === "exact" && onExactCities}
         {tab === "areas" && <ServiceAreasTable rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} isAdmin={isAdmin} onChanged={onChanged} onReport={setReportScope} />}
-        {tab === "map" && <CoverageRoadMap rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} onExport={setReportScope} />}
+        {tab === "map" && <Suspense fallback={<p role="status" className="p-4 text-slate-300">Loading coverage map…</p>}><CoverageRoadMap rows={serviceAreaRows} unassignedJobs={unassignedJobs} onDrilldown={onDrilldown} onExport={setReportScope} /></Suspense>}
       </div>
       {reportScope && <Suspense fallback={<p role="status" className="p-4 text-white">Preparing service area report…</p>}><ServiceAreaReport rows={reportScope.rows} unassignedJobs={reportScope.unassignedJobs || []} scopeLabel={reportScope.label} periodLabel={rangeLabel} onClose={() => setReportScope(null)} /></Suspense>}
     </section>

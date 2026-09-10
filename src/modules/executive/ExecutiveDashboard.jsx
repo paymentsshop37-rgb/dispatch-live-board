@@ -75,9 +75,11 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
   const [statusReport, setStatusReport] = useState(null);
   const [invoicePaymentSummaries, setInvoicePaymentSummaries] = useState([]);
   const internalControlQueueRef = useRef(null);
+  const dashboardRequest = useRef(0);
 
   useEffect(() => {
     loadDashboard();
+    return () => { dashboardRequest.current += 1; };
   }, []);
 
   useEffect(() => {
@@ -102,39 +104,42 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
   }, []);
 
   async function loadDashboard() {
+    const request = ++dashboardRequest.current;
     setLoading(true);
-    const [{ data, error }, paymentSummaryResult, coverageResult, technicianResult, serviceAreaResult] = await Promise.all([
-      supabase.from("jobs").select("*"),
-      supabase.rpc("get_invoice_payment_summary"),
-      loadCoverageCities({ includeInactive: true }).then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
-      loadTechnicians().then((rows) => ({ rows })).catch((loadError) => ({ error: loadError })),
-      loadServiceAreaConfiguration({ includeInactive: true }).then((value) => ({ value })).catch((loadError) => ({ error: loadError })),
+    setWarnings([]);
+    // Publish each resource immediately; coverage aliases must not block KPIs.
+    async function loadResource(load, apply, message) {
+      try {
+        const value = await load();
+        if (request === dashboardRequest.current) apply(value);
+      } catch (error) {
+        if (request === dashboardRequest.current) {
+          setWarnings((current) => [...current, message]);
+        }
+      }
+    }
+    await Promise.all([
+      loadResource(async () => {
+        const { data, error } = await supabase.from("jobs").select("*");
+        if (error) throw error;
+        return data || [];
+      }, (rows) => {
+        setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
+        setLastSync(new Date());
+      }, "Unable to load dashboard data. Dispatch Board is still available."),
+      loadResource(async () => {
+        const { data, error } = await supabase.rpc("get_invoice_payment_summary");
+        if (error) throw error;
+        return data || [];
+      }, setInvoicePaymentSummaries, "Outstanding invoice balances unavailable."),
+      loadResource(() => loadCoverageCities({ includeInactive: true }), setCoverageCities, "Coverage cities unavailable."),
+      loadResource(loadTechnicians, setTechnicians, "Active technicians unavailable."),
+      loadResource(() => loadServiceAreaConfiguration({ includeInactive: true }), (value) => {
+        setServiceAreas(value.areas);
+        setServiceAreaAliases(value.aliases);
+      }, "Service-area analysis unavailable."),
     ]);
-
-    const nextWarnings = [];
-
-    if (error) {
-      nextWarnings.push("Unable to load dashboard data. Dispatch Board is still available.");
-      setJobs([]);
-    } else {
-      const rows = data || [];
-      setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
-    }
-    if (paymentSummaryResult.error) nextWarnings.push(`Outstanding invoice balances unavailable: ${paymentSummaryResult.error.message}`);
-    else setInvoicePaymentSummaries(paymentSummaryResult.data || []);
-    if (coverageResult.error) nextWarnings.push(`Coverage cities unavailable: ${coverageResult.error.message}`);
-    else setCoverageCities(coverageResult.rows);
-    if (technicianResult.error) nextWarnings.push(`Active technicians unavailable: ${technicianResult.error.message}`);
-    else setTechnicians(technicianResult.rows);
-    if (serviceAreaResult.error) nextWarnings.push(`Service-area analysis unavailable until its database migration is applied: ${serviceAreaResult.error.message}`);
-    else {
-      setServiceAreas(serviceAreaResult.value.areas);
-      setServiceAreaAliases(serviceAreaResult.value.aliases);
-    }
-
-    setWarnings(nextWarnings);
-    setLastSync(new Date());
-    setLoading(false);
+    if (request === dashboardRequest.current) setLoading(false);
   }
 
   const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange]);
