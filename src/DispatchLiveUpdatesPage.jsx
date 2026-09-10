@@ -732,7 +732,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
     loadJobs();
     loadDispatchTechnicians();
     loadDispatchCoverageCities();
-    loadServiceAreaConfiguration()
+    loadServiceAreaConfiguration({ includeAliases: false })
       .then(({ areas }) => setServiceAreas(areas))
       .catch((error) => console.warn("Service areas unavailable:", error.message));
     checkJobAssignmentSupport();

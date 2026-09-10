@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   Activity,
@@ -25,23 +25,9 @@ import {
   Users,
   X,
 } from "lucide-react";
-import DispatchLiveUpdatesPage from "./DispatchLiveUpdatesPage.jsx";
 import { clearAuthSession, clearCustomAuthStorage, finishSessionAudit, loadCurrentProfile, profileToSession, startSessionAudit } from "./authUsers";
-import { ActivityLogPage } from "./modules/activity";
-import { AdministrationDashboard } from "./modules/administration";
-import { BillingDashboard, TechnicianPaymentsReport } from "./modules/billing";
-import { AccountingCenter } from "./modules/accounting";
-import { CustomerCRM } from "./modules/customers";
-import { ExecutiveDashboard } from "./modules/executive";
 import { InternalControlQueue } from "./modules/executive/InternalControlQueue";
-import { TechnicianCenter, TechnicianRegistrationPortal } from "./modules/technicians";
-import { UserManagement } from "./modules/users";
 import { formatDateTime12Hour } from "./utils/timeFormat";
-import { FlatRateGuide } from "./modules/flat-rate";
-import { PartsIntelligence } from "./modules/parts";
-import { AiLaborGuide } from "./modules/ai-labor";
-import AddJobRoute from "./modules/jobs/AddJobRoute";
-import DispatcherCoverageSummary from "./modules/coverage/DispatcherCoverageSummary";
 import { canEditTechPayment, getPermissions, normalizeRole } from "./modules/permissions";
 import { supabase } from "./lib/supabase";
 import {
@@ -50,6 +36,23 @@ import {
   logNewHighSeverityAlerts,
   summarizeAlerts,
 } from "./modules/alerts";
+
+const DispatchLiveUpdatesPage = lazy(() => import("./DispatchLiveUpdatesPage.jsx"));
+const ActivityLogPage = lazy(() => import("./modules/activity/ActivityLogPage.jsx"));
+const AdministrationDashboard = lazy(() => import("./modules/administration/AdministrationDashboard.jsx"));
+const BillingDashboard = lazy(() => import("./modules/billing/BillingDashboard.jsx"));
+const TechnicianPaymentsReport = lazy(() => import("./modules/billing/TechnicianPaymentsReport.jsx"));
+const AccountingCenter = lazy(() => import("./modules/accounting/AccountingCenter.jsx"));
+const CustomerCRM = lazy(() => import("./modules/customers/CustomerCRM.jsx"));
+const ExecutiveDashboard = lazy(() => import("./modules/executive/ExecutiveDashboard.jsx"));
+const TechnicianCenter = lazy(() => import("./modules/technicians/TechnicianCenter.jsx"));
+const TechnicianRegistrationPortal = lazy(() => import("./modules/technicians/TechnicianRegistrationPortal.jsx"));
+const UserManagement = lazy(() => import("./modules/users/UserManagement.jsx"));
+const FlatRateGuide = lazy(() => import("./modules/flat-rate/FlatRateGuide.jsx"));
+const PartsIntelligence = lazy(() => import("./modules/parts/PartsIntelligence.jsx"));
+const AiLaborGuide = lazy(() => import("./modules/ai-labor/AiLaborGuide.jsx"));
+const AddJobRoute = lazy(() => import("./modules/jobs/AddJobRoute.jsx"));
+const DispatcherCoverageSummary = lazy(() => import("./modules/coverage/DispatcherCoverageSummary.jsx"));
 
 const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher", "supervisor"] },
@@ -110,6 +113,10 @@ const sidebarSections = [
 ];
 
 export default function App() {
+  return <Suspense fallback={<div role="status" className="p-8 font-bold text-slate-500">Loading...</div>}><Application /></Suspense>;
+}
+
+function Application() {
   const [activeView, setActiveView] = useState("dispatch");
   const [accountingOutstandingRequest, setAccountingOutstandingRequest] = useState(null);
   const [session, setSession] = useState(emptySession());
@@ -674,6 +681,7 @@ export default function App() {
       </aside>
 
       <main className="app-main min-h-screen w-full max-w-none min-w-0 overflow-x-hidden pb-20 lg:pb-0 lg:pl-60">
+        <Suspense fallback={<div role="status" className="p-8 font-bold text-slate-500">Loading...</div>}>
         <div className="flex min-h-[72px] items-center border-b border-slate-800 bg-[#0b1628] px-4 py-4 text-white shadow-sm md:px-8">
           <div className="flex w-full max-w-none items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -717,6 +725,7 @@ export default function App() {
         {canAccessActiveView && activeView === "flat-rate" && <FlatRateGuide session={session} role={role} onCreateJob={navigateToAddJob} />}
         {canAccessActiveView && activeView === "ai-labor" && <AiLaborGuide session={session} role={role} />}
         {canAccessActiveView && activeView === "parts-intelligence" && <PartsIntelligence session={session} role={role} />}
+        </Suspense>
       </main>
 
       {mobileMenuOpen && (
