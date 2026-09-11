@@ -25,3 +25,14 @@ export function buildDispatcherProfitReport(jobs = []) {
   rows.push(["TOTAL", "", "", total[1] + " jobs", "", ...total.slice(2)]);
   return { headers, rows, summaryHeaders: ["Dispatcher", "Jobs", "Total Bill", "Parts", "Tech Labor", "Estimated Profit"], summary: [...summary, total] };
 }
+
+export function dispatcherStatistics(jobs = []) {
+  const report = buildDispatcherProfitReport(jobs);
+  const convert = ([name, count, billed, parts, labor, profit]) => ({
+    name, count, billed, parts, labor, profit, expenses: parts + labor,
+    margin: billed ? profit / billed : null,
+    averageProfit: count ? profit / count : 0,
+    averageBill: count ? billed / count : 0,
+  });
+  return { people: report.summary.slice(0, -1).map(convert), total: convert(report.summary.at(-1)) };
+}

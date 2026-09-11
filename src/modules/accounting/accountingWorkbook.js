@@ -1,4 +1,4 @@
-import { buildDispatcherProfitReport } from "./dispatcherProfitReport.js";
+import { buildDispatcherProfitReport, dispatcherStatistics } from "./dispatcherProfitReport.js";
 import ExcelJS from "exceljs";
 import { estimatedProfit, isCancelled, isCompleted, isDryRun, numberValue, profitMargin } from "./accountingData.js";
 
@@ -43,8 +43,27 @@ function conditionalNumber(sheet,ref,pivot,negative,positive){sheet.addCondition
 
 function addDispatcherProfit(ctx) {
   const report = buildDispatcherProfitReport(ctx.payload.model.jobs);
-  const summary = base(ctx, "Dispatcher Profit Summary", "Profit by Dispatcher — Summary", 6);
-  table(summary, report.summaryHeaders, report.summary, { money: [3,4,5,6], widths: [26,12,18,18,18,22] });
+  const summary = base(ctx, "Dispatcher Profit Summary", "Dispatcher Performance | Profiles & Statistics", 12);
+  const stats = dispatcherStatistics(ctx.payload.model.jobs);
+  const profiles = [{...stats.total, name: "TEAM TOTAL"}, ...stats.people];
+  summary.views = [{state:"frozen",ySplit:5,showGridLines:false}];
+  for(let c=1;c<=12;c++) summary.getColumn(c).width=12;
+  profiles.forEach((p,i) => {
+    const r=7+i*10;
+    summary.mergeCells(r,1,r,12);
+    const title=summary.getCell(r,1);title.value=p.name;title.fill=solid(C.navy);title.font={name:"Calibri",size:18,bold:true,color:{argb:C.white}};title.alignment={vertical:"middle",indent:1,wrapText:true};summary.getRow(r).height=34;
+    const metrics=[["TOTAL BILLED",p.billed,MONEY],["EXPENSES",p.expenses,MONEY],["ESTIMATED PROFIT",p.profit,MONEY],["PROFIT MARGIN",p.margin??"N/A",PERCENT]];
+    metrics.forEach(([label,value,format],j)=>{
+      const c=j*3+1;summary.mergeCells(r+1,c,r+1,c+2);summary.mergeCells(r+2,c,r+3,c+2);
+      const l=summary.getCell(r+1,c);l.value=label;l.font={name:"Calibri",size:10,bold:true,color:{argb:C.muted}};l.alignment={horizontal:"center",vertical:"middle"};l.fill=solid(C.light);
+      const v=summary.getCell(r+2,c);v.value=value;v.numFmt=format;v.font={name:"Calibri",size:20,bold:true,color:{argb:j===2?(p.profit<0?C.red:C.green):C.navy}};v.fill=solid(C.lighter);v.alignment={horizontal:"center",vertical:"middle",shrinkToFit:true};
+    });
+    const details=[["Jobs",p.count],["Parts",p.parts],["Tech labor",p.labor],["Average profit / job",p.averageProfit]];
+    details.forEach(([label,value],j)=>{const c=j*3+1;summary.mergeCells(r+5,c,r+5,c+2);summary.mergeCells(r+6,c,r+6,c+2);summary.getCell(r+5,c).value=label;summary.getCell(r+5,c).font={name:"Calibri",size:10,color:{argb:C.muted}};const v=summary.getCell(r+6,c);v.value=value;v.numFmt=j?MONEY:"0";v.font={name:"Calibri",size:14,bold:true,color:{argb:C.navy}};});
+    if(i>0 && i%2===0) summary.getRow(r+8).addPageBreak();
+  });
+  summary.pageSetup.printArea=`A1:L${7+profiles.length*10}`;
+  summary.pageSetup.printTitlesRow="1:5";
   const detail = base(ctx, "Dispatcher Job Detail", "Jobs & Profit by Dispatcher", 9);
   table(detail, report.headers, report.rows, { money: [6,7,8,9], widths: [24,16,18,28,18,16,16,16,20] });
 }

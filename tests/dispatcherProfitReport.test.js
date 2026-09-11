@@ -20,7 +20,16 @@ test('dispatcher Excel exports both summary and detailed jobs with numeric profi
  const buffer = await createAccountingWorkbookBuffer({model:{jobs}}, {reportId:'dispatcher-profit',filterLabel:'September 2026'});
  const book = new ExcelJS.Workbook(); await book.xlsx.load(buffer);
  assert.equal(book.worksheets.length,2);
- assert.equal(book.getWorksheet('Dispatcher Profit Summary').getCell('F9').value,60);
+ assert.equal(book.getWorksheet('Dispatcher Profit Summary').getCell('G9').value,60);
  assert.equal(book.getWorksheet('Dispatcher Job Detail').getCell('I8').value,-30);
  assert.equal(book.getWorksheet('Dispatcher Job Detail').getCell('I12').value,60);
+});
+
+test('dispatcher statistics use weighted margins and handle zero billing', async () => {
+ const { dispatcherStatistics } = await import('../src/modules/accounting/dispatcherProfitReport.js');
+ const {people,total}=dispatcherStatistics(jobs);
+ assert.equal(total.margin,60/170);
+ assert.equal(people[0].averageProfit,10);
+ assert.equal(people[0].expenses,100);
+ assert.equal(dispatcherStatistics([{dispatcher:'No billing',totalBill:0,parts:5}]).people[0].margin,null);
 });
