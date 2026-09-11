@@ -1,3 +1,4 @@
+import { buildDispatcherProfitReport } from "./dispatcherProfitReport.js";
 import ExcelJS from "exceljs";
 import { estimatedProfit, isCancelled, isCompleted, isDryRun, numberValue, profitMargin } from "./accountingData.js";
 
@@ -16,6 +17,7 @@ export async function createAccountingWorkbookBuffer(payload, options={}) {
   if(id==="complete-workbook"||id==="technician-payments-due")addTechDue(ctx);
   if(id==="complete-workbook"||id==="technician-payment-history")addTechHistory(ctx);
   if(id==="complete-workbook"||id==="profitability")addProfitability(ctx);
+  if(id==="complete-workbook"||id==="dispatcher-profit")addDispatcherProfit(ctx);
   if(id==="complete-workbook"||id==="completed-jobs")addJobRegister(ctx,"Completed Jobs",payload.model.jobs.filter(isCompleted));
   if(id==="complete-workbook"||id==="cancelled-jobs")addJobRegister(ctx,"Cancelled Jobs",payload.model.jobs.filter(isCancelled));
   if(id==="complete-workbook"||id==="dry-runs")addJobRegister(ctx,"Dry Runs",payload.model.jobs.filter(isDryRun));
@@ -38,3 +40,11 @@ function addInternal(ctx){const rows=ctx.payload.model.redJobs.map(j=>[j.jobNumb
 function addRaw(ctx){const keys=[...new Set(ctx.payload.model.jobs.flatMap(j=>Object.keys(j.raw||{})))].sort();const rows=ctx.payload.model.jobs.map(j=>keys.map(k=>safe(j.raw?.[k])));const s=base(ctx,"Raw Data","Production Jobs Raw Data",Math.max(keys.length,1));table(s,keys.length?keys:["No columns"],keys.length?rows:[],{widths:keys.map(()=>18)})}
 function solid(argb){return{type:"pattern",pattern:"solid",fgColor:{argb}}}function letter(n){let s="";while(n){let m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s||"A"}function stamp(d){return new Intl.DateTimeFormat("en-US",{dateStyle:"medium",timeStyle:"short"}).format(d)}function asDate(v){if(!v)return"";const d=new Date(`${String(v).slice(0,10)}T00:00:00`);return Number.isNaN(d.getTime())?v:d}function asDateTime(v){if(!v)return"";const d=new Date(v);return Number.isNaN(d.getTime())?v:d}function safe(v){if(v==null)return"";return typeof v==="object"?JSON.stringify(v):v}function days(from,to){const a=new Date(String(from).length===10?`${from}T00:00:00`:from),b=new Date(to);return Number.isNaN(a.getTime())?0:Math.max(0,Math.floor((b-a)/86400000))}
 function conditionalNumber(sheet,ref,pivot,negative,positive){sheet.addConditionalFormatting({ref,rules:[{type:"cellIs",operator:"lessThan",formulae:[pivot],style:{font:{color:{argb:negative},bold:true},fill:solid("FEE2E2")}},{type:"cellIs",operator:"greaterThanOrEqual",formulae:[pivot],style:{font:{color:{argb:positive},bold:true},fill:solid("DCFCE7")}}]})}function conditionalText(sheet,ref,value,color){sheet.addConditionalFormatting({ref,rules:[{type:"containsText",operator:"containsText",text:value,style:{font:{color:{argb:color},bold:true},fill:solid("FEE2E2")}}]})}
+
+function addDispatcherProfit(ctx) {
+  const report = buildDispatcherProfitReport(ctx.payload.model.jobs);
+  const summary = base(ctx, "Dispatcher Profit Summary", "Profit by Dispatcher — Summary", 6);
+  table(summary, report.summaryHeaders, report.summary, { money: [3,4,5,6], widths: [26,12,18,18,18,22] });
+  const detail = base(ctx, "Dispatcher Job Detail", "Jobs & Profit by Dispatcher", 9);
+  table(detail, report.headers, report.rows, { money: [6,7,8,9], widths: [24,16,18,28,18,16,16,16,20] });
+}
