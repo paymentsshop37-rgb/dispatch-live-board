@@ -33,3 +33,19 @@ test('dispatcher statistics use weighted margins and handle zero billing', async
  assert.equal(people[0].expenses,100);
  assert.equal(dispatcherStatistics([{dispatcher:'No billing',totalBill:0,parts:5}]).people[0].margin,null);
 });
+
+test('cancellations reconcile aliases and unassigned dispatchers without changing financial totals', async () => {
+ const {dispatcherStatistics}=await import('../src/modules/accounting/dispatcherProfitReport.js');
+ const data=[{...jobs[0],status:'Cancelled'},{...jobs[1],status:' Canceled '},{...jobs[2],status:'Cancelled'},{dispatcher:'Other',status:'Completed',totalBill:100},{dispatcher:'TOTAL',status:'Cancelled'}];
+ const {people,total}=dispatcherStatistics(data);
+ assert.equal(people.find(p=>p.name==='Ana').cancelled,2);
+ assert.equal(people.find(p=>p.name==='Ana').cancellationRate,1);
+ assert.equal(people.find(p=>p.name==='Other').cancelled,0);
+ assert.equal(total.cancelled,4);
+ assert.equal(total.cancellationRate,4/5);
+ assert.equal(total.profit,160);
+ assert.equal(dispatcherStatistics([]).total.cancellationRate,0);
+ const buffer=await createAccountingWorkbookBuffer({model:{jobs:data}},{reportId:'dispatcher-profit'});
+ const book=new ExcelJS.Workbook();await book.xlsx.load(buffer);
+ assert.match(book.getWorksheet('Dispatcher Profit Summary').getCell('A15').value,/Cancelled jobs: 4/);
+});

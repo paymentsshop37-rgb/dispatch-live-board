@@ -1,4 +1,4 @@
-import { estimatedProfit, numberValue } from "./accountingData.js";
+import { estimatedProfit, numberValue, isCancelled } from "./accountingData.js";
 
 export function buildDispatcherProfitReport(jobs = []) {
   const groups = new Map();
@@ -28,11 +28,18 @@ export function buildDispatcherProfitReport(jobs = []) {
 
 export function dispatcherStatistics(jobs = []) {
   const report = buildDispatcherProfitReport(jobs);
-  const convert = ([name, count, billed, parts, labor, profit]) => ({
+  const cancellations = new Map();
+  for (const job of jobs) {
+    if (!isCancelled(job)) continue;
+    const key = (String(job.dispatcher || "").trim() || "Unassigned").toLocaleLowerCase("en-US");
+    cancellations.set(key, (cancellations.get(key) || 0) + 1);
+  }
+  const convert = ([name, count, billed, parts, labor, profit], cancelled) => ({
+    cancelled, cancellationRate: count ? cancelled / count : 0,
     name, count, billed, parts, labor, profit, expenses: parts + labor,
     margin: billed ? profit / billed : null,
     averageProfit: count ? profit / count : 0,
     averageBill: count ? billed / count : 0,
   });
-  return { people: report.summary.slice(0, -1).map(convert), total: convert(report.summary.at(-1)) };
+  return { people: report.summary.slice(0, -1).map(row => convert(row, cancellations.get(row[0].toLocaleLowerCase("en-US")) || 0)), total: convert(report.summary.at(-1), jobs.filter(isCancelled).length) };
 }

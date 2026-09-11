@@ -60,6 +60,8 @@ function addDispatcherProfit(ctx) {
     });
     const details=[["Jobs",p.count],["Parts",p.parts],["Tech labor",p.labor],["Average profit / job",p.averageProfit]];
     details.forEach(([label,value],j)=>{const c=j*3+1;summary.mergeCells(r+5,c,r+5,c+2);summary.mergeCells(r+6,c,r+6,c+2);summary.getCell(r+5,c).value=label;summary.getCell(r+5,c).font={name:"Calibri",size:10,color:{argb:C.muted}};const v=summary.getCell(r+6,c);v.value=value;v.numFmt=j?MONEY:"0";v.font={name:"Calibri",size:14,bold:true,color:{argb:C.navy}};});
+    summary.mergeCells(r+8,1,r+8,12);
+    const cancellations=summary.getCell(r+8,1);cancellations.value=`Cancelled jobs: ${p.cancelled} | Cancellation rate: ${(p.cancellationRate*100).toFixed(1)}% (by assigned dispatcher)`;cancellations.font={name:"Calibri",size:12,bold:true,color:{argb:C.red}};
     if(i>0 && i%2===0) summary.getRow(r+8).addPageBreak();
   });
   summary.pageSetup.printArea=`A1:L${7+profiles.length*10}`;
