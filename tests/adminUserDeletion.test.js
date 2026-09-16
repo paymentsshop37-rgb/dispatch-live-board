@@ -129,6 +129,20 @@ test("currently signed-in administrator cannot delete their profile or Auth acco
   }
 });
 
+test("deletion reports audit failure separately from a completed deletion", async () => {
+  const ops = operations({ authExistsInitially: true });
+  ops.handlers.writeAudit = async () => false;
+  const result = await deleteUserSafely(
+    { id: TARGET_PROFILE_ID, auth_user_id: TARGET_AUTH_ID },
+    { profileId: ACTOR_PROFILE_ID, authUserId: ACTOR_AUTH_ID },
+    ops.handlers,
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.audit_recorded, false);
+  assert.equal(await ops.handlers.profileExists(TARGET_PROFILE_ID), false);
+  assert.equal(await ops.handlers.authUserExists(TARGET_AUTH_ID), false);
+});
+
 test("Auth statuses distinguish linked, missing linked account, and no Auth ID", () => {
   assert.equal(authStatusForProfile(TARGET_AUTH_ID, true), AUTH_STATUS.LINKED);
   assert.equal(authStatusForProfile(TARGET_AUTH_ID, false), AUTH_STATUS.OUT_OF_SYNC);

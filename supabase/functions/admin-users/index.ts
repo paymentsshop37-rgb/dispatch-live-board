@@ -1,3 +1,4 @@
+import { audit } from "./audit.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AUTH_STATUS, UserDeletionError, authStatusForProfile, deleteUserSafely, isActiveAdmin, validAuthUserId } from "./delete-user.ts";
 
@@ -173,7 +174,7 @@ Deno.serve(async (req) => {
             deleteProfile: async (profileId) => {
               const { error } = await admin.rpc("delete_app_user_profile", { p_profile_id: profileId, p_actor_auth_user_id: user.id });
               if (error) {
-                console.error("admin-users profile deletion:", error.message || error);
+                console.error("admin-users profile deletion:", { code: error.code, message: error.message, details: error.details, hint: error.hint });
                 throw new UserDeletionError("This user's related records could not be safely updated. The profile was not deleted. Please contact support.", 409);
               }
             },
@@ -186,7 +187,7 @@ Deno.serve(async (req) => {
               return Boolean(data);
             },
             writeAudit: async (entry) => {
-              await audit(admin, String(entry.action), String(entry.target), user.id, entry.details as Record<string, unknown>);
+              return await audit(admin, String(entry.action), String(entry.target), user.id, entry.details as Record<string, unknown>);
             },
           }
         );
@@ -274,22 +275,4 @@ function profileAuthEmail(profile: any) {
 function isAuthUserNotFound(error: any) {
   const message = String(error?.message || "").toLowerCase();
   return error?.status === 404 || message.includes("user not found") || message.includes("not found");
-}
-
-async function audit(client: any, action: string, target: string, actor: string, details: Record<string, unknown> = {}) {
-  try {
-    const payload = { entity_type: "user", entity_id: target, action, description: action.replaceAll("_", " "), created_by: actor, metadata: { target_user_id: target, performed_by: actor, ...details } };
-    const { error } = await client.from("activity_log").insert(payload);
-    if (!error) return true;
-    const { metadata: _metadata, ...fallback } = payload;
-    const fallbackResult = await client.from("activity_log").insert(fallback);
-    if (fallbackResult.error) {
-      console.error("admin-users audit:", fallbackResult.error.message);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error("admin-users audit:", error instanceof Error ? error.message : error);
-    return false;
-  }
 }

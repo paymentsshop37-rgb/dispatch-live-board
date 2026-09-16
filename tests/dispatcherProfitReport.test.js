@@ -49,3 +49,11 @@ test('cancellations reconcile aliases and unassigned dispatchers without changin
  const book=new ExcelJS.Workbook();await book.xlsx.load(buffer);
  assert.match(book.getWorksheet('Dispatcher Profit Summary').getCell('A15').value,/Cancelled jobs: 4/);
 });
+
+test('completed counts reconcile with cancelled and remaining statuses', async () => {
+ const {dispatcherStatistics}=await import('../src/modules/accounting/dispatcherProfitReport.js');
+ const {people,total}=dispatcherStatistics([{dispatcher:'Ana',status:'Completed'},{dispatcher:' ANA ',status:' completed '},{dispatcher:'Ana',status:'Cancelled'},{dispatcher:'Ana',status:'In Progress'},{dispatcher:'',status:'Completed'}]);
+ assert.equal(people[0].completed,2);assert.equal(people[0].completionRate,.5);assert.equal(people[0].cancelled,1);
+ assert.equal(total.completed,3);assert.equal(total.completionRate,.6);assert.equal(total.cancelled,1);
+ assert.equal(dispatcherStatistics([]).total.completionRate,0);
+});

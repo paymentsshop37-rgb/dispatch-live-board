@@ -52,7 +52,7 @@ type DeleteOperations = {
   deleteAuthUser: (authUserId: string) => Promise<void>;
   deleteProfile: (profileId: string) => Promise<void>;
   profileExists: (profileId: string) => Promise<boolean>;
-  writeAudit: (entry: Record<string, unknown>) => Promise<void>;
+  writeAudit: (entry: Record<string, unknown>) => Promise<boolean | void>;
   now?: () => string;
 };
 
@@ -82,7 +82,7 @@ export async function deleteUserSafely(target: DeleteTarget, actor: DeleteActor,
   }
 
   const timestamp = (operations.now || (() => new Date().toISOString()))();
-  await operations.writeAudit({
+  const auditRecorded = await operations.writeAudit({
     action: deletionType === DELETION_TYPE.FULL_ACCOUNT ? "USER_DELETED" : "USER_PROFILE_DELETED",
     target: profileId,
     details: {
@@ -98,6 +98,7 @@ export async function deleteUserSafely(target: DeleteTarget, actor: DeleteActor,
 
   return {
     ok: true,
+    audit_recorded: auditRecorded !== false,
     deletionType,
     profileId,
     authUserId: authUserId || null,

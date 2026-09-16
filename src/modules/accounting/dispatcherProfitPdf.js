@@ -29,7 +29,7 @@ export function createDispatcherProfitPdf({ jobs = [], generatedBy = 'Administra
   metric('Total billed',money(total.billed),218,112);
   metric('Estimated profit',money(total.profit),404,112,170,total.profit<0?red:green);
   metric('Profit margin',percent(total.margin),590,112);
-  text(`Cancelled jobs: ${total.cancelled} | Cancellation rate: ${percent(total.cancellationRate)}`,32,188,10,red,true);
+  text(`Completed: ${total.completed} (${percent(total.completionRate)}) | Cancelled: ${total.cancelled} (${percent(total.cancellationRate)})`,32,188,10,red,true);
   const ranked=[...people].sort((a,b)=>b.profit-a.profit || a.name.localeCompare(b.name));
   const scale=Math.max(1,...people.map(p=>Math.abs(p.profit)));
   if (!people.length) text('No jobs found for the selected period.',32,222,15,muted);
@@ -38,7 +38,7 @@ export function createDispatcherProfitPdf({ jobs = [], generatedBy = 'Administra
     const y=(i<7?215:132)+(i%7)*45;
     if(i%7===0) text('ESTIMATED PROFIT BY DISPATCHER',32,y-18,9,muted,true);
     text(person.name,32,y+4,11,navy,true,180);
-    text(`${person.count} jobs`,32,y+19,8,muted);
+    text(`${person.count} jobs | ${person.completed} completed | ${person.cancelled} cancelled`,32,y+19,8,muted,false,220);
     // Signed bars share a zero baseline and the same absolute scale.
     doc.setDrawColor('#CEDAE5'); doc.line(452,y-8,452,y+22);
     const width=Math.abs(person.profit)/scale*190;
@@ -56,7 +56,8 @@ export function createDispatcherProfitPdf({ jobs = [], generatedBy = 'Administra
     cards.forEach(([label,value],j)=>metric(label,value,48+j*176,y+44,166,j===2?(p.profit<0?red:green):navy));
     text(`Parts: ${money(p.parts)}`,48,y+127,10,muted);
     text(`Tech labor: ${money(p.labor)}`,280,y+127,10,muted);
-    text(`Cancelled: ${p.cancelled} (${percent(p.cancellationRate)})`,520,y+127,10,red,true);
+    text(`Completed: ${p.completed} (${percent(p.completionRate)})`,520,y+123,9,green,true);
+    text(`Cancelled: ${p.cancelled} (${percent(p.cancellationRate)})`,520,y+138,9,red,true);
     text(`Average billed / job: ${money(p.averageBill)}`,48,y+151,11);
     text(`Average profit / job: ${money(p.averageProfit)}`,400,y+151,11);
     text(`Share of jobs: ${percent(total.count?p.count/total.count:0)}`,48,y+178,10,blue,true);
