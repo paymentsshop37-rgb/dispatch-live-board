@@ -1,3 +1,6 @@
+import ReportSummary from "../reporting/ReportSummary.jsx";
+import { calculateReportSummary, reportJobsFromGroups } from "../reporting/reportSummary.js";
+import { summaryHtml, reportCsv } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
@@ -204,9 +207,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
       job.techLabor,
       job.profit,
     ]);
-    const csv = [headers, ...rows]
-      .map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csv = reportCsv(canViewFinancial ? headers : headers.slice(0, -4), canViewFinancial ? rows : rows.map(row => row.slice(0, -4)), calculateReportSummary(filteredJobs, { includeFinancial: canViewFinancial }));
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -649,6 +650,7 @@ function DispatcherPerformanceTable({ rows, onDrilldown }) {
             </tfoot>
           )}
         </table>
+        <ReportSummary rows={reportJobsFromGroups(rows, "jobRows")} includeFinancial={false} />
       </div>
     </div>
   );
@@ -734,13 +736,13 @@ function CityStatusBreakdown({ rows, onDrilldown }) {
   function exportCsv() {
     const headers = ["Exact City", "State", ...cityStatusColumns.map(([, label]) => label), "Completion Rate", "Cancellation Rate", "Last Job Date", "Assigned Service Area"];
     const data = filteredRows.map((row) => [row.city, row.state, ...cityStatusColumns.map(([key]) => row[key]), `${row.completionRate.toFixed(1)}%`, `${row.cancellationRate.toFixed(1)}%`, row.lastJobDate, row.assignedServiceArea]);
-    downloadCityFile([headers, ...data].map((line) => line.map(csvCell).join(",")).join("\n"), "jobs-by-city-status.csv", "text/csv;charset=utf-8");
+    downloadCityFile(reportCsv(headers, data, calculateReportSummary(reportJobsFromGroups(filteredRows), { includeFinancial: false })), "jobs-by-city-status.csv", "text/csv;charset=utf-8");
   }
 
   function exportPdf() {
     const popup = window.open("", "_blank");
     if (!popup) return;
-    popup.document.write(`<html><head><title>All Cities — Status Breakdown</title><style>body{font-family:Arial;padding:24px;color:#172033}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #ccd4df;padding:6px;text-align:right}th:first-child,td:first-child{text-align:left}th:nth-child(2),td:nth-child(2){text-align:left}th{background:#edf2f7}</style></head><body><h1>All Cities — Status Breakdown</h1><table><thead><tr>${["City", "State", ...cityStatusColumns.map(([, label]) => label)].map((label) => `<th>${escapeCityHtml(label)}</th>`).join("")}</tr></thead><tbody>${filteredRows.map((row) => `<tr><td>${escapeCityHtml(row.city)}</td><td>${escapeCityHtml(row.state)}</td>${cityStatusColumns.map(([key]) => `<td>${row[key]}</td>`).join("")}</tr>`).join("")}<tr><th>TOTAL</th><th></th>${cityStatusColumns.map(([key]) => `<th>${totals[key]}</th>`).join("")}</tr></tbody></table><script>window.print()</script></body></html>`);
+    popup.document.write(`<html><head><title>All Cities — Status Breakdown</title><style>body{font-family:Arial;padding:24px;color:#172033}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #ccd4df;padding:6px;text-align:right}th:first-child,td:first-child{text-align:left}th:nth-child(2),td:nth-child(2){text-align:left}th{background:#edf2f7}</style></head><body><h1>All Cities — Status Breakdown</h1><table><thead><tr>${["City", "State", ...cityStatusColumns.map(([, label]) => label)].map((label) => `<th>${escapeCityHtml(label)}</th>`).join("")}</tr></thead><tbody>${filteredRows.map((row) => `<tr><td>${escapeCityHtml(row.city)}</td><td>${escapeCityHtml(row.state)}</td>${cityStatusColumns.map(([key]) => `<td>${row[key]}</td>`).join("")}</tr>`).join("")}<tr><th>TOTAL</th><th></th>${cityStatusColumns.map(([key]) => `<th>${totals[key]}</th>`).join("")}</tr></tbody></table>${summaryHtml(calculateReportSummary(reportJobsFromGroups(filteredRows), { includeFinancial: false }))}<script>window.print()</script></body></html>`);
     popup.document.close();
   }
 
@@ -770,6 +772,7 @@ function CityStatusBreakdown({ rows, onDrilldown }) {
             </tbody>
             <tfoot className="sticky bottom-0 bg-[#11233a] font-black"><tr><td className="px-3 py-3">TOTAL</td><td></td>{cityStatusColumns.map(([key]) => <td key={key} className="px-3 py-3 text-right">{totals[key]}</td>)}</tr></tfoot>
           </table>
+        <ReportSummary rows={reportJobsFromGroups(filteredRows)} includeFinancial={false} />
         </div>
       </div>
       <div className="mt-4 flex items-center justify-between gap-3 text-sm font-bold text-slate-400"><span>{filteredRows.length} cities</span>{pageSize !== "All" && <div className="flex items-center gap-2"><button type="button" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="min-h-10 rounded-lg bg-white/10 px-3 disabled:opacity-40">Previous</button><span>Page {safePage} of {pageCount}</span><button type="button" disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))} className="min-h-10 rounded-lg bg-white/10 px-3 disabled:opacity-40">Next</button></div>}</div>
@@ -1013,7 +1016,7 @@ function exportDispatcherPdf(rows, totals) {
 }
 
 function dispatcherExportTable(rows, totals) {
-  return `<table><thead><tr>${dispatcherExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${dispatcherExportRows(rows, totals).map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  return `<table><thead><tr>${dispatcherExportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${dispatcherExportRows(rows, totals).map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</tbody></table>${summaryHtml(calculateReportSummary(reportJobsFromGroups(rows, "jobRows"), { includeFinancial: false }))}`;
 }
 
 function downloadBlob(blob, filename) {
@@ -1322,7 +1325,7 @@ function extractEtaMinutes(value) {
 }
 
 function money(value) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(numberValue(value));
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(numberValue(value));
 }
 
 function paymentMoney(value) {

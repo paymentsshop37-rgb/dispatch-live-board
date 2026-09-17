@@ -1,3 +1,5 @@
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { appendSummaryPdf } from "../reporting/summaryPdf.js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -35,7 +37,6 @@ export function buildInternalControlPdfData(jobs, { canViewFinancial = false } =
 }
 
 export function createInternalControlQueuePdf({ jobs, summary, generatedBy, activeFilter, dateRange, searchText, canViewFinancial = false }) {
-  if (!jobs.length) throw new Error("No Internal Control jobs match the current filters.");
   const data = buildInternalControlPdfData(jobs, { canViewFinancial });
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a3", compress: false });
   const generatedAt = new Date();
@@ -61,6 +62,7 @@ export function createInternalControlQueuePdf({ jobs, summary, generatedBy, acti
   let totalsY = (doc.lastAutoTable?.finalY || 176) + 14;
   if (totalsY > pageHeight - 105) { doc.addPage(); drawHeader(doc, { generatedAt, generatedBy, activeFilter, dateRange, searchText, pageWidth, compact: true }); totalsY = 116; }
   drawTotals(doc, data.totals, canViewFinancial, totalsY, pageWidth);
+  appendSummaryPdf(doc, calculateReportSummary(jobs, { includeFinancial: canViewFinancial }), { startY: totalsY + 86 });
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {
     doc.setPage(page); doc.setDrawColor(...BORDER); doc.line(22, pageHeight - 28, pageWidth - 22, pageHeight - 28);

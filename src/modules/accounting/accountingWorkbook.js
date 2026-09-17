@@ -1,9 +1,11 @@
+import { calculateReportSummary, CURRENCY_FORMAT, isMoneyHeader } from "../reporting/reportSummary.js";
+import { appendSummaryWorksheet } from "../reporting/summaryRenderers.js";
 import { buildDispatcherProfitReport, dispatcherStatistics } from "./dispatcherProfitReport.js";
 import ExcelJS from "exceljs";
 import { estimatedProfit, isCancelled, isCompleted, isDryRun, numberValue, profitMargin } from "./accountingData.js";
 
 const C = { navy:"07182D",blue:"163A63",white:"FFFFFF",light:"F1F5F9",lighter:"F8FAFC",silver:"CBD5E1",green:"16A34A",red:"DC2626",orange:"F97316",text:"172033",muted:"64748B" };
-const MONEY='$#,##0.00;[Red]($#,##0.00);-'; const PERCENT='0.0%'; const BORDER={style:"thin",color:{argb:"D8E0EA"}};
+const MONEY=CURRENCY_FORMAT; const PERCENT='0.0%'; const BORDER={style:"thin",color:{argb:"D8E0EA"}};
 
 export async function createAccountingWorkbookBuffer(payload, options={}) {
   const workbook=new ExcelJS.Workbook(); const at=new Date(options.generatedAt||Date.now());
@@ -23,6 +25,17 @@ export async function createAccountingWorkbookBuffer(payload, options={}) {
   if(id==="complete-workbook"||id==="dry-runs")addJobRegister(ctx,"Dry Runs",payload.model.jobs.filter(isDryRun));
   if(id==="complete-workbook"||id==="red-internal-control")addInternal(ctx);
   if(id==="complete-workbook")addRaw(ctx);
+  for (const sheet of workbook.worksheets) {
+    const sources = {
+      "Accounts Receivable": payload.model.receivables, "Payment Transactions": payload.invoicePayments,
+      "Technician Payments Due": payload.pendingTechJobs, "Technician Payment History": payload.techTransactions,
+      "Completed Jobs": payload.model.jobs.filter(isCompleted), "Cancelled Jobs": payload.model.jobs.filter(isCancelled),
+      "Dry Runs": payload.model.jobs.filter(isDryRun), "Red Internal Control": payload.model.redJobs,
+    };
+    const source = sources[sheet.name] || payload.model.jobs;
+    const kind = ["Payment Transactions", "Technician Payment History"].includes(sheet.name) ? "transactions" : "jobs";
+    appendSummaryWorksheet(sheet, calculateReportSummary(source, { kind }));
+  }
   return workbook.xlsx.writeBuffer();
 }
 
@@ -37,7 +50,7 @@ function addTechHistory(ctx){const rows=ctx.payload.techTransactions.map(p=>[p.i
 function addProfitability(ctx){const rows=ctx.payload.model.jobs.map((j,i)=>{const r=i+7;return[j.invoiceNumber,j.referenceNumber,j.company,j.technician,j.dispatcher,j.city,j.totalBill,j.parts,j.techLabor,{formula:`G${r}-H${r}-I${r}`,result:estimatedProfit(j)},{formula:`IFERROR(J${r}/G${r},0)`,result:profitMargin(j)}]});const s=base(ctx,"Profitability","Estimated Job Profitability",11);table(s,["Invoice #","Reference #","Customer","Technician","Dispatcher","City","Total Bill","Parts","Tech Labor","Estimated Job Profit","Profit Margin"],rows,{money:[7,8,9,10],percent:[11],widths:[16,16,25,22,20,18,14,14,14,18,14]});conditionalNumber(s,`J7:J${rows.length+6}`,0,C.red,C.green);conditionalNumber(s,`K7:K${rows.length+6}`,0,C.red,C.green)}
 function addJobRegister(ctx,name,jobs){const rows=jobs.map(j=>[asDate(j.date),j.invoiceNumber,j.referenceNumber,j.company,j.technician,j.dispatcher,j.status,j.invoiceStatus,j.techPaymentStatus,j.totalBill,j.parts,j.techLabor,estimatedProfit(j),j.location,j.updates]);const s=base(ctx,name,name,15);table(s,["Date","Invoice #","Reference #","Company","Technician","Dispatcher","Job Status","Invoice Status","Tech Payment","Total Bill","Parts","Tech Labor","Estimated Profit","Location","Updates"],rows,{dates:[1],money:[10,11,12,13],wrap:[15],widths:[12,16,16,25,22,20,15,15,15,14,14,14,16,30,40]})}
 function addInternal(ctx){const rows=ctx.payload.model.redJobs.map(j=>[j.jobNumber,asDate(j.date),j.time,j.invoiceNumber,j.referenceNumber,j.company,j.technician,j.dispatcher,j.location,j.status,j.invoiceStatus,j.techPaymentStatus,j.totalBill,j.updates,days(j.updatedAt||j.createdAt||j.date,ctx.options.generatedAt)]);const s=base(ctx,"Red Internal Control","Red Internal Control Queue",15);table(s,["Job #","Date","Time","Invoice #","Reference #","Company","Technician","Dispatcher","Location","Job Status","Invoice Status","Tech Payment","Total Bill","Updates","Days in Queue"],rows,{dates:[2],money:[13],wrap:[14],widths:[12,12,10,16,16,25,22,20,30,15,15,15,14,40,14]});for(let r=7;r<rows.length+7;r++)s.getRow(r).eachCell({includeEmpty:true},cell=>{cell.fill=solid("FEE2E2");cell.font={...cell.font,color:{argb:"991B1B"}}})}
-function addRaw(ctx){const keys=[...new Set(ctx.payload.model.jobs.flatMap(j=>Object.keys(j.raw||{})))].sort();const rows=ctx.payload.model.jobs.map(j=>keys.map(k=>safe(j.raw?.[k])));const s=base(ctx,"Raw Data","Production Jobs Raw Data",Math.max(keys.length,1));table(s,keys.length?keys:["No columns"],keys.length?rows:[],{widths:keys.map(()=>18)})}
+function addRaw(ctx){const keys=[...new Set(ctx.payload.model.jobs.flatMap(j=>Object.keys(j.raw||{})))].sort();const rows=ctx.payload.model.jobs.map(j=>keys.map(k=>isMoneyHeader(k) && j.raw?.[k] != null ? numberValue(j.raw[k]) : safe(j.raw?.[k])));const s=base(ctx,"Raw Data","Production Jobs Raw Data",Math.max(keys.length,1));table(s,keys.length?keys:["No columns"],keys.length?rows:[],{widths:keys.map(()=>18),money:keys.flatMap((k,i)=>isMoneyHeader(k)?[i+1]:[])})}
 function solid(argb){return{type:"pattern",pattern:"solid",fgColor:{argb}}}function letter(n){let s="";while(n){let m=(n-1)%26;s=String.fromCharCode(65+m)+s;n=Math.floor((n-1)/26)}return s||"A"}function stamp(d){return new Intl.DateTimeFormat("en-US",{dateStyle:"medium",timeStyle:"short"}).format(d)}function asDate(v){if(!v)return"";const d=new Date(`${String(v).slice(0,10)}T00:00:00`);return Number.isNaN(d.getTime())?v:d}function asDateTime(v){if(!v)return"";const d=new Date(v);return Number.isNaN(d.getTime())?v:d}function safe(v){if(v==null)return"";return typeof v==="object"?JSON.stringify(v):v}function days(from,to){const a=new Date(String(from).length===10?`${from}T00:00:00`:from),b=new Date(to);return Number.isNaN(a.getTime())?0:Math.max(0,Math.floor((b-a)/86400000))}
 function conditionalNumber(sheet,ref,pivot,negative,positive){sheet.addConditionalFormatting({ref,rules:[{type:"cellIs",operator:"lessThan",formulae:[pivot],style:{font:{color:{argb:negative},bold:true},fill:solid("FEE2E2")}},{type:"cellIs",operator:"greaterThanOrEqual",formulae:[pivot],style:{font:{color:{argb:positive},bold:true},fill:solid("DCFCE7")}}]})}function conditionalText(sheet,ref,value,color){sheet.addConditionalFormatting({ref,rules:[{type:"containsText",operator:"containsText",text:value,style:{font:{color:{argb:color},bold:true},fill:solid("FEE2E2")}}]})}
 

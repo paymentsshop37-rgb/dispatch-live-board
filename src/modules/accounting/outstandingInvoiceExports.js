@@ -1,3 +1,5 @@
+import { calculateReportSummary, CURRENCY_FORMAT } from "../reporting/reportSummary.js";
+import { appendSummaryWorksheet } from "../reporting/summaryRenderers.js";
 import ExcelJS from "exceljs";
 import { createAccountingPdf } from "./accountingPdf.js";
 
@@ -27,12 +29,14 @@ export async function exportOutstandingInvoices({ rows, summary, filterLabel, ge
     table.rows.forEach((values, index) => { const row = sheet.getRow(10 + index); row.values = values; [11, 12, 13].forEach((column) => { row.getCell(column).numFmt = '$#,##0.00;[Red]($#,##0.00)'; }); if (index === table.rows.length - 1) row.font = { bold: true }; });
     [16, 13, 24, 16, 28, 18, 18, 15, 16, 16, 14, 14, 14, 16, 40].forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
     sheet.autoFilter = { from: "A9", to: `O${Math.max(9, 9 + table.rows.length)}` };
+    sheet.getCell("D6").numFmt = CURRENCY_FORMAT; sheet.getCell("G6").numFmt = CURRENCY_FORMAT;
+    appendSummaryWorksheet(sheet, calculateReportSummary(rows));
     const buffer = await workbook.xlsx.writeBuffer();
     download(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${filename}.xlsx`);
     return;
   }
   const pdfRows = table.rows.map((row) => row.map((value, index) => [10, 11, 12].includes(index) ? money(value) : value));
-  const blob = createAccountingPdf({ title: "Outstanding Sent Invoices Report", headers: table.headers, rows: pdfRows, generatedBy, filterLabel, footer, summaryCards: [["Sent / Unpaid", summary.invoiceCount], ["Outstanding", money(summary.totalOutstanding)], ["Average Invoice", money(summary.averageInvoice)], ["Oldest", summary.oldestOutstanding == null ? "Not available" : `${summary.oldestOutstanding} days`], ["Average Days", summary.averageDaysOutstanding == null ? "Not available" : summary.averageDaysOutstanding.toFixed(1)]] });
+  const blob = createAccountingPdf({ title: "Outstanding Sent Invoices Report", headers: table.headers, rows: pdfRows, summaryRows: rows, generatedBy, filterLabel, footer, summaryCards: [["Sent / Unpaid", summary.invoiceCount], ["Outstanding", money(summary.totalOutstanding)], ["Average Invoice", money(summary.averageInvoice)], ["Oldest", summary.oldestOutstanding == null ? "Not available" : `${summary.oldestOutstanding} days`], ["Average Days", summary.averageDaysOutstanding == null ? "Not available" : summary.averageDaysOutstanding.toFixed(1)]] });
   if (format === "print") { const url = URL.createObjectURL(blob); window.open(url, "_blank", "noopener,noreferrer"); window.setTimeout(() => URL.revokeObjectURL(url), 60000); }
   else download(blob, `${filename}.pdf`);
 }

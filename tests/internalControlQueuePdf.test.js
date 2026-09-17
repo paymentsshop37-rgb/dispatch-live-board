@@ -43,6 +43,9 @@ test("internal-control PDF is a valid multi-page printable document", async () =
   assert.ok((text.match(/\/Type \/Page\b/g) || []).length > 1);
 });
 
-test("internal-control PDF refuses an empty filtered dataset", () => {
-  assert.throws(() => createInternalControlQueuePdf({ jobs: [], summary: { count: 0 }, canViewFinancial: true }), /No Internal Control jobs match/);
+test("internal-control PDF supports an empty filtered dataset with zero statistics", async () => {
+  const blob = createInternalControlQueuePdf({ jobs: [], summary: { count: 0 }, canViewFinancial: true });
+  const text = new TextDecoder("latin1").decode(await blob.arrayBuffer());
+  assert.match(text, /SUMMARY & STATISTICS/);
+  assert.match(text, /Total Jobs/);
 });

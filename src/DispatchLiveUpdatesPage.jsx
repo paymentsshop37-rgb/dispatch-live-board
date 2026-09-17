@@ -54,6 +54,7 @@ import { dateRangeForMode, loadCoverageCities, setCoverageCityActive } from "./m
 import { loadServiceAreaConfiguration } from "./modules/coverage/serviceAreaService";
 import { AiLaborGuide } from "./modules/ai-labor";
 import { ExportReportMenu } from "./modules/reporting";
+import ReportSummary from "./modules/reporting/ReportSummary.jsx";
 
 const normalizeText = (value) => {
   return String(value || "")
@@ -4490,6 +4491,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
               <DetailSection title="Files and Photos">{details.files.length || job.photo_url ? <div className="grid gap-2 sm:grid-cols-2">{[...details.files, ...(job.photo_url ? [{ id: "job-photo", file_url: job.photo_url, file_name: "Job photo" }] : [])].map((file) => { const url = valueFrom(file.file_url, file.public_url, file.url); return <a key={file.id || url} href={url} target="_blank" rel="noreferrer" className="min-w-0 rounded-xl border border-white/10 bg-white/5 p-3 hover:bg-white/10"><p className="truncate font-bold text-blue-200">{file.file_name || file.name || file.document_type || "Attachment"}</p><p className="mt-1 text-xs text-slate-400">Preview / Download / Full Screen</p></a>; })}</div> : <EmptyDetail label="No files uploaded." />}</DetailSection>
 
               {isAdmin && <DetailSection title="Audit Information"><DetailGrid items={[["Created by", valueFrom(raw.created_by_name, raw.created_by)], ["Last edited by", valueFrom(raw.updated_by_name, raw.updated_by)], ["Current viewer", currentUserName]]} />{timeline.length ? <p className="mt-3 text-sm text-slate-300">{timeline.length} recorded history events, including status, invoice, payment, and blocked deletion activity when available.</p> : <EmptyDetail label="No audit entries available." />}</DetailSection>}
+              <ReportSummary rows={[job]} includeFinancial={isAdmin} />
             </div>
           )}
         </div>

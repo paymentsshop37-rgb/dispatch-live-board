@@ -1,3 +1,5 @@
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { summaryHtml } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo, useState } from "react";
 import { Calculator, Copy, FileDown, Plus, Search, Settings2, Trash2, Wrench } from "lucide-react";
 import { supabase } from "../../lib/supabase";
@@ -45,7 +47,7 @@ export default function FlatRateGuide({ session, role, onCreateJob }) {
     const { error } = await supabase.from("job_labor_operations").insert(rows); setNotice(error ? error.message : "Labor operations added to the job.");
   }
   function copyEstimate() { navigator.clipboard.writeText(estimateText(estimate, laborHours, laborTotal, total)); setNotice("Estimate copied."); }
-  function printEstimate() { const w = window.open("", "_blank"); if (!w) return setNotice("Allow popups to print the estimate."); w.document.write(`<html><body><pre>${escapeHtml(estimateText(estimate, laborHours, laborTotal, total))}</pre><script>window.print()<\/script></body></html>`); w.document.close(); }
+  function printEstimate() { const w = window.open("", "_blank"); if (!w) return setNotice("Allow popups to print the estimate."); w.document.write(`<html><body><pre>${escapeHtml(estimateText(estimate, laborHours, laborTotal, total))}</pre>${summaryHtml(calculateReportSummary(estimate, { kind: "records", recordLabel: "Operations", metrics: [["Labor Hours", laborHours], ["Labor Total", laborTotal, "money"], ["Estimate Total", total, "money"]] }))}<script>window.print()<\/script></body></html>`); w.document.close(); }
   async function saveEstimate() { localStorage.setItem("flat-rate-estimate", JSON.stringify({ estimate, extras, total, savedAt: new Date().toISOString() })); setNotice("Estimate saved on this device."); }
   async function saveRates() { const { id, created_at, updated_at, ...payload } = rates; const result = id ? await supabase.from("labor_rate_settings").update(payload).eq("id", id) : await supabase.from("labor_rate_settings").insert(payload); setNotice(result.error ? result.error.message : "Labor rates saved."); if (!result.error) load(); }
   async function saveOperation(event) { event.preventDefault(); const fields = Object.keys(blankOperation); const payload = Object.fromEntries(fields.map(k=>[k,editing[k]])); if (!editing.id) payload.created_by=session?.authUserId||session?.id; const result = editing.id ? await supabase.from("flat_rate_operations").update(payload).eq("id", editing.id) : await supabase.from("flat_rate_operations").insert(payload); setNotice(result.error ? result.error.message : "Catalog operation saved."); if (!result.error) { setEditing(null); load(); } }

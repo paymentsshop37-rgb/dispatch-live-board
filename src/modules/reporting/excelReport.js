@@ -1,3 +1,5 @@
+import { calculateReportSummary, CURRENCY_FORMAT, isMoneyHeader } from "./reportSummary.js";
+import { appendSummaryWorksheet } from "./summaryRenderers.js";
 import ExcelJS from "exceljs";
 import {
   REPORT_VERSION,
@@ -15,7 +17,7 @@ const COLORS = {
   red: "DC2626", redLight: "FEE2E2", orange: "F97316", orangeLight: "FFEDD5",
   purple: "7C3AED", purpleLight: "EDE9FE", text: "172033", muted: "64748B",
 };
-const MONEY = '$#,##0.00;[Red]($#,##0.00);-';
+const MONEY = CURRENCY_FORMAT;
 const INTEGER = '#,##0';
 const PERCENT = '0.0%';
 const THIN_BORDER = { style: "thin", color: { argb: "D8E0EA" } };
@@ -60,6 +62,13 @@ export async function createReportWorkbook(jobs, options = {}) {
   if (shouldBuild("DISPATCHER PERFORMANCE")) addDispatcherPerformance(context);
   if (shouldBuild("DATABASE EXPORT")) addDatabaseExport(context);
 
+  for (const sheet of workbook.worksheets) {
+    const source = sheet.name === "TECH PAYMENTS PENDING" ? data.techPaymentsPending
+      : sheet.name === "OUTSTANDING INVOICES" ? data.openInvoices
+      : sheet.name === "CUSTOMER INVOICES" ? data.invoicesByStatus.flatMap(group => group.rows)
+      : sheet.name === "INTERNAL CONTROL REPORT" ? data.internalControls : data.jobs;
+    appendSummaryWorksheet(sheet, calculateReportSummary(source, { includeFinancial: options.includeFinancial !== false }));
+  }
   return workbook;
 }
 
@@ -177,7 +186,7 @@ function addFinancial(context) {
     sheet.getCell(row, col + 1).numFmt = label.includes("Customers") || label.includes("Invoices") ? INTEGER : MONEY;
   });
   const startRow = 15;
-  addDataTable(sheet, ["Rank", "Date", "Invoice #", "Reference #", "Company", "Technician", "Total Bill", "Profit"], financial.topInvoices.map((job, index) => [index + 1, asDate(job.date), job.reference || "", job.jobReference || "", job.company || "", job.tech || "", numberValue(job.totalBill), jobProfit(job)]), { headerRow: startRow, dateColumns: [2], moneyColumns: [7, 8], widths: [9, 12, 16, 16, 25, 22, 15, 15] });
+  addDataTable(sheet, ["Rank", "Date", "Invoice #", "Reference #", "Company", "Technician", "Total Bill", "Profit"], [...context.data.jobs].sort((a,b) => numberValue(b.totalBill)-numberValue(a.totalBill)).map((job, index) => [index + 1, asDate(job.date), job.reference || "", job.jobReference || "", job.company || "", job.tech || "", numberValue(job.totalBill), jobProfit(job)]), { headerRow: startRow, dateColumns: [2], moneyColumns: [7, 8], widths: [9, 12, 16, 16, 25, 22, 15, 15] });
   sheet.getColumn(1).width = 22;
   sheet.getColumn(2).width = 16;
   sheet.getColumn(3).width = 22;
@@ -252,8 +261,8 @@ function addDatabaseExport(context) {
   const columns = databaseColumns(context.data.jobs);
   const headers = columns.map(titleFromKey);
   const sheet = createSheet(context, "DATABASE EXPORT", Math.max(headers.length, 1), "Complete Database Export");
-  const rows = context.data.jobs.map((job) => columns.map((column) => safeCellValue(job.raw?.[column])));
-  addDataTable(sheet, headers.length ? headers : ["No database columns"], headers.length ? rows : [], { widths: headers.map(() => 18) });
+  const rows = context.data.jobs.map((job) => columns.map((column) => isMoneyHeader(column) && job.raw?.[column] != null ? numberValue(job.raw[column]) : safeCellValue(job.raw?.[column])));
+  addDataTable(sheet, headers.length ? headers : ["No database columns"], headers.length ? rows : [], { widths: headers.map(() => 18), moneyColumns: headers.flatMap((h,i) => isMoneyHeader(h) ? [i+1] : []) });
 }
 
 function addDataTable(sheet, headers, rows, options = {}) {

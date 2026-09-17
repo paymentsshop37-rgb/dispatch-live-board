@@ -1,3 +1,5 @@
+import { calculateReportSummary } from "./reportSummary.js";
+import { appendSummaryPdf } from "./summaryPdf.js";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { buildReportData, numberValue } from "./reportData.js";
@@ -30,6 +32,8 @@ export function createExecutivePdf(jobs, options = {}) {
   drawPerformanceTables(doc, data);
   drawHeader(doc, "Executive Operations Detail", options, generatedAt);
 
+  doc.addPage();
+  appendSummaryPdf(doc, calculateReportSummary(jobs), { startY: 42, bottom: 65 });
   const pages = doc.getNumberOfPages();
   for (let page = 1; page <= pages; page += 1) {
     doc.setPage(page);
@@ -153,6 +157,6 @@ function drawPerformanceTables(doc, data) {
 }
 
 function money(value) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(numberValue(value)); }
-function compactMoney(value) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 }).format(numberValue(value)); }
+function compactMoney(value) { return money(value); }
 function formatTimestamp(value) { return new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(value); }
 function truncate(value, length) { const text = String(value || "-"); return text.length > length ? `${text.slice(0, length - 3)}...` : text; }

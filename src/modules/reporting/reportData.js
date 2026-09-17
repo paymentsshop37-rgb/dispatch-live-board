@@ -96,8 +96,10 @@ export function buildReportData(jobs = [], { generatedAt = new Date() } = {}) {
   };
 
   const invoiceValues = rows.map((job) => numberValue(job.totalBill));
-  const invoicesByStatus = ["Sent", "Pending", "Paid", "Cancelled"].map((status) => {
-    const matches = rows.filter((job) => normalizedStatus(job.invoice) === status.toLowerCase());
+  const invoiceStatuses = [...new Set(["sent", "pending", "paid", "cancelled", ...rows.map(job => normalizedStatus(job.invoice))])];
+  const invoicesByStatus = invoiceStatuses.map((key) => {
+    const status = key ? key.replace(/\b\w/g, c => c.toUpperCase()) : "Not recorded";
+    const matches = rows.filter((job) => normalizedStatus(job.invoice) === key);
     return { status, jobs: matches.length, total: matches.reduce((sum, job) => sum + numberValue(job.totalBill), 0), rows: matches };
   });
 

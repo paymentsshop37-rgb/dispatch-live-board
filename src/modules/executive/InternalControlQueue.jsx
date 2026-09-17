@@ -1,3 +1,6 @@
+import ReportSummary from "../reporting/ReportSummary.jsx";
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { summaryHtml } from "../reporting/summaryRenderers.js";
 import React, { forwardRef, useEffect, useMemo, useState } from "react";
 import { Download, FileText, Printer, Search } from "lucide-react";
 import { formatDateTime12Hour, formatTime12Hour } from "../../utils/timeFormat";
@@ -48,11 +51,10 @@ export const InternalControlQueue = forwardRef(function InternalControlQueue({ j
     job.invoiceStatus, job.paymentStatus, job.updates, "Red", job.daysSinceMarked,
   ]);
   const exportExcel = () => {
-    const html = exportTableHtml(exportRows(), summary, canViewFinancial);
+    const html = exportTableHtml(exportRows(), summary, canViewFinancial) + summaryHtml(calculateReportSummary(visibleJobs, { includeFinancial: canViewFinancial }));
     download(new Blob([`\ufeff${html}`], { type: "application/vnd.ms-excel;charset=utf-8" }), `internal-control-queue-${today()}.xls`);
   };
   const exportPdf = async (mode = "download") => {
-    if (!visibleJobs.length) { setExportMessage("No Internal Control jobs match the current filters."); return; }
     setPdfBusy(true); setExportMessage("");
     try {
       const { createInternalControlQueuePdf } = await import("./internalControlQueuePdf.js");
@@ -130,6 +132,7 @@ export const InternalControlQueue = forwardRef(function InternalControlQueue({ j
             {!visibleJobs.length && <tr><td colSpan={headers.length} className="p-10 text-center font-bold text-slate-500">No red Internal Control jobs match the current filters.</td></tr>}
           </tbody>
         </table>
+        <ReportSummary rows={visibleJobs} includeFinancial={canViewFinancial} />
       </div>
     </section>
   );

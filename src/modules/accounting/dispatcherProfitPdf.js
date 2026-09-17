@@ -1,3 +1,5 @@
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { appendSummaryPdf } from "../reporting/summaryPdf.js";
 import { jsPDF } from 'jspdf';
 import { dispatcherStatistics } from './dispatcherProfitReport.js';
 
@@ -63,6 +65,8 @@ export function createDispatcherProfitPdf({ jobs = [], generatedBy = 'Administra
     text(`Share of jobs: ${percent(total.count?p.count/total.count:0)}`,48,y+178,10,blue,true);
     text(`Share of billed: ${percent(total.billed?p.billed/total.billed:null)}`,400,y+178,10,blue,true);
   }
+  doc.addPage();
+  appendSummaryPdf(doc, calculateReportSummary(jobs), { startY: 42, bottom: 65 });
   const pages=doc.getNumberOfPages();
   for(let p=1;p<=pages;p++) {
     doc.setPage(p);doc.setDrawColor('#D5E0E9');doc.line(32,558,760,558);

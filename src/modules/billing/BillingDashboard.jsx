@@ -1,3 +1,6 @@
+import ReportSummary from "../reporting/ReportSummary.jsx";
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { summaryHtml, reportCsv } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo, useState } from "react";
 import { Download, FileText, Printer, RefreshCw, Search } from "lucide-react";
 import { supabase } from "../../lib/supabase";
@@ -126,9 +129,7 @@ export default function BillingDashboard({ onOpenJob }) {
   }
 
   function exportExcel() {
-    const csv = [exportHeaders, ...exportRows()]
-      .map((row) => row.map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csv = reportCsv(exportHeaders, exportRows(), calculateReportSummary(filteredJobs));
     const blob = new Blob([`\uFEFF${csv}`], { type: "application/vnd.ms-excel;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -154,7 +155,7 @@ export default function BillingDashboard({ onOpenJob }) {
       money(job.techLabor),
       money(job.profit),
     ].map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
-    printWindow.document.write(`<!doctype html><html><head><title>Invoice List</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 6px}p{color:#64748b;margin:0 0 18px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:left}th{background:#f1f5f9}@media print{body{padding:0}}</style></head><body><h1>Invoice List</h1><p>${filteredJobs.length} invoice records · Generated ${escapeHtml(formatDateTime12Hour(new Date()))}</p><table><thead><tr>${exportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
+    printWindow.document.write(`<!doctype html><html><head><title>Invoice List</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{margin:0 0 6px}p{color:#64748b;margin:0 0 18px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:6px;text-align:left}th{background:#f1f5f9}@media print{body{padding:0}}</style></head><body><h1>Invoice List</h1><p>${filteredJobs.length} invoice records · Generated ${escapeHtml(formatDateTime12Hour(new Date()))}</p><table><thead><tr>${exportHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>${summaryHtml(calculateReportSummary(filteredJobs))}<script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
     printWindow.document.close();
   }
 
@@ -296,6 +297,7 @@ export default function BillingDashboard({ onOpenJob }) {
             </table>
           </div>
         </div>
+        <ReportSummary rows={filteredJobs} />
       </div>
     </div>
   );
@@ -314,6 +316,8 @@ function normalizeJob(row) {
     referenceNumber: readAlias(row, columnAliases.referenceNumber),
     location: readAlias(row, columnAliases.location),
     status: readAlias(row, columnAliases.status) || "Pending",
+    jobStatus: row.status, invoiceStatus: readAlias(row, columnAliases.status) || "Pending",
+    dispatcher: row.dispatch, technician: row.tech, techPaymentStatus: row.tech_payment_status,
     paymentMethod: readAlias(row, columnAliases.paymentMethod) || "Pending",
     totalBill,
     parts,

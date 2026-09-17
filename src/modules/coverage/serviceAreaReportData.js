@@ -23,6 +23,8 @@ export function buildServiceAreaReport(rows, unassignedJobs = [], { periodLabel 
         city: clean(record.city) || 'Not recorded', state: clean(record.state),
         company: clean(record.company) || 'Not recorded',
         technician: clean(record.technician || record.tech) || 'Unassigned',
+        dispatcher: clean(record.dispatcher || record.dispatch),
+        invoiceStatus: clean(record.invoiceStatus || record.invoice), techPaymentStatus: clean(record.techPaymentStatus),
         status: clean(record.status) || 'Not recorded',
       };
       jobs.push(job); added.push(job);

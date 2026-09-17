@@ -1,3 +1,6 @@
+import ReportSummary from "../reporting/ReportSummary.jsx";
+import { calculateReportSummary, reportJobsFromGroups } from "../reporting/reportSummary.js";
+import { summaryHtml, reportCsv } from "../reporting/summaryRenderers.js";
 import React, { useMemo, useState } from "react";
 import { buildCitiesWithoutJobs } from "./coverageCityService";
 
@@ -118,7 +121,7 @@ export default function CitiesWithoutJobsPanel({
       ]),
     ];
     downloadBlob(
-      rows.map((row) => row.map(csvValue).join(",")).join("\n"),
+      reportCsv(rows[0], rows.slice(1), calculateReportSummary(reportJobsFromGroups(visibleRows, "assignedJobs"), { includeFinancial: false, metrics: [["Coverage Areas", visibleRows.length]] })),
       "cities-without-jobs.csv",
       "text/csv;charset=utf-8",
     );
@@ -128,7 +131,7 @@ export default function CitiesWithoutJobsPanel({
     const popup = window.open("", "_blank");
     if (!popup) return;
     popup.document.write(
-      `<html><head><title>Coverage Area Job Activity</title><style>body{font-family:Arial;padding:24px;color:#172033}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #ccd4df;padding:7px;text-align:left}th{background:#edf2f7}h1{margin-bottom:4px}.sub{color:#64748b;margin-bottom:18px}</style></head><body><h1>Coverage Area Job Activity</h1><div class="sub">${escapeHtml(rangeLabel)} · ${visibleRows.length} coverage areas</div><table><thead><tr><th>City</th><th>State</th><th>Jobs</th><th>Active Techs</th><th>Last Job</th><th>Days</th><th>Coverage</th><th>Suggested Action</th></tr></thead><tbody>${visibleRows.map((row) => `<tr><td>${escapeHtml(row.normalizedCity)}</td><td>${escapeHtml(row.state)}</td><td>${row.jobs}</td><td>${row.activeTechnicians}</td><td>${escapeHtml(formatDate(row.lastJobDate))}</td><td>${row.daysSinceLastJob ?? "Never"}</td><td>${escapeHtml(row.coverageStatus)}</td><td>${escapeHtml(row.suggestedAction)}</td></tr>`).join("")}</tbody></table><script>window.print()</script></body></html>`,
+      `<html><head><title>Coverage Area Job Activity</title><style>body{font-family:Arial;padding:24px;color:#172033}table{border-collapse:collapse;width:100%;font-size:11px}th,td{border:1px solid #ccd4df;padding:7px;text-align:left}th{background:#edf2f7}h1{margin-bottom:4px}.sub{color:#64748b;margin-bottom:18px}</style></head><body><h1>Coverage Area Job Activity</h1><div class="sub">${escapeHtml(rangeLabel)} · ${visibleRows.length} coverage areas</div><table><thead><tr><th>City</th><th>State</th><th>Jobs</th><th>Active Techs</th><th>Last Job</th><th>Days</th><th>Coverage</th><th>Suggested Action</th></tr></thead><tbody>${visibleRows.map((row) => `<tr><td>${escapeHtml(row.normalizedCity)}</td><td>${escapeHtml(row.state)}</td><td>${row.jobs}</td><td>${row.activeTechnicians}</td><td>${escapeHtml(formatDate(row.lastJobDate))}</td><td>${row.daysSinceLastJob ?? "Never"}</td><td>${escapeHtml(row.coverageStatus)}</td><td>${escapeHtml(row.suggestedAction)}</td></tr>`).join("")}</tbody></table>${summaryHtml(calculateReportSummary(reportJobsFromGroups(visibleRows, "assignedJobs"), { includeFinancial: false, metrics: [["Coverage Areas", visibleRows.length]] }))}<script>window.print()</script></body></html>`,
     );
     popup.document.close();
   }
@@ -338,6 +341,7 @@ export default function CitiesWithoutJobsPanel({
               </tbody>
             </table>
           </div>
+          <ReportSummary summary={calculateReportSummary(reportJobsFromGroups(visibleRows, "assignedJobs"), { includeFinancial: false, metrics: [["Coverage Areas", visibleRows.length]] })} />
           {!visibleRows.length && (
             <div className="rounded-2xl border border-dashed border-white/15 p-10 text-center font-bold text-slate-400">
               No cities match the current filters.

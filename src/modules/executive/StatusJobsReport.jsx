@@ -1,3 +1,6 @@
+import ReportSummary from "../reporting/ReportSummary.jsx";
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { summaryHtml } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo } from "react";
 import { Download, FileText, Printer, X } from "lucide-react";
 import { formatDateTime12Hour, formatTime12Hour } from "../../utils/timeFormat";
@@ -126,6 +129,7 @@ export default function StatusJobsReport({
               {!rows.length && <tr><td colSpan={columns.length} className="p-12 text-center text-sm font-bold text-slate-500">No jobs match this status in the selected period.</td></tr>}
             </tbody>
           </table>
+          <ReportSummary rows={rows} includeFinancial={canViewFinancial} />
         </div>
       </section>
     </div>
@@ -156,6 +160,7 @@ function reportRow(job) {
     status: job.status,
     invoiceStatus: job.invoiceStatus,
     paymentStatus: paymentStatus(job.invoiceStatus),
+    techPaymentStatus: job.techPaymentStatus,
     totalBill: number(job.totalBill),
     parts: number(job.parts),
     techLabor: number(job.techLabor),
@@ -184,7 +189,7 @@ function reportDocument({ title, periodLabel, rows, columns, totals, statusKey, 
     .summary{display:flex;flex-wrap:wrap;gap:14px;margin:14px 0;padding:10px;background:#eff6ff;border:1px solid #bfdbfe;font-size:10px}
     table{width:100%;border-collapse:collapse;font-size:7.5px}th,td{border:1px solid #cbd5e1;padding:4px;text-align:left;vertical-align:top}th{background:#dbeafe;font-size:7px;text-transform:uppercase}tr{break-inside:avoid}
     .footer{display:${forExcel ? "none" : "block"};position:fixed;bottom:-10mm;left:0;font-size:8px;color:#64748b}.page-number:after{content:counter(page)}
-  </style></head><body><div class="brand">NTTR / DISPATCH LIVE</div><h1>${escapeHtml(title)}</h1><div class="meta">Selected date range: ${escapeHtml(periodLabel)}<br>Generated: ${escapeHtml(formatDateTime12Hour(new Date()))}<br>Total jobs: ${totals.count}</div>${summary}<table><thead><tr>${columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody>${bodyRows}</tbody></table><div class="footer">NTTR / Dispatch Live · ${escapeHtml(title)} · Page <span class="page-number"></span></div>${autoPrint ? `<script>window.onload=()=>{window.focus();window.print()}</script>` : ""}</body></html>`;
+  </style></head><body><div class="brand">NTTR / DISPATCH LIVE</div><h1>${escapeHtml(title)}</h1><div class="meta">Selected date range: ${escapeHtml(periodLabel)}<br>Generated: ${escapeHtml(formatDateTime12Hour(new Date()))}<br>Total jobs: ${totals.count}</div>${summary}<table><thead><tr>${columns.map(([, label]) => `<th>${escapeHtml(label)}</th>`).join("")}</tr></thead><tbody>${bodyRows}</tbody></table>${summaryHtml(calculateReportSummary(rows, { includeFinancial: canViewFinancial }))}<div class="footer">NTTR / Dispatch Live · ${escapeHtml(title)} · Page <span class="page-number"></span></div>${autoPrint ? `<script>window.onload=()=>{window.focus();window.print()}</script>` : ""}</body></html>`;
 }
 
 function download(blob, filename) {

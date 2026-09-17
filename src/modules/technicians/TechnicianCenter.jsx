@@ -1,3 +1,5 @@
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { summaryHtml } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
@@ -685,6 +687,7 @@ export default function TechnicianCenter({ currentUser }) {
             <thead><tr><th>#</th><th>Technician / Company</th><th>Phone</th><th>City / State</th><th>Availability</th><th>Status</th><th>Services</th><th>Coverage Areas</th></tr></thead>
             <tbody>${rows || `<tr><td colspan="8" class="empty">No technicians match the current filters.</td></tr>`}</tbody>
           </table>
+          ${summaryHtml(calculateReportSummary(printTechnicians, { kind: "records", recordLabel: "Technicians", includeFinancial: false, statusFields: [["TECHNICIAN STATUS", "status"], ["AVAILABILITY", "availability_status"]] }))}
           <footer>Technician Directory · Internal Operations Report</footer>
           <script>window.onload = () => { window.focus(); window.print(); };</script>
         </body>

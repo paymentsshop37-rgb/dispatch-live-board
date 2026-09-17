@@ -1,3 +1,6 @@
+import ReportSummary from "../reporting/ReportSummary.jsx";
+import { calculateReportSummary } from "../reporting/reportSummary.js";
+import { summaryHtml, summaryCsvRows } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
@@ -145,10 +148,10 @@ export default function TechnicianPaymentsReport({
     const filterLabel = reportFilterLabel(datePreset, customRange, technicianFilter, search);
     const detailRows = filteredJobs.map((job) => [
       job.jobNumber, job.date, formatTime12Hour(job.time), job.invoiceNumber, job.referenceNumber,
-      job.company, job.technician, job.location, job.jobStatus, job.amount, job.techPaymentStatus,
+      job.company, job.technician, job.location, job.jobStatus, money(job.amount), job.techPaymentStatus,
       job.daysPending, job.dispatcher, job.updates,
     ]);
-    const groupRows = groups.map((group) => [group.technician, group.pendingJobs, group.totalAmount, group.oldestPendingJob, group.averageAmount]);
+    const groupRows = groups.map((group) => [group.technician, group.pendingJobs, money(group.totalAmount), group.oldestPendingJob, money(group.averageAmount)]);
     const rows = [
       ["TECHNICIAN PAYMENTS PENDING REPORT"],
       ["Generated", generated],
@@ -160,7 +163,8 @@ export default function TechnicianPaymentsReport({
       ["TOTALS BY TECHNICIAN"],
       ["Technician", "Pending Jobs", "Total Amount Owed", "Oldest Pending Job", "Average Amount per Job"],
       ...groupRows,
-      ["GRAND TOTAL", totals.count, totals.amount],
+      ["GRAND TOTAL", totals.count, money(totals.amount)],
+      ...summaryCsvRows(calculateReportSummary(filteredJobs.map(job => ({ ...job, techLabor: job.amount })))),
     ];
     downloadDelimited(rows, `technician-payments-pending-${todayKey()}.xls`);
   }
@@ -248,6 +252,7 @@ export default function TechnicianPaymentsReport({
           />
         )}
 
+        <ReportSummary rows={filteredJobs.map(job => ({ ...job, techLabor: job.amount }))} includeFinancial={canViewFinancial} />
         {view === "jobs" && canMarkPaid && selectedJobs.length > 0 && (
           <div className="sticky bottom-3 z-30 rounded-3xl border border-blue-200 bg-white p-4 shadow-2xl sm:p-5">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -345,4 +350,4 @@ function display(value) { return value === null || value === undefined || value 
 function escapeHtml(value) { return String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]); }
 
 function downloadDelimited(rows, filename) { const content = rows.map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join('\t')).join('\n'); const blob = new Blob([`\uFEFF${content}`], { type: 'application/vnd.ms-excel;charset=utf-8;' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url); }
-function buildPrintableReport({ filteredJobs, groups, totals, datePreset, customRange, technicianFilter, search }) { const detailRows = filteredJobs.map((job) => `<tr>${[job.jobNumber,job.date,formatTime12Hour(job.time),job.invoiceNumber,job.referenceNumber,job.company,job.technician,job.location,job.jobStatus,money(job.amount),job.techPaymentStatus,job.daysPending,job.dispatcher,job.updates].map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join(''); const groupRows = groups.map((group) => `<tr><td>${escapeHtml(group.technician)}</td><td>${group.pendingJobs}</td><td>${money(group.totalAmount)}</td><td>${escapeHtml(group.oldestPendingJob)}</td><td>${money(group.averageAmount)}</td></tr>`).join(''); return `<!doctype html><html><head><title>Technician Payments Pending Report</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{margin:0}.meta{color:#475569;margin:8px 0 18px}.summary{display:flex;gap:18px;margin:15px 0;font-weight:bold}table{border-collapse:collapse;width:100%;font-size:9px;margin-bottom:24px}th,td{border:1px solid #cbd5e1;padding:5px;text-align:left;vertical-align:top}th{background:#0f172a;color:white}h2{margin-top:26px}@media print{body{padding:0}@page{size:landscape;margin:10mm}}</style></head><body><h1>Technician Payments Pending Report</h1><p class="meta">Generated ${escapeHtml(formatDateTime12Hour(new Date()))} · Filters: ${escapeHtml(reportFilterLabel(datePreset, customRange, technicianFilter, search))}</p><div class="summary"><span>Pending: ${totals.count}</span><span>Technicians: ${totals.technicians}</span><span>Missing amounts: ${totals.missing}</span><span>Grand total: ${money(totals.amount)}</span></div><table><thead><tr>${['Job #','Date','Time','Invoice #','Reference #','Company','Technician','Location','Job Status','Tech Labor','Tech Payment Status','Days Pending','Dispatcher','Updates'].map((value) => `<th>${value}</th>`).join('')}</tr></thead><tbody>${detailRows}</tbody></table><h2>Totals by Technician</h2><table><thead><tr><th>Technician</th><th>Pending Jobs</th><th>Total Amount Owed</th><th>Oldest Pending Job</th><th>Average Amount per Job</th></tr></thead><tbody>${groupRows}<tr><td><b>Grand Total</b></td><td><b>${totals.count}</b></td><td><b>${money(totals.amount)}</b></td><td></td><td></td></tr></tbody></table><script>window.onload=()=>window.print()</script></body></html>`; }
+function buildPrintableReport({ filteredJobs, groups, totals, datePreset, customRange, technicianFilter, search }) { const detailRows = filteredJobs.map((job) => `<tr>${[job.jobNumber,job.date,formatTime12Hour(job.time),job.invoiceNumber,job.referenceNumber,job.company,job.technician,job.location,job.jobStatus,money(job.amount),job.techPaymentStatus,job.daysPending,job.dispatcher,job.updates].map((value) => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join(''); const groupRows = groups.map((group) => `<tr><td>${escapeHtml(group.technician)}</td><td>${group.pendingJobs}</td><td>${money(group.totalAmount)}</td><td>${escapeHtml(group.oldestPendingJob)}</td><td>${money(group.averageAmount)}</td></tr>`).join(''); return `<!doctype html><html><head><title>Technician Payments Pending Report</title><style>body{font-family:Arial,sans-serif;padding:24px;color:#0f172a}h1{margin:0}.meta{color:#475569;margin:8px 0 18px}.summary{display:flex;gap:18px;margin:15px 0;font-weight:bold}table{border-collapse:collapse;width:100%;font-size:9px;margin-bottom:24px}th,td{border:1px solid #cbd5e1;padding:5px;text-align:left;vertical-align:top}th{background:#0f172a;color:white}h2{margin-top:26px}@media print{body{padding:0}@page{size:landscape;margin:10mm}}</style></head><body><h1>Technician Payments Pending Report</h1><p class="meta">Generated ${escapeHtml(formatDateTime12Hour(new Date()))} · Filters: ${escapeHtml(reportFilterLabel(datePreset, customRange, technicianFilter, search))}</p><div class="summary"><span>Pending: ${totals.count}</span><span>Technicians: ${totals.technicians}</span><span>Missing amounts: ${totals.missing}</span><span>Grand total: ${money(totals.amount)}</span></div><table><thead><tr>${['Job #','Date','Time','Invoice #','Reference #','Company','Technician','Location','Job Status','Tech Labor','Tech Payment Status','Days Pending','Dispatcher','Updates'].map((value) => `<th>${value}</th>`).join('')}</tr></thead><tbody>${detailRows}</tbody></table><h2>Totals by Technician</h2><table><thead><tr><th>Technician</th><th>Pending Jobs</th><th>Total Amount Owed</th><th>Oldest Pending Job</th><th>Average Amount per Job</th></tr></thead><tbody>${groupRows}<tr><td><b>Grand Total</b></td><td><b>${totals.count}</b></td><td><b>${money(totals.amount)}</b></td><td></td><td></td></tr></tbody></table>${summaryHtml(calculateReportSummary(filteredJobs.map(job => ({ ...job, techLabor: job.amount }))))}<script>window.onload=()=>window.print()</script></body></html>`; }
