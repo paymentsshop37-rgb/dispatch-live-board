@@ -179,8 +179,8 @@ export default function TechnicianPaymentsReport({
   const warning = totals.overdue > 0 || totals.missing > 0;
 
   return (
-    <div className="min-h-screen bg-slate-100 p-3 sm:p-5 xl:p-8">
-      <div className="mx-auto max-w-[1800px] space-y-5">
+    <div className="min-h-screen min-w-0 w-full bg-slate-100 p-3 sm:p-5 xl:p-8">
+      <div className="mx-auto min-w-0 w-full max-w-[1800px] space-y-5">
         <header className="rounded-3xl bg-[#0b1628] p-5 text-white shadow-xl sm:p-7">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
             <div>
@@ -289,11 +289,12 @@ function JobsView({ jobs, loading, selected, setSelected, canViewFinancial, canM
   if (!jobs.length) return <EmptyState label="No pending technician payments match the current filters." />;
   return (
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <div className="hidden overflow-x-auto lg:block">
+      <p className="hidden border-b border-slate-200 px-4 py-2 text-xs text-slate-500 lg:block">Scroll horizontally to see all columns. Actions stay visible on the right.</p>
+      <div className="hidden w-full min-w-0 overflow-x-auto lg:block" tabIndex={0} role="region" aria-label="Pending payments table, scroll horizontally for more columns">
         <table className="w-full min-w-[1800px] text-left text-sm">
           <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-300"><tr>
             {canMarkPaid && <th className="px-3 py-4"><input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all visible payments" /></th>}
-            {['Job #','Date','Time','Invoice #','Reference #','Company','Technician','Location','Job Status','Tech Labor','Tech Payment Status','Days Pending','Dispatcher','Updates','Actions'].map((header) => <th key={header} className="whitespace-nowrap px-3 py-4 font-black">{header}</th>)}
+            {['Job #','Date','Time','Invoice #','Reference #','Company','Technician','Location','Job Status','Tech Labor','Tech Payment Status','Days Pending','Dispatcher','Updates','Actions'].map((header) => <th key={header} className={`whitespace-nowrap px-3 py-4 font-black ${header === "Actions" ? "sticky right-0 z-20 min-w-[150px] bg-slate-900 shadow-lg" : ""}`}>{header}</th>)}
           </tr></thead>
           <tbody>{jobs.map((job) => <tr key={job.id} className="border-t border-slate-200 align-top hover:bg-slate-50">
             {canMarkPaid && <td className="px-3 py-4"><input type="checkbox" checked={selected.includes(job.id)} onChange={() => toggle(job.id)} aria-label={`Select job ${job.jobNumber}`} /></td>}
@@ -303,7 +304,7 @@ function JobsView({ jobs, loading, selected, setSelected, canViewFinancial, canM
             <td className="px-3 py-4 font-black">{canViewFinancial ? money(job.amount) : 'Restricted'}{job.missingLabor && <span className="mt-1 block whitespace-nowrap text-[10px] font-black uppercase text-red-600">Missing Tech Labor</span>}</td>
             <td className="px-3 py-4"><span className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-black text-orange-700">Pending</span></td>
             <td className="px-3 py-4"><DaysBadge days={job.daysPending} /></td><td className="px-3 py-4">{display(job.dispatcher)}</td><td className="max-w-[300px] px-3 py-4"><p className="line-clamp-3 whitespace-pre-wrap">{display(job.updates)}</p></td>
-            <td className="px-3 py-4"><div className="flex gap-2"><button type="button" onClick={() => onOpenJob?.(job.id)} className="table-button"><Eye className="h-4 w-4" /> View</button>{canMarkPaid && <button type="button" onClick={() => onMarkPaid(job)} className="table-button border-emerald-200 text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Mark Paid</button>}</div></td>
+            <td className="sticky right-0 z-10 min-w-[150px] bg-white px-3 py-4 shadow-lg"><div className="flex flex-col items-stretch gap-2 whitespace-nowrap"><button type="button" onClick={() => onOpenJob?.(job.id)} className="table-button"><Eye className="h-4 w-4" /> View</button>{canMarkPaid && <button type="button" onClick={() => onMarkPaid(job)} className="table-button border-emerald-200 text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Mark Paid</button>}</div></td>
           </tr>)}</tbody>
         </table>
       </div>
