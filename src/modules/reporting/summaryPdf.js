@@ -14,6 +14,9 @@ export function appendSummaryPdf(doc, summary, { startY, top = 42, bottom = 48 }
       styles: { font: "helvetica", fontSize: 9, cellPadding: 5, overflow: "linebreak" },
       headStyles: { fillColor: [22, 58, 99] }, alternateRowStyles: { fillColor: [241, 245, 249] },
       columnStyles: Object.fromEntries(section.headers.map((_, i) => [i, { halign: i ? "right" : "left" }])),
+      // AutoTable applies columnStyles only to body cells. Align the headings
+      // explicitly so each numeric heading sits above its right-aligned values.
+      didParseCell: ({ cell, column }) => { cell.styles.halign = column.index ? "right" : "left"; },
     });
     y = doc.lastAutoTable.finalY + 24;
   }

@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
+import { jsPDF } from "jspdf";
 import { calculateReportSummary, calculateFinancialSummary, calculateStatusBreakdown, reportSummarySections, formatReportMoney, reportJobsFromGroups, selectReportTransactions } from "../src/modules/reporting/reportSummary.js";
 import { reportCsv, summaryHtml } from "../src/modules/reporting/summaryRenderers.js";
+import { appendSummaryPdf } from "../src/modules/reporting/summaryPdf.js";
 import { createReportWorkbook } from "../src/modules/reporting/excelReport.js";
 import { createAccountingWorkbookBuffer } from "../src/modules/accounting/accountingWorkbook.js";
 import { normalizeAccountingJob, buildAccountingModel, accountingDateRange } from "../src/modules/accounting/accountingData.js";
@@ -93,6 +95,21 @@ test("HTML escapes names; CSV formats every financial detail and summary value",
   const csv = reportCsv(["Invoice #", "Total Bill", "Profit"], [[1234, 2051.8400000000001, 1443.1499999999999]], s);
   assert.match(csv, /"1234","\$2,051\.84","\$1,443\.15"/);
   assert.match(csv, /SUMMARY & STATISTICS/); assert.doesNotMatch(csv, /0000001|9999999/);
+});
+
+test("summary headers align with numeric values in HTML and PDF", () => {
+  const summary = calculateReportSummary(jobs);
+  const html = summaryHtml(summary);
+  assert.match(html, /text-align:right[^>]*>Jobs<\/th>/);
+  assert.match(html, /text-align:right[^>]*>Total Bill<\/th>/);
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "letter" });
+  appendSummaryPdf(doc, summary);
+  const table = doc.lastAutoTable;
+  assert.equal(table.head[0].cells[0].styles.halign, "left");
+  for (let i = 1; i < table.columns.length; i++) {
+    assert.equal(table.head[0].cells[i].styles.halign, "right");
+    assert.equal(table.body[0].cells[i].styles.halign, "right");
+  }
 });
 
 test("transaction and directory reports do not fabricate job counts or profit", () => {
