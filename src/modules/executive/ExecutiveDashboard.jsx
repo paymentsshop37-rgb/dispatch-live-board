@@ -79,6 +79,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
   const [coverageSettingsOpen, setCoverageSettingsOpen] = useState(false);
   const [statusReport, setStatusReport] = useState(null);
   const [invoicePaymentSummaries, setInvoicePaymentSummaries] = useState([]);
+  const [invoicePaymentsLoaded, setInvoicePaymentsLoaded] = useState(false);
   const internalControlQueueRef = useRef(null);
   const dashboardRequest = useRef(0);
 
@@ -112,6 +113,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
     const request = ++dashboardRequest.current;
     setLoading(true);
     setWarnings([]);
+    setInvoicePaymentsLoaded(false);
     // Publish each resource immediately; coverage aliases must not block KPIs.
     async function loadResource(load, apply, message) {
       try {
@@ -136,7 +138,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
         const { data, error } = await supabase.rpc("get_invoice_payment_summary");
         if (error) throw error;
         return data || [];
-      }, setInvoicePaymentSummaries, "Outstanding invoice balances unavailable."),
+      }, (rows) => { setInvoicePaymentSummaries(rows); setInvoicePaymentsLoaded(true); }, "Outstanding invoice balances unavailable."),
       loadResource(() => loadCoverageCities({ includeInactive: true }), setCoverageCities, "Coverage cities unavailable."),
       loadResource(loadTechnicians, setTechnicians, "Active technicians unavailable."),
       loadResource(() => loadServiceAreaConfiguration({ includeInactive: true }), (value) => {
@@ -258,7 +260,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
         </section>
 
         <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} generatedBy={generatedBy} canViewFinancial={canViewFinancial} />
-        <PaymentMethodsReport jobs={jobs} generatedBy={generatedBy} />
+        <PaymentMethodsReport jobs={jobs} paymentSummaries={invoicePaymentSummaries} paymentsLoaded={invoicePaymentsLoaded} generatedBy={generatedBy} />
 
         <div>
           <main className="space-y-6">

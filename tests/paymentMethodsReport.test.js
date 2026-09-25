@@ -1,22 +1,37 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPaymentMethodsReport, filterPaymentReportJobs, paymentReportDateRange, paymentReportPeriods } from "../src/modules/executive/paymentMethodSummary.js";
+import { buildPaymentMethodsReport, filterPaymentReportJobs, paymentMethodFinancialRows, paymentReportDateRange, paymentReportPeriods } from "../src/modules/executive/paymentMethodSummary.js";
 
 const jobs = [
-  { invoiceStatus: "Paid", paymentMethod: "Card", paymentReceiver: "A" },
-  { invoiceStatus: "paid", paymentMethod: " card ", paymentReceiver: "b" },
-  { invoiceStatus: "Paid", paymentMethod: "Zelle", paymentReceiver: "B" },
-  { invoiceStatus: "Paid", paymentMethod: "Cash", paymentReceiver: "" },
-  { invoiceStatus: "Paid", paymentMethod: "", paymentReceiver: "A" },
-  { invoiceStatus: "Pending", paymentMethod: "Card", paymentReceiver: "A" },
+  { id: "1", invoiceStatus: "Paid", paymentMethod: "Card", paymentReceiver: "A", totalBill: 100, parts: 10, techLabor: 20 },
+  { id: "2", invoiceStatus: "paid", paymentMethod: " card ", paymentReceiver: "b", totalBill: 200, parts: 20, techLabor: 30 },
+  { id: "3", invoiceStatus: "Paid", paymentMethod: "Zelle", paymentReceiver: "B", totalBill: 50, parts: 0, techLabor: 10 },
+  { id: "4", invoiceStatus: "Paid", paymentMethod: "Cash", paymentReceiver: "", totalBill: 30, parts: 5, techLabor: 5 },
+  { id: "5", invoiceStatus: "Paid", paymentMethod: "", paymentReceiver: "A", totalBill: 40, parts: 0, techLabor: 10 },
+  { id: "6", invoiceStatus: "Pending", paymentMethod: "Card", paymentReceiver: "A", totalBill: 70, parts: 0, techLabor: 0 },
 ];
 
 test("payment method report counts paid jobs by Received A and B without attributing blanks to A", () => {
   const report = buildPaymentMethodsReport(jobs);
-  assert.deepEqual(report.totals, { a: 2, b: 2, unassigned: 1, total: 5 });
-  assert.deepEqual(report.rows.find((row) => row.method === "Card"), { method: "Card", a: 1, b: 1, unassigned: 0, total: 2 });
-  assert.deepEqual(report.rows.find((row) => row.method === "Cash"), { method: "Cash", a: 0, b: 0, unassigned: 1, total: 1 });
+  assert.deepEqual([report.totals.a, report.totals.b, report.totals.unassigned, report.totals.total], [2, 2, 1, 5]);
+  const card = report.rows.find((row) => row.method === "Card");
+  assert.deepEqual([card.a, card.b, card.unassigned, card.total], [1, 1, 0, 2]);
+  const cash = report.rows.find((row) => row.method === "Cash");
+  assert.deepEqual([cash.a, cash.b, cash.unassigned, cash.total], [0, 0, 1, 1]);
   assert(report.rows.some((row) => row.method === "No registrado" && row.a === 1));
+});
+
+test("printed amount rows separate billed, recorded collections and estimated profit for each letter", () => {
+  const paymentSummaries = [{ job_id: "1", amount_paid: 90, payment_count: 1 }, { job_id: "2", amount_paid: 200, payment_count: 1 }];
+  const report = buildPaymentMethodsReport(jobs, { paymentSummaries });
+  const detail = paymentMethodFinancialRows(report);
+  assert.deepEqual(detail.find((row) => row.method === "Card" && row.letter === "A"), {
+    method: "Card", letter: "A", jobs: 1, billed: 100, collected: 90, profit: 70, paidWithoutRecord: 0,
+  });
+  assert.deepEqual(detail.find((row) => row.method === "Card" && row.letter === "B"), {
+    method: "Card", letter: "B", jobs: 1, billed: 200, collected: 200, profit: 150, paidWithoutRecord: 0,
+  });
+  assert.deepEqual(report.totals.financial.total, { billed: 420, collected: 290, profit: 310, paidWithoutRecord: 3 });
 });
 
 test("all-jobs scope includes pending invoices and reconciles method totals", () => {

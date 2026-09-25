@@ -30,9 +30,17 @@ export function filterPaymentReportJobs(jobs, mode, customRange = {}, now = new 
   });
 }
 
-export function buildPaymentMethodsReport(jobs = [], { paidOnly = true } = {}) {
+const numberValue = (value) => {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+};
+const emptyFinancial = () => ({ billed: 0, collected: 0, profit: 0, paidWithoutRecord: 0 });
+const receiverFinancial = () => ({ a: emptyFinancial(), b: emptyFinancial(), unassigned: emptyFinancial(), total: emptyFinancial() });
+
+export function buildPaymentMethodsReport(jobs = [], { paidOnly = true, paymentSummaries = [] } = {}) {
   const groups = new Map();
-  const totals = { a: 0, b: 0, unassigned: 0, total: 0 };
+  const totals = { a: 0, b: 0, unassigned: 0, total: 0, financial: receiverFinancial() };
+  const paymentsByJob = new Map(paymentSummaries.map((row) => [String(row.job_id), row]));
 
   for (const job of jobs) {
     if (paidOnly && label(job.invoiceStatus).toLowerCase() !== "paid") continue;
@@ -40,7 +48,7 @@ export function buildPaymentMethodsReport(jobs = [], { paidOnly = true } = {}) {
     const rawMethod = label(job.paymentMethod);
     const method = rawMethod || "No registrado";
     const key = method.toLocaleLowerCase("en-US");
-    if (!groups.has(key)) groups.set(key, { method, a: 0, b: 0, unassigned: 0, total: 0 });
+    if (!groups.has(key)) groups.set(key, { method, a: 0, b: 0, unassigned: 0, total: 0, financial: receiverFinancial() });
 
     const group = groups.get(key);
     const receiver = label(job.paymentReceiver).toUpperCase();
@@ -49,10 +57,30 @@ export function buildPaymentMethodsReport(jobs = [], { paidOnly = true } = {}) {
     group.total += 1;
     totals[column] += 1;
     totals.total += 1;
+    const payment = paymentsByJob.get(String(job.id));
+    const values = {
+      billed: numberValue(job.totalBill),
+      collected: numberValue(payment?.amount_paid),
+      profit: numberValue(job.totalBill) - numberValue(job.parts) - numberValue(job.techLabor),
+      paidWithoutRecord: label(job.invoiceStatus).toLowerCase() === "paid" && !numberValue(payment?.payment_count) ? 1 : 0,
+    };
+    for (const target of [group.financial[column], group.financial.total, totals.financial[column], totals.financial.total]) {
+      for (const [field, value] of Object.entries(values)) target[field] += value;
+    }
   }
 
   return {
     rows: [...groups.values()].sort((a, b) => a.method.localeCompare(b.method)),
     totals,
   };
+}
+
+export function paymentMethodFinancialRows(report) {
+  const receivers = [["a", "A"], ["b", "B"], ["unassigned", "Sin letra"]];
+  return report.rows.flatMap((row) => receivers.filter(([key]) => row[key] > 0).map(([key, letter]) => ({
+    method: row.method,
+    letter,
+    jobs: row[key],
+    ...row.financial[key],
+  })));
 }
