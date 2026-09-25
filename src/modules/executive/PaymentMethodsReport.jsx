@@ -1,16 +1,17 @@
 import React, { useMemo, useState } from "react";
 import { Download, FileText, Printer } from "lucide-react";
-import { buildPaymentMethodsReport } from "./paymentMethodSummary.js";
+import { buildPaymentMethodsReport, filterPaymentReportJobs, paymentReportPeriods } from "./paymentMethodSummary.js";
 
 const columns = ["Método de pago", "Letra A", "Letra B", "Sin letra", "Total"];
 
-export default function PaymentMethodsReport({ jobs, filteredJobs, periodLabel, generatedBy }) {
+export default function PaymentMethodsReport({ jobs, generatedBy }) {
   const [paidOnly, setPaidOnly] = useState(true);
-  const [dateScope, setDateScope] = useState("all");
+  const [periodMode, setPeriodMode] = useState("This Week");
+  const [customRange, setCustomRange] = useState({ from: "", to: "" });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
-  const reportJobs = dateScope === "all" ? jobs : filteredJobs;
-  const reportPeriod = dateScope === "all" ? "Todo el historial" : periodLabel;
+  const reportJobs = useMemo(() => filterPaymentReportJobs(jobs, periodMode, customRange), [jobs, periodMode, customRange]);
+  const reportPeriod = periodMode === "Custom Range" ? `Custom Range · ${customRange.from || "Inicio"} – ${customRange.to || "Sin límite"}` : periodMode;
   const { rows, totals } = useMemo(() => buildPaymentMethodsReport(reportJobs, { paidOnly }), [reportJobs, paidOnly]);
   const scope = paidOnly ? "Facturas pagadas" : "Todos los trabajos";
 
@@ -101,9 +102,15 @@ export default function PaymentMethodsReport({ jobs, filteredJobs, periodLabel, 
           <button type="button" onClick={printReport} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-bold hover:bg-white/10"><Printer className="h-4 w-4" /> Imprimir</button>
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-4">
+      <div className="mt-5 flex flex-nowrap gap-2 overflow-x-auto pb-2">
+        {paymentReportPeriods.map((period) => <button key={period} type="button" aria-pressed={periodMode === period} onClick={() => setPeriodMode(period)} className={`min-h-11 shrink-0 rounded-xl px-3.5 py-2 text-xs font-black uppercase tracking-wide transition ${periodMode === period ? "bg-blue-500 text-white shadow-lg shadow-blue-950/30" : "border border-white/10 bg-white/[0.04] text-slate-400 hover:bg-white/10 hover:text-slate-100"}`}>{period}</button>)}
+      </div>
+      {periodMode === "Custom Range" && <div className="mt-3 flex flex-wrap gap-3">
+        <label className="grid gap-1 text-xs font-bold text-slate-300">Start<input type="date" value={customRange.from} onChange={(event) => setCustomRange((current) => ({ ...current, from: event.target.value }))} className="rounded-lg border border-white/15 bg-[#111f33] px-3 py-2 text-white" /></label>
+        <label className="grid gap-1 text-xs font-bold text-slate-300">End<input type="date" value={customRange.to} onChange={(event) => setCustomRange((current) => ({ ...current, to: event.target.value }))} className="rounded-lg border border-white/15 bg-[#111f33] px-3 py-2 text-white" /></label>
+      </div>}
+      <div className="mt-3 flex flex-wrap items-center gap-4">
         <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300"><input type="checkbox" checked={paidOnly} onChange={(event) => setPaidOnly(event.target.checked)} className="h-4 w-4 accent-blue-500" /> Solo facturas pagadas</label>
-        <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300">Período <select value={dateScope} onChange={(event) => setDateScope(event.target.value)} className="rounded-lg border border-white/15 bg-[#111f33] px-2 py-1 text-white"><option value="all">Todo el historial</option><option value="selected">Rango seleccionado</option></select></label>
       </div>
       {exportError && <p role="alert" className="mt-3 text-sm font-semibold text-red-300">{exportError}</p>}
       <div className="mt-4 overflow-x-auto rounded-xl border border-white/10">

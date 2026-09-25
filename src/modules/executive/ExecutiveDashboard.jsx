@@ -258,7 +258,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
         </section>
 
         <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} generatedBy={generatedBy} canViewFinancial={canViewFinancial} />
-        <PaymentMethodsReport jobs={jobs} filteredJobs={filteredJobs} periodLabel={periodLabel} generatedBy={generatedBy} />
+        <PaymentMethodsReport jobs={jobs} generatedBy={generatedBy} />
 
         <div>
           <main className="space-y-6">
