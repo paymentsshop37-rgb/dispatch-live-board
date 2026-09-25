@@ -1622,7 +1622,7 @@ async function uploadPhoto(jobId, file, documentType = "Job photo") {
     }
 const newActivity = {
   id: Date.now(),
-  message: `${currentUserName || "Dispatcher"} deleted job ${deletedJob?.reference || deletedJob?.company || id}`,
+  message: `${currentUserName || "Dispatcher"} deleted job ${deletedJob?.displayNumber || deletedJob?.reference || deletedJob?.company || id}`,
   time: formatDateTime12Hour(new Date()),
 };
 
@@ -1632,7 +1632,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
     job_id: id,
     action: "deleted",
     field_name: "job",
-    old_value: deletedJob?.reference || deletedJob?.company || String(id),
+    old_value: deletedJob?.displayNumber || deletedJob?.reference || deletedJob?.company || String(id),
     new_value: "",
     user_name: currentUserName || "Dispatcher",
     month_key: new Date().toISOString().slice(0, 7)
@@ -2959,7 +2959,9 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                   <p className="mt-2 text-sm text-slate-600">This action will permanently remove the selected job. This cannot be undone.</p>
 
                   <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm">
-                    <p className="font-bold">{jobToDelete.reference || "No Invoice #"}</p>
+                    <p className="font-bold">Job #{jobToDelete.displayNumber || (sortedJobs.findIndex((job) => job.id === jobToDelete.id) + 1) || "?"}</p>
+                    <p className="text-slate-500">Invoice: {jobToDelete.reference || "No Invoice #"}</p>
+                    <p className="text-slate-500">{jobToDelete.date || "No date"} · {formatTime12Hour(jobToDelete.time) || "No time"}</p>
                     <p className="text-slate-500">{jobToDelete.company}</p>
                     <p className="text-slate-500">{jobToDelete.location}</p>
                   </div>

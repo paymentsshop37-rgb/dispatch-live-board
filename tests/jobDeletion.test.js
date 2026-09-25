@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 
 const migrationUrl = new URL("../supabase/migrations/20260821000100_safe_job_deletion.sql", import.meta.url);
 const accountingAuditMigrationUrl = new URL(
@@ -69,4 +69,28 @@ test("accounting audit history is preserved and only its job FK may be detached 
   assert.match(sql, /to_jsonb\(new\) - 'job_id'.*=.*to_jsonb\(old\) - 'job_id'/i);
   assert.doesNotMatch(sql, /delete from public\.accounting_audit_log/i);
   assert.match(sql, /Accounting audit history is immutable\./i);
+});
+
+test("the latest technician audit trigger preserves history during job deletion and user detachment", async () => {
+  const migrationDirectory = new URL("../supabase/migrations/", import.meta.url);
+  const migrations = (await readdir(migrationDirectory)).filter((name) => name.endsWith(".sql")).sort();
+  let latestDefinition = "";
+  for (const migration of migrations) {
+    const sql = await readFile(new URL(migration, migrationDirectory), "utf8");
+    const match = sql.match(/create or replace function public\.prevent_technician_payment_audit_mutation\(\)[\s\S]*?\$\$;/i);
+    if (match) latestDefinition = match[0];
+  }
+  assert.match(latestDefinition, /tg_op = 'UPDATE'[\s\S]*app\.safe_job_delete[\s\S]*new\.deleted_job_id = old\.job_id/i);
+  assert.match(latestDefinition, /tg_op = 'UPDATE'[\s\S]*app\.user_profile_delete/i);
+  assert.match(latestDefinition, /Technician payment audit history is immutable\./i);
+});
+
+test("the latest delete RPC detaches technician audit rows without deleting them", async () => {
+  const sql = await readFile(new URL("../supabase/migrations/20260925000100_restore_job_deletion_audit_exception.sql", import.meta.url), "utf8");
+  assert.match(sql, /alter column job_id drop not null/i);
+  assert.match(sql, /update public\.technician_payment_audit[\s\S]*set deleted_job_id = job_id, job_id = null/i);
+  assert.doesNotMatch(sql, /delete from public\.technician_payment_audit/i);
+  assert.match(sql, /public\.invoice_payments where job_id = p_job_id/i);
+  assert.match(sql, /public\.technician_payment_transactions where job_id = p_job_id/i);
+  assert.match(sql, /to_regclass\('public\.job_files'\)/i);
 });
