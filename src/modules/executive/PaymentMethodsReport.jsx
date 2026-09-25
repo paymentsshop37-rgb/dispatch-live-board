@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Download, FileText } from "lucide-react";
+import { Download, FileText, Printer } from "lucide-react";
 import { buildPaymentMethodsReport } from "./paymentMethodSummary.js";
 
 const columns = ["Método de pago", "Letra A", "Letra B", "Sin letra", "Total"];
@@ -75,6 +75,19 @@ export default function PaymentMethodsReport({ jobs, filteredJobs, periodLabel, 
     }
   }
 
+  function printReport() {
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      setExportError("Permite las ventanas emergentes para imprimir el reporte.");
+      return;
+    }
+    setExportError("");
+    const body = [...rows.map((row) => [row.method, row.a, row.b, row.unassigned, row.total]), ["TOTAL", totals.a, totals.b, totals.unassigned, totals.total]]
+      .map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
+    printWindow.document.write(`<!doctype html><html><head><title>Métodos de pago A/B</title><style>body{font:12px Arial,sans-serif;color:#172033;padding:24px}h1{font-size:20px;margin:0 0 8px}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{padding:9px;border-bottom:1px solid #cbd5e1}th{background:#163a63;color:white;text-align:right}th:first-child,td:first-child{text-align:left}td{text-align:right}tbody tr:last-child{font-weight:bold;background:#edf2f7}@media print{body{padding:0}@page{margin:14mm}}</style></head><body><h1>Métodos de pago por letra A y B</h1><p>${escapeHtml(scope)} · ${escapeHtml(reportPeriod)} · ${totals.total} registros</p><table><thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
+    printWindow.document.close();
+  }
+
   return (
     <section className="rounded-2xl border border-white/10 bg-[#0b1728] p-5 text-slate-100">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -85,6 +98,7 @@ export default function PaymentMethodsReport({ jobs, filteredJobs, periodLabel, 
         <div className="flex flex-wrap gap-2">
           <button type="button" disabled={exporting} onClick={exportExcel} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-bold hover:bg-white/10 disabled:opacity-50"><Download className="h-4 w-4" /> Excel</button>
           <button type="button" disabled={exporting} onClick={exportPdf} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-bold hover:bg-white/10 disabled:opacity-50"><FileText className="h-4 w-4" /> PDF</button>
+          <button type="button" onClick={printReport} className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-2 text-sm font-bold hover:bg-white/10"><Printer className="h-4 w-4" /> Imprimir</button>
         </div>
       </div>
       <div className="mt-4 flex flex-wrap items-center gap-4">
@@ -111,4 +125,8 @@ function download(blob, filename) {
   link.download = filename;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 }
