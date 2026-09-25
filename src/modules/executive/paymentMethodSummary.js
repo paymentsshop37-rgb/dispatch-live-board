@@ -84,3 +84,13 @@ export function paymentMethodFinancialRows(report) {
     ...row.financial[key],
   })));
 }
+
+export function paymentMethodTotalRows(report) {
+  const { totals } = report;
+  return [
+    { method: "TOTAL", letter: "A", jobs: totals.a, ...totals.financial.a },
+    { method: "TOTAL", letter: "B", jobs: totals.b, ...totals.financial.b },
+    ...(totals.unassigned > 0 ? [{ method: "TOTAL", letter: "Sin letra", jobs: totals.unassigned, ...totals.financial.unassigned }] : []),
+    { method: "TOTAL GENERAL", letter: "", jobs: totals.total, ...totals.financial.total },
+  ];
+}

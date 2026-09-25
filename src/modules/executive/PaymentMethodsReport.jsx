@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Download, FileText, Printer } from "lucide-react";
-import { buildPaymentMethodsReport, filterPaymentReportJobs, paymentMethodFinancialRows, paymentReportPeriods } from "./paymentMethodSummary.js";
+import { buildPaymentMethodsReport, filterPaymentReportJobs, paymentMethodFinancialRows, paymentMethodTotalRows, paymentReportPeriods } from "./paymentMethodSummary.js";
 
 const columns = ["Método de pago", "Letra A", "Letra B", "Sin letra", "Total"];
 const financialColumns = ["Método de pago", "Letra", "Facturas", "Total Bill", "Cobrado registrado", "Profit estimado"];
@@ -17,13 +17,8 @@ export default function PaymentMethodsReport({ jobs, paymentSummaries = [], paym
   const report = useMemo(() => buildPaymentMethodsReport(reportJobs, { paidOnly, paymentSummaries }), [reportJobs, paidOnly, paymentSummaries]);
   const { rows, totals } = report;
   const financialRows = useMemo(() => paymentMethodFinancialRows(report), [report]);
-  const financialTableRows = useMemo(() => [
-    ...financialRows,
-    ...[["a", "A"], ["b", "B"], ["unassigned", "Sin letra"]]
-      .filter(([key]) => totals[key] > 0)
-      .map(([key, letter]) => ({ method: "TOTAL", letter, jobs: totals[key], ...totals.financial[key] })),
-    { method: "TOTAL GENERAL", letter: "", jobs: totals.total, ...totals.financial.total },
-  ], [financialRows, totals]);
+  const financialTotalsRows = useMemo(() => paymentMethodTotalRows(report), [report]);
+  const financialTableRows = [...financialRows, ...financialTotalsRows];
   const scope = paidOnly ? "Facturas pagadas" : "Todos los trabajos";
   const paymentNote = paymentsLoaded
     ? `Facturas pagadas sin cobro registrado: ${totals.financial.total.paidWithoutRecord}. El periodo usa la fecha del trabajo; cobrado suma sus pagos no anulados, aunque se hayan recibido en otra fecha. Profit estimado = Total Bill - Parts - Tech Labor.`
@@ -108,9 +103,22 @@ export default function PaymentMethodsReport({ jobs, paymentSummaries = [], paym
         startY: detailY + 10,
         margin: { left: 36, right: 36 },
         head: [financialColumns],
-        body: financialTableRows.map((entry) => [entry.method, entry.letter, entry.jobs, money(entry.billed), paymentsLoaded ? money(entry.collected) : "No disponible", money(entry.profit)]),
+        body: financialRows.map((entry) => [entry.method, entry.letter, entry.jobs, money(entry.billed), paymentsLoaded ? money(entry.collected) : "No disponible", money(entry.profit)]),
         theme: "striped",
         styles: { fontSize: 8 },
+        headStyles: { fillColor: [22, 58, 99] },
+        didParseCell: ({ cell, column }) => { cell.styles.halign = column.index >= 2 ? "right" : "left"; },
+      });
+      let totalsY = doc.lastAutoTable.finalY + 12;
+      if (totalsY + 30 + financialTotalsRows.length * 28 > 755) { doc.addPage(); totalsY = 44; }
+      autoTable(doc, {
+        startY: totalsY,
+        margin: { left: 36, right: 36 },
+        head: [financialColumns],
+        body: financialTotalsRows.map((entry) => [entry.method, entry.letter, entry.jobs, money(entry.billed), paymentsLoaded ? money(entry.collected) : "No disponible", money(entry.profit)]),
+        theme: "striped",
+        pageBreak: "avoid",
+        styles: { fontSize: 8, fontStyle: "bold" },
         headStyles: { fillColor: [22, 58, 99] },
         didParseCell: ({ cell, column }) => { cell.styles.halign = column.index >= 2 ? "right" : "left"; },
       });
@@ -137,8 +145,11 @@ export default function PaymentMethodsReport({ jobs, paymentSummaries = [], paym
     setExportError("");
     const body = [...rows.map((row) => [row.method, row.a, row.b, row.unassigned, row.total]), ["TOTAL", totals.a, totals.b, totals.unassigned, totals.total]]
       .map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
-    const amounts = financialTableRows.map((entry) => `<tr>${[entry.method, entry.letter, entry.jobs, money(entry.billed), paymentsLoaded ? money(entry.collected) : "No disponible", money(entry.profit)].map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
-    printWindow.document.write(`<!doctype html><html><head><title>Métodos de pago A/B</title><style>body{font:12px Arial,sans-serif;color:#172033;padding:24px}h1{font-size:20px;margin:0 0 8px}h2{font-size:15px;margin:28px 0 0}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{padding:9px;border-bottom:1px solid #cbd5e1}th{background:#163a63;color:white;text-align:right}th:first-child,td:first-child,.financial th:nth-child(2),.financial td:nth-child(2){text-align:left}td{text-align:right}tbody tr:last-child{font-weight:bold;background:#edf2f7}tr{break-inside:avoid}@media print{body{padding:0}@page{margin:14mm}}</style></head><body><h1>Métodos de pago por letra A y B</h1><p>${escapeHtml(scope)} · ${escapeHtml(reportPeriod)} · ${totals.total} registros</p><table><thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table><h2>Montos por método y letra</h2><table class="financial"><thead><tr>${financialColumns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${amounts}</tbody></table><p>${escapeHtml(paymentNote)}</p><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
+    const amountRow = (entry) => `<tr>${[entry.method, entry.letter, entry.jobs, money(entry.billed), paymentsLoaded ? money(entry.collected) : "No disponible", money(entry.profit)].map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`;
+    const amounts = financialRows.map(amountRow).join("");
+    const amountTotals = financialTotalsRows.map(amountRow).join("");
+    const financialHead = `<thead><tr>${financialColumns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead>`;
+    printWindow.document.write(`<!doctype html><html><head><title>Métodos de pago A/B</title><style>body{font:12px Arial,sans-serif;color:#172033;padding:24px}h1{font-size:20px;margin:0 0 8px}h2{font-size:15px;margin:28px 0 0}h3{font-size:13px;margin:20px 0 0}p{color:#475569}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{padding:9px;border-bottom:1px solid #cbd5e1}th{background:#163a63;color:white;text-align:right}th:first-child,td:first-child,.financial th:nth-child(2),.financial td:nth-child(2){text-align:left}td{text-align:right}.count-table tbody tr:last-child,.totals-table tbody tr{font-weight:bold;background:#edf2f7}tr,.totals-block{break-inside:avoid;page-break-inside:avoid}.totals-table{margin-top:8px}@media print{body{padding:0}@page{margin:14mm}}</style></head><body><h1>Métodos de pago por letra A y B</h1><p>${escapeHtml(scope)} · ${escapeHtml(reportPeriod)} · ${totals.total} registros</p><table class="count-table"><thead><tr>${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}</tr></thead><tbody>${body}</tbody></table><h2>Montos por método y letra</h2><table class="financial">${financialHead}<tbody>${amounts}</tbody></table><section class="totals-block"><h3>Totales por letra</h3><table class="financial totals-table">${financialHead}<tbody>${amountTotals}</tbody></table></section><p>${escapeHtml(paymentNote)}</p><script>window.onload=()=>{window.focus();window.print()}</script></body></html>`);
     printWindow.document.close();
   }
 

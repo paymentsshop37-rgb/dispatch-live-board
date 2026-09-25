@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPaymentMethodsReport, filterPaymentReportJobs, paymentMethodFinancialRows, paymentReportDateRange, paymentReportPeriods } from "../src/modules/executive/paymentMethodSummary.js";
+import { buildPaymentMethodsReport, filterPaymentReportJobs, paymentMethodFinancialRows, paymentMethodTotalRows, paymentReportDateRange, paymentReportPeriods } from "../src/modules/executive/paymentMethodSummary.js";
 
 const jobs = [
   { id: "1", invoiceStatus: "Paid", paymentMethod: "Card", paymentReceiver: "A", totalBill: 100, parts: 10, techLabor: 20 },
@@ -32,6 +32,13 @@ test("printed amount rows separate billed, recorded collections and estimated pr
     method: "Card", letter: "B", jobs: 1, billed: 200, collected: 200, profit: 150, paidWithoutRecord: 0,
   });
   assert.deepEqual(report.totals.financial.total, { billed: 420, collected: 290, profit: 310, paidWithoutRecord: 3 });
+  assert.deepEqual(paymentMethodTotalRows(report).map(({ letter, jobs }) => [letter, jobs]), [["A", 2], ["B", 2], ["Sin letra", 1], ["", 5]]);
+});
+
+test("printed totals always include both letters, even when one has no invoices", () => {
+  const report = buildPaymentMethodsReport([jobs[1]]);
+  const totals = paymentMethodTotalRows(report);
+  assert.deepEqual(totals.map(({ letter, jobs, billed, profit }) => [letter, jobs, billed, profit]), [["A", 0, 0, 0], ["B", 1, 200, 150], ["", 1, 200, 150]]);
 });
 
 test("all-jobs scope includes pending invoices and reconciles method totals", () => {
