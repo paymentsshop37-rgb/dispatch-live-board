@@ -33,6 +33,7 @@ import {
 } from "../../utils/techPaymentStatus";
 import { InternalControlQueue } from "./InternalControlQueue";
 import StatusJobsReport from "./StatusJobsReport";
+import PaymentMethodsReport from "./PaymentMethodsReport";
 import { buildOutstandingSentInvoices, normalizeAccountingJob } from "../accounting/accountingData.js";
 
 const columnAliases = {
@@ -49,6 +50,7 @@ const columnAliases = {
   dispatch: ["dispatch", "dispatcher", "dispatcher_name", "assigned_by"],
   technician: ["tech", "technician", "technician_name"],
   paymentMethod: ["payment_method", "paymentMethod"],
+  paymentReceiver: ["received", "paymentReceiver"],
   invoiceStatus: ["invoice_status", "billing_status"],
   totalBill: ["total_bill", "totalBill", "amount", "invoice_total"],
   parts: ["parts", "parts_cost", "partsCost"],
@@ -256,6 +258,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
         </section>
 
         <InternalControlQueue ref={internalControlQueueRef} jobs={jobs} onOpenJob={onOpenJob} generatedBy={generatedBy} canViewFinancial={canViewFinancial} />
+        <PaymentMethodsReport jobs={jobs} filteredJobs={filteredJobs} periodLabel={periodLabel} generatedBy={generatedBy} />
 
         <div>
           <main className="space-y-6">
@@ -1067,6 +1070,7 @@ function normalizeJob(row) {
     dispatch: stringValue(readAlias(row, columnAliases.dispatch)) || "Unassigned",
     technician: stringValue(readAlias(row, columnAliases.technician)) || "Unassigned",
     paymentMethod: stringValue(readAlias(row, columnAliases.paymentMethod)) || "Unknown",
+    paymentReceiver: stringValue(readAlias(row, columnAliases.paymentReceiver)),
     invoiceStatus: titleCase(stringValue(readAlias(row, columnAliases.invoiceStatus)) || "Pending"),
     totalBill,
     parts,
