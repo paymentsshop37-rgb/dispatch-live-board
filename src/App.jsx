@@ -122,6 +122,8 @@ function Application() {
   const [session, setSession] = useState(emptySession());
   const [authLoading, setAuthLoading] = useState(true);
   const [authMessage, setAuthMessage] = useState("");
+  const [profileVerificationError, setProfileVerificationError] = useState(false);
+  const [profileRetryKey, setProfileRetryKey] = useState(0);
   const [alertJobs, setAlertJobs] = useState([]);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -182,7 +184,9 @@ function Application() {
 
   const resetApplicationState = useCallback(() => {
     authValidationId.current += 1;
+    isAuthenticatedRef.current = false;
     setSession(emptySession());
+    setProfileVerificationError(false);
     setActiveView("dispatch");
     setAlertJobs([]);
     setAlertsOpen(false);
@@ -300,15 +304,18 @@ function Application() {
         }
         if (mounted && !manualLogout.current && validationId === authValidationId.current) {
           const verifiedSession = profileToSession(profile, authSession);
+          isAuthenticatedRef.current = verifiedSession.isAuthenticated;
           setSession(verifiedSession);
+          setProfileVerificationError(false);
           void startSessionAudit(verifiedSession);
           if (window.location.pathname === "/login" && currentPathRef.current !== "/dispatch/jobs/new") {
             updateCurrentPath("/dispatch-board", "signed-in", { replace: true });
           }
         }
-      } catch {
-        if (mounted && !isAuthenticatedRef.current) {
-          await handleLogout("session_invalid", "Unable to verify your account profile.");
+      } catch (error) {
+        if (mounted && validationId === authValidationId.current && !isAuthenticatedRef.current) {
+          console.warn("[AuthEvent] profile verification failed", { sourceEvent, code: error?.code || null, status: error?.status || null });
+          setProfileVerificationError(true);
         } else {
           console.warn("[AuthEvent] transient profile refresh failure ignored", sourceEvent);
         }
@@ -319,6 +326,7 @@ function Application() {
     supabase.auth.getSession().then(({ data }) => validate(data?.session, "INITIAL_LOAD"));
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       console.log("[AuthEvent]", event);
+      if (event === "INITIAL_SESSION") return;
       if (event === "SIGNED_OUT") {
         manualLogout.current = true;
         clearCustomAuthStorage();
@@ -338,7 +346,7 @@ function Application() {
       window.setTimeout(() => validate(nextSession, event), 0);
     });
     return () => { mounted = false; data?.subscription?.unsubscribe(); };
-  }, [handleLogout, redirectToLogin, resetApplicationState, updateCurrentPath]);
+  }, [handleLogout, profileRetryKey, redirectToLogin, resetApplicationState, updateCurrentPath]);
 
   useEffect(() => {
     const authUserId = session.authUserId || session.id;
@@ -360,8 +368,8 @@ function Application() {
   }, [handleLogout, session.authUserId, session.id]);
 
   useEffect(() => {
-    if (!authLoading && !isAuthenticated && !isPublicRegistration) redirectToLogin();
-  }, [authLoading, isAuthenticated, isPublicRegistration, redirectToLogin]);
+    if (!authLoading && !isAuthenticated && !profileVerificationError && !isPublicRegistration) redirectToLogin();
+  }, [authLoading, isAuthenticated, isPublicRegistration, profileVerificationError, redirectToLogin]);
 
   useEffect(() => {
     const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel(logoutChannelName) : null;
@@ -554,6 +562,13 @@ function Application() {
   }
 
   if (authLoading) return <div className="flex min-h-screen items-center justify-center bg-slate-950 font-bold text-white">Loading...</div>;
+
+  if (profileVerificationError) {
+    return <ProfileVerificationScreen
+      onRetry={() => { setAuthLoading(true); setProfileVerificationError(false); setProfileRetryKey((key) => key + 1); }}
+      onSignOut={() => handleLogout("manual_logout")}
+    />;
+  }
 
   if (isAuthenticated && session.forcePasswordChange) {
     return <ChangePasswordScreen userId={session.id} onComplete={() => setSession((current) => ({ ...current, forcePasswordChange: false }))} />;
@@ -816,6 +831,19 @@ function viewTitle(view) {
   };
 
   return titles[view] || "Dispatch Center";
+}
+
+function ProfileVerificationScreen({ onRetry, onSignOut }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
+        <h1 className="text-2xl font-bold text-slate-900">Unable to verify your account profile</h1>
+        <p className="mt-3 text-sm text-slate-600">Your sign-in was accepted, but we could not load your profile. Your account access remains locked until verification succeeds.</p>
+        <button type="button" onClick={onRetry} className="mt-6 w-full rounded-xl bg-blue-600 px-4 py-3 font-bold text-white">Try again</button>
+        <button type="button" onClick={onSignOut} className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 font-bold text-slate-700">Sign out</button>
+      </div>
+    </div>
+  );
 }
 
 function LoginScreen({ message, onMessage, onLoginStarted }) {

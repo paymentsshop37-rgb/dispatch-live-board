@@ -2,13 +2,24 @@ import { supabase } from "./lib/supabase";
 
 export async function loadCurrentProfile(userId) {
   if (!userId) return null;
-  const { data, error } = await supabase
-    .from("app_users")
-    .select("*")
-    .or(`auth_user_id.eq.${userId},id.eq.${userId}`)
-    .single();
-  if (error) throw error;
-  return data;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { data, error } = await supabase
+      .from("app_users")
+      .select("*")
+      .or(`auth_user_id.eq.${userId},id.eq.${userId}`)
+      .single();
+    if (!error) return data;
+    if (attempt === 2 || !isRetryableProfileError(error)) throw error;
+    await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+  }
+  return null;
+}
+
+function isRetryableProfileError(error) {
+  const status = Number(error?.status || 0);
+  return status === 406 || status === 408 || status === 429 || status >= 500 ||
+    ["PGRST002", "PGRST116"].includes(error?.code) ||
+    /fetch|network|timeout/i.test(String(error?.message || ""));
 }
 
 export function profileToSession(profile, authSession) {
