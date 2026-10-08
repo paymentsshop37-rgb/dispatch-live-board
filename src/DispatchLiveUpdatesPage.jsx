@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
+import { loadBoardJobs } from "./modules/jobs/loadBoardJobs";
 import { logActivity } from "./modules/activity";
 import { compareTechniciansByAssignedNumber, loadTechnicians } from "./modules/technicians/technicianService";
 import { canEditTechPayment as roleCanEditTechPayment, getPermissions, normalizeRole } from "./modules/permissions";
@@ -390,6 +391,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const horizontalSyncLockRef = useRef(false);
   const [dispatchTableWidth, setDispatchTableWidth] = useState(1720);
   const [jobs, setJobs] = useState([]);
+  const jobsLoadRequestRef = useRef(0);
   const [accessGranted] = useState(true);
   const [currentUserRole, setCurrentUserRole] = useState(
     currentUser?.role || null
@@ -912,15 +914,17 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
 
   async function loadJobs() {
     if (import.meta.env.DEV) console.debug("[dispatch] dashboard refresh");
-    const { data, error } = await supabase
-      .from("jobs")
-      .select("*, reference_number")
-      .order("job_date", { ascending: true });
-
-    if (error) {
+    const requestId = ++jobsLoadRequestRef.current;
+    let data;
+    try {
+      data = await loadBoardJobs(supabase);
+    } catch (error) {
+      if (requestId !== jobsLoadRequestRef.current) return;
       console.error("Error loading jobs:", error.message);
+      setToastMessage("Unable to refresh jobs. Please press Refresh to try again.");
       return;
     }
+    if (requestId !== jobsLoadRequestRef.current) return;
 
     configureJobsColumnSupport(data || []);
     setJobs((data || []).map(fromDbJob));
