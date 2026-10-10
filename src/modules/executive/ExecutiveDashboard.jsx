@@ -19,6 +19,8 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { loadBoardJobs } from "../jobs/loadBoardJobs.js";
+import { jobStatusBucket, jobStatusSummary } from "../jobs/jobStatusSummary.js";
 import { formatDateTime12Hour, formatTime12Hour } from "../../utils/timeFormat";
 import CitiesWithoutJobsPanel from "../coverage/CitiesWithoutJobsPanel";
 import { buildCitiesWithoutJobs, loadCoverageCities, normalizeCoverageCity, normalizeState, setCoverageCityActive } from "../coverage/coverageCityService";
@@ -126,11 +128,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
       }
     }
     await Promise.all([
-      loadResource(async () => {
-        const { data, error } = await supabase.from("jobs").select("*");
-        if (error) throw error;
-        return data || [];
-      }, (rows) => {
+      loadResource(() => loadBoardJobs(supabase), (rows) => {
         setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
         setLastSync(new Date());
       }, "Unable to load dashboard data. Dispatch Board is still available."),
@@ -890,11 +888,7 @@ function buildAnalytics(rows) {
   const profit = revenue - expenses;
   const today = localDate(new Date());
   const todayRows = rows.filter((job) => job.date === today);
-  const completed = rows.filter((job) => matchesStatusMetric(job.status, "completed")).length;
-  const cancelled = rows.filter((job) => matchesStatusMetric(job.status, "cancelled")).length;
-  const dryRuns = rows.filter((job) => matchesStatusMetric(job.status, "dryRuns")).length;
-  const pending = rows.filter((job) => matchesStatusMetric(job.status, "pending")).length;
-  const inProgress = Math.max(rows.length - completed - cancelled - dryRuns - pending, 0);
+  const { completed, cancelled, dryRuns, pending, inProgress } = jobStatusSummary(rows);
   const avgEta = average(rows.map((job) => job.etaMinutes).filter((value) => value > 0));
 
   return {
@@ -1295,11 +1289,7 @@ function isPending(status) {
 }
 
 function matchesStatusMetric(status, key) {
-  if (key === "completed") return isCompleted(status);
-  if (key === "cancelled") return isCancelled(status);
-  if (key === "pending") return isPending(status);
-  if (key === "dryRuns") return normalized(status).includes("dry");
-  return false;
+  return jobStatusBucket(status) === key;
 }
 
 function formatPeriodLabel(mode, range) {

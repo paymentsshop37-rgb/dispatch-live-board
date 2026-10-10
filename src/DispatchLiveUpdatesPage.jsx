@@ -34,6 +34,7 @@ import {
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
 import { loadBoardJobs } from "./modules/jobs/loadBoardJobs";
+import { jobStatusSummary } from "./modules/jobs/jobStatusSummary.js";
 import { logActivity } from "./modules/activity";
 import { compareTechniciansByAssignedNumber, loadTechnicians } from "./modules/technicians/technicianService";
 import { canEditTechPayment as roleCanEditTechPayment, getPermissions, normalizeRole } from "./modules/permissions";
@@ -1117,10 +1118,11 @@ return (
   const recentDispatchers = useMemo(() => recentValues(jobs, "dispatch"), [jobs]);
 
   const stats = useMemo(() => {
+   const statusCounts = jobStatusSummary(filteredJobs);
    return {
   total: filteredJobs.length,
   activeJobs: filteredJobs.filter((j) => !["Completed", "Canceled", "Cancelled", "Paid"].includes(j.status)).length,
-  pendingJobs: filteredJobs.filter((j) => ["New", "Pending"].includes(j.status)).length,
+  pendingJobs: statusCounts.pending,
   techPaymentsPendingAll: jobs.filter((job) => String(job.techPaymentStatus || "").trim().toLowerCase() === "pending").length,
   newJobs: filteredJobs.filter((j) => j.status === "New").length,
   assigned: filteredJobs.filter((j) => j.status === "Assigned").length,
@@ -1129,10 +1131,10 @@ return (
   completedToday: filteredJobs.filter((j) => j.status === "Completed" && j.date === new Date().toISOString().slice(0, 10)).length,
   revenueToday: filteredJobs.filter((j) => j.date === new Date().toISOString().slice(0, 10)).reduce((sum, job) => sum + Number(job.totalBill || 0), 0),
   averageEta: averageEta(filteredJobs),
-  inProgress: filteredJobs.filter((j) => j.status === "In Progress").length,
-  completed: filteredJobs.filter((j) => j.status === "Completed").length,
-  canceled: filteredJobs.filter((j) => j.status === "Canceled" || j.status === "Cancelled").length,
-  dryRuns: filteredJobs.filter((j) => j.status === "Dry Run").length,
+  inProgress: statusCounts.inProgress,
+  completed: statusCounts.completed,
+  canceled: statusCounts.cancelled,
+  dryRuns: statusCounts.dryRuns,
   weeklyJobs: filteredJobs.length,
   monthlyJobs: filteredJobs.length,
      
@@ -3562,7 +3564,7 @@ function PaymentDetail({ label, value, highlight = false }) {
 function dispatchKpis(stats, isAdmin) {
   return [
     { icon: ClipboardList, label: "Total Jobs", value: stats.total, accent: "blue" },
-    { icon: Clock, label: "In Progress", value: stats.inProgress + stats.working + stats.enRoute, accent: "amber" },
+    { icon: Clock, label: "In Progress", value: stats.inProgress, accent: "amber" },
     { icon: CheckCircle2, label: "Completed", value: stats.completed, accent: "emerald" },
     { icon: AlertTriangle, label: "Cancelled", value: stats.canceled, accent: "red" },
     { icon: BellRing, label: "Pending", value: stats.pendingJobs, accent: "cyan" },
