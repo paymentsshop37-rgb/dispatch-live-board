@@ -19,6 +19,8 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { useDataSync } from "../../lib/useDataSync.js";
+import { loadAllRows } from "../../lib/loadAllRows.js";
 import { loadBoardJobs } from "../jobs/loadBoardJobs.js";
 import { jobStatusBucket, jobStatusSummary } from "../jobs/jobStatusSummary.js";
 import { formatDateTime12Hour, formatTime12Hour } from "../../utils/timeFormat";
@@ -84,38 +86,44 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
   const [invoicePaymentsLoaded, setInvoicePaymentsLoaded] = useState(false);
   const internalControlQueueRef = useRef(null);
   const dashboardRequest = useRef(0);
+  const financialRequest = useRef(0);
 
   useEffect(() => {
     loadDashboard();
-    return () => { dashboardRequest.current += 1; };
+    return () => { dashboardRequest.current += 1; financialRequest.current += 1; };
   }, []);
 
-  useEffect(() => {
-    const channel = supabase
-      .channel("executive-dashboard-jobs")
-      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, ({ eventType, new: nextRow, old: previousRow }) => {
-        if (eventType === "DELETE") {
-          setJobs((current) => current.filter((job) => String(job.id) !== String(previousRow?.id)));
-          return;
-        }
-        const nextJob = normalizeJob(nextRow);
-        setJobs((current) => {
-          const exists = current.some((job) => String(job.id) === String(nextJob.id));
-          const next = exists
-            ? current.map((job) => String(job.id) === String(nextJob.id) ? nextJob : job)
-            : [nextJob, ...current];
-          return next.sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
-        });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
+  useDataSync(loadFinancialData, ["jobs", "invoice_payments", "technician_payment_transactions"]);
+  useDataSync(async () => {
+    const [cities, techRows, configuration] = await Promise.all([
+      loadCoverageCities({ includeInactive: true }), loadTechnicians(), loadServiceAreaConfiguration({ includeInactive: true }),
+    ]);
+    setCoverageCities(cities); setTechnicians(techRows);
+    setServiceAreas(configuration.areas); setServiceAreaAliases(configuration.aliases);
+  }, ["technicians", "service_areas", "service_area_city_aliases", "coverage_cities"], true, 120000);
 
-  async function loadDashboard() {
+  async function loadFinancialData() {
+    const request = ++financialRequest.current;
+    const [jobResult, paymentResult] = await Promise.allSettled([
+      loadBoardJobs(supabase), loadAllRows(() => supabase.rpc("get_invoice_payment_summary").order("job_id")),
+    ]);
+    if (request !== financialRequest.current) return;
+    const messages = [];
+    if (jobResult.status === "fulfilled") {
+      setJobs(jobResult.value.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
+      setLastSync(new Date());
+    } else messages.push("Unable to refresh dashboard jobs.");
+    if (paymentResult.status === "fulfilled") {
+      setInvoicePaymentSummaries(paymentResult.value); setInvoicePaymentsLoaded(true);
+    } else messages.push("Outstanding invoice balances unavailable.");
+    if (messages.length) setWarnings(current => [...new Set([...current, ...messages])]);
+  }
+
+  async function loadDashboard(background = false) {
     const request = ++dashboardRequest.current;
-    setLoading(true);
+    if (!background) setLoading(true);
     setWarnings([]);
-    setInvoicePaymentsLoaded(false);
+    if (!background) setInvoicePaymentsLoaded(false);
     // Publish each resource immediately; coverage aliases must not block KPIs.
     async function loadResource(load, apply, message) {
       try {
@@ -128,15 +136,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
       }
     }
     await Promise.all([
-      loadResource(() => loadBoardJobs(supabase), (rows) => {
-        setJobs(rows.map(normalizeJob).sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`)));
-        setLastSync(new Date());
-      }, "Unable to load dashboard data. Dispatch Board is still available."),
-      loadResource(async () => {
-        const { data, error } = await supabase.rpc("get_invoice_payment_summary");
-        if (error) throw error;
-        return data || [];
-      }, (rows) => { setInvoicePaymentSummaries(rows); setInvoicePaymentsLoaded(true); }, "Outstanding invoice balances unavailable."),
+      loadResource(loadFinancialData, () => {}, "Unable to load dashboard data. Dispatch Board is still available."),
       loadResource(() => loadCoverageCities({ includeInactive: true }), setCoverageCities, "Coverage cities unavailable."),
       loadResource(loadTechnicians, setTechnicians, "Active technicians unavailable."),
       loadResource(() => loadServiceAreaConfiguration({ includeInactive: true }), (value) => {
@@ -147,7 +147,7 @@ export default function ExecutiveDashboard({ onOpenJob, onOpenTechnicians, onOpe
     if (request === dashboardRequest.current) setLoading(false);
   }
 
-  const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange]);
+  const dateRange = useMemo(() => getDateRange(filterMode, customRange), [filterMode, customRange, lastSync]);
   const filteredJobs = useMemo(() => jobs.filter((job) => isWithinRange(job.date, dateRange)), [jobs, dateRange]);
   const analytics = useMemo(() => buildAnalytics(filteredJobs), [filteredJobs]);
   const outstanding = useMemo(() => buildOutstandingSentInvoices(filteredJobs.map((job) => normalizeAccountingJob(job.raw)), invoicePaymentSummaries), [filteredJobs, invoicePaymentSummaries]);

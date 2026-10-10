@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { supabase } from "./lib/supabase";
+import { useDataSync } from "./lib/useDataSync.js";
+import { subscribeDataSync } from "./lib/dataSync.js";
 import { loadBoardJobs } from "./modules/jobs/loadBoardJobs";
 import { jobStatusSummary } from "./modules/jobs/jobStatusSummary.js";
 import { logActivity } from "./modules/activity";
@@ -765,8 +767,6 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
             ].slice(0, 8));
           }
         }
-        loadJobs();
-
         const audio = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
         audio.play().catch(() => {});
       })
@@ -777,20 +777,9 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
     };
   }, [accessGranted]);
 
-  useEffect(() => {
-    if (!accessGranted) return undefined;
-
-    const channel = supabase
-      .channel("live-dispatch-technicians")
-      .on("postgres_changes", { event: "*", schema: "public", table: "technicians" }, () => {
-        loadDispatchTechnicians();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [accessGranted]);
+  useDataSync(loadJobs, ["jobs", "change_logs"], accessGranted);
+  useDataSync(loadDispatchTechnicians, ["technicians"], accessGranted);
+  useDataSync(loadDispatchCoverageCities, ["coverage_cities", "service_areas", "service_area_city_aliases"], accessGranted, 120000);
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -4409,6 +4398,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
       setLoading(false);
     }
     loadDetails();
+    const stopSync = subscribeDataSync(supabase, ["jobs", "job_files", "job_parts", "job_labor_operations", "change_logs", "activity_log", "technicians", "customers"], () => loadDetails(false));
     const channel = supabase.channel(`job-details-${jobId}`).on(
       "postgres_changes",
       { event: "UPDATE", schema: "public", table: "jobs", filter: `id=eq.${jobId}` },
@@ -4419,7 +4409,7 @@ function JobDetailsDrawer({ jobId, role, currentUserName, onClose, onEdit, onUpd
         if (mounted) setUpdateNotice(`This job was updated by ${editor || "another user"}.`);
       }
     ).subscribe();
-    return () => { mounted = false; supabase.removeChannel(channel); };
+    return () => { mounted = false; stopSync(); supabase.removeChannel(channel); };
   }, [jobId]);
 
   const job = details?.job;

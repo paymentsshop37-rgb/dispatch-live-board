@@ -36,10 +36,10 @@ import {
   loadTechnicians,
   restoreTechnician,
   sortTechniciansByAssignedNumber,
-  subscribeToTechnicians,
   updateTechnician,
 } from "./technicianService";
 import { supabase } from "../../lib/supabase";
+import { useDataSync } from "../../lib/useDataSync.js";
 import {
   createInvitation,
   cancelInvitation,
@@ -169,8 +169,8 @@ export default function TechnicianCenter({ currentUser }) {
   const missingDirectoryColumns = useMemo(() => missingColumns, [missingColumns]);
   const registrationLink = buildRegistrationLink();
 
-  async function refreshTechnicians() {
-    setLoading(true);
+  async function refreshTechnicians(background = false) {
+    if (!background) setLoading(true);
     setError("");
     setInviteError("");
 
@@ -221,8 +221,8 @@ export default function TechnicianCenter({ currentUser }) {
       setActiveTab("Directory");
     }
     refreshTechnicians();
-    return subscribeToTechnicians(refreshTechnicians);
   }, [canApproveTechnicians, canManageInvitations]);
+  useDataSync(() => refreshTechnicians(true), ["technicians", "technician_invitations", "activity_log"]);
 
   const safeTechnicians = technicians;
 

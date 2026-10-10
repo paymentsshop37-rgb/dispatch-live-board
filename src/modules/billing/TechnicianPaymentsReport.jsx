@@ -15,6 +15,8 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { loadBoardJobs } from "../jobs/loadBoardJobs.js";
+import { useDataSync } from "../../lib/useDataSync.js";
 import { formatDateTime12Hour, formatTime12Hour } from "../../utils/timeFormat";
 import {
   groupPaymentsByTechnician,
@@ -63,25 +65,17 @@ export default function TechnicianPaymentsReport({
 
   useEffect(() => {
     loadPendingPayments();
-    const channel = supabase
-      .channel("technician-payments-pending-report")
-      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, loadPendingPayments)
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
   }, []);
+  useDataSync(() => loadPendingPayments(true), ["jobs", "technician_payment_transactions"]);
 
-  async function loadPendingPayments() {
-    setLoading(true);
-    const { data, error: loadError } = await supabase
-      .from("jobs")
-      .select("*")
-      .ilike("tech_payment_status", "Pending");
-    if (loadError) {
-      setError(`Unable to load pending technician payments: ${loadError.message}`);
-      setJobs([]);
-    } else {
+  async function loadPendingPayments(background = false) {
+    if (!background) setLoading(true);
+    try {
+      const data = await loadBoardJobs(supabase);
       setError("");
-      setJobs((data || []).filter(isPendingPayment).map((row) => normalizeTechnicianPayment(row)).sort(oldestPaymentFirst));
+      setJobs(data.filter(isPendingPayment).map((row) => normalizeTechnicianPayment(row)).sort(oldestPaymentFirst));
+    } catch (loadError) {
+      setError(`Unable to load pending technician payments: ${loadError.message}`);
     }
     setLoading(false);
   }

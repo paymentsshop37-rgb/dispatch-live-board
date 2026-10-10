@@ -10,6 +10,7 @@ import {
   Users,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { useDataSync } from "../../lib/useDataSync.js";
 
 const roles = ["Administrator", "Supervisor", "Dispatcher", "Technician Manager"];
 const statuses = ["Active", "Inactive"];
@@ -83,8 +84,10 @@ export default function UserManagement({ currentUser }) {
     window.setTimeout(() => setNotice(null), 4500);
   }
 
-  async function loadUsers() {
-    setLoading(true);
+  useDataSync(() => loadUsers(true), ["app_users"]);
+
+  async function loadUsers(background = false) {
+    if (!background) setLoading(true);
     try {
       const data = await request("GET");
       setUsers((data.users || []).map(normalizeUser));

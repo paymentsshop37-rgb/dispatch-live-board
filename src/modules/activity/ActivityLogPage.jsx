@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useDataSync } from "../../lib/useDataSync.js";
 import {
   CheckCircle2,
   ClipboardList,
@@ -78,8 +79,10 @@ export default function ActivityLogPage({ role = "admin" }) {
     loadActivity();
   }, [role]);
 
-  async function loadActivity() {
-    setLoading(true);
+  useDataSync(() => loadActivity(true), ["activity_log", "session_audit_log"]);
+
+  async function loadActivity(background = false) {
+    if (!background) setLoading(true);
     const rows = await getRecentActivity({ limit: 500 });
     const allowedActions = role === "dispatcher" ? dispatcherActivityActions : SYSTEM_ACTIVITY_ACTIONS;
     setActivity(rows.filter((item) => allowedActions.includes(item.action)));

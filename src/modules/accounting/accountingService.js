@@ -1,19 +1,24 @@
 import { supabase } from "../../lib/supabase";
+import { loadAllRows } from "../../lib/loadAllRows.js";
 import { normalizeAccountingJob } from "./accountingData.js";
 
 export async function loadAccountingWorkspace(range) {
   const [jobsResult, allJobsResult, summaryResult, pendingTechResult, redJobsResult, settingsResult] = await Promise.all([
-    supabase.rpc("get_accounting_jobs", { p_from_date: range?.from || null, p_to_date: range?.to || null }),
-    range ? supabase.rpc("get_accounting_jobs", { p_from_date: null, p_to_date: null }) : Promise.resolve(null),
-    supabase.rpc("get_invoice_payment_summary"),
-    supabase.rpc("get_pending_technician_payment_jobs"),
-    supabase.rpc("get_red_internal_control_jobs"),
+    allRpcRows("get_accounting_jobs", { p_from_date: range?.from || null, p_to_date: range?.to || null }),
+    range ? allRpcRows("get_accounting_jobs", { p_from_date: null, p_to_date: null }) : Promise.resolve(null),
+    allRpcRows("get_invoice_payment_summary", undefined, "job_id"),
+    allRpcRows("get_pending_technician_payment_jobs"),
+    allRpcRows("get_red_internal_control_jobs"),
     supabase.from("accounting_settings").select("*").eq("singleton", true).maybeSingle(),
   ]);
   const error = jobsResult.error || allJobsResult?.error || summaryResult.error || pendingTechResult.error || redJobsResult.error || settingsResult.error;
   if (error) throw error;
   const allRows = allJobsResult?.data || jobsResult.data || [];
   return { jobs: (jobsResult.data || []).map(normalizeAccountingJob), allJobs: allRows.map(normalizeAccountingJob), pendingTechJobs: (pendingTechResult.data || []).map(normalizeAccountingJob), redJobs: (redJobsResult.data || []).map(normalizeAccountingJob), paymentSummaries: summaryResult.data || [], settings: settingsResult.data || null };
+}
+
+async function allRpcRows(name, args, order = "id") {
+  return { data: await loadAllRows(() => supabase.rpc(name, args).order(order)), error: null };
 }
 
 export async function loadAuditPage({ page = 0, pageSize = 50 } = {}) {

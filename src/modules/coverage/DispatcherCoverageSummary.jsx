@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/supabase";
+import { loadBoardJobs } from "../jobs/loadBoardJobs.js";
+import { useDataSync } from "../../lib/useDataSync.js";
 import { loadTechnicians } from "../technicians/technicianService";
 import GeographicCoverageAnalysis from "./GeographicCoverageAnalysis";
 import { buildServiceAreaRows, loadServiceAreaConfiguration, previousDateRange } from "./serviceAreaService";
@@ -11,20 +13,26 @@ export default function DispatcherCoverageSummary() {
   const [technicians, setTechnicians] = useState([]);
   const [error, setError] = useState("");
   const [selection, setSelection] = useState(null);
-  const range = useMemo(currentWeek, []);
-  useEffect(() => {
-    Promise.all([
-      supabase.from("jobs").select("*"),
+  const range = useMemo(currentWeek, [jobs]);
+  function refresh() {
+    return Promise.all([
+      loadBoardJobs(supabase),
       loadServiceAreaConfiguration(),
       loadTechnicians(),
-    ]).then(([jobResult, configuration, techRows]) => {
-      if (jobResult.error) throw jobResult.error;
-      setJobs((jobResult.data || []).map(normalize));
+    ]).then(([jobRows, configuration, techRows]) => {
+      setError("");
+      setJobs(jobRows.map(normalize));
       setAreas(configuration.areas);
       setAliases(configuration.aliases);
       setTechnicians(techRows);
     }).catch((loadError) => setError(loadError.message));
-  }, []);
+  }
+  useEffect(() => { refresh(); }, []);
+  useDataSync(async () => {
+    setJobs((await loadBoardJobs(supabase)).map(normalize));
+    setError("");
+  }, ["jobs"]);
+  useDataSync(refresh, ["technicians", "service_areas", "service_area_city_aliases", "coverage_cities"], true, 120000);
   const filtered = jobs.filter((job) => job.date >= range.from && job.date <= range.to);
   const priorRange = previousDateRange(range);
   const prior = jobs.filter((job) => job.date >= priorRange.from && job.date <= priorRange.to);

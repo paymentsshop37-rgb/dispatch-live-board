@@ -3,6 +3,7 @@ import { summaryHtml } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo, useState } from "react";
 import { Calculator, Copy, FileDown, Plus, Search, Settings2, Trash2, Wrench } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { useDataSync } from "../../lib/useDataSync.js";
 
 const defaults = { tractor_rate: 145, trailer_rate: 135, diagnostic_rate: 155, after_hours_rate: 75, weekend_rate: 75, holiday_rate: 125, minimum_labor_hours: 1, service_call_rate: 95, mileage_rate: 2.25 };
 const blankLine = { parts: 0, shopSupplies: 0, serviceCall: 0, mileage: 0, afterHours: 0, tax: 0, discount: 0 };
@@ -27,6 +28,7 @@ export default function FlatRateGuide({ session, role, onCreateJob }) {
     if (!op.error) setOperations(op.data || []); if (!cat.error) setCategories(cat.data || []); if (rate.data) setRates({ ...defaults, ...rate.data }); if (!job.error) setJobs(job.data || []);
   }
   useEffect(() => { load(); }, []);
+  useDataSync(load, ["jobs", "flat_rate_operations", "flat_rate_categories", "labor_rate_settings"]);
 
   const filtered = useMemo(() => operations.filter((op) => {
     const hay = `${op.operation_name} ${op.component_name} ${op.description} ${op.common_symptoms}`.toLowerCase();

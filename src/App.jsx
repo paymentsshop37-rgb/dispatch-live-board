@@ -26,6 +26,8 @@ import {
   X,
 } from "lucide-react";
 import { clearAuthSession, clearCustomAuthStorage, finishSessionAudit, loadCurrentProfile, profileToSession, startSessionAudit } from "./authUsers";
+import { subscribeDataSync } from "./lib/dataSync.js";
+import { loadBoardJobs } from "./modules/jobs/loadBoardJobs.js";
 import { InternalControlQueue } from "./modules/executive/InternalControlQueue";
 import { formatDateTime12Hour } from "./utils/timeFormat";
 import { canEditTechPayment, getPermissions, normalizeRole } from "./modules/permissions";
@@ -514,21 +516,17 @@ function Application() {
     let mounted = true;
 
     async function loadAlertJobs() {
-      const { data, error } = await supabase.from("jobs").select("*");
-      if (!mounted) return;
-      setAlertJobs(error ? [] : data || []);
+      try { const data = await loadBoardJobs(supabase); if (mounted) setAlertJobs(data); }
+      catch { console.warn("Unable to refresh job alerts."); }
     }
 
     loadAlertJobs();
 
-    const channel = supabase
-      .channel("app-smart-alerts")
-      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, loadAlertJobs)
-      .subscribe();
+    const stopSync = subscribeDataSync(supabase, ["jobs"], loadAlertJobs);
 
     return () => {
       mounted = false;
-      supabase.removeChannel(channel);
+      stopSync();
     };
   }, [isAuthenticated, isPublicRegistration]);
 
@@ -1089,34 +1087,15 @@ function DispatcherDashboard({ role, onOpenJob }) {
   useEffect(() => {
     let mounted = true;
     async function loadOperationalSummary() {
-      const { data, error } = await supabase.from("jobs").select(canViewInternalControlQueue ? "*" : "id,status,job_date");
-      if (!mounted) return;
-      setJobs(error ? [] : data || []);
+      try { const data = await loadBoardJobs(supabase, { columns: canViewInternalControlQueue ? "*" : "id,status,job_date" }); if (mounted) setJobs(data); }
+      catch { console.warn("Unable to refresh dispatcher summary."); }
     }
     loadOperationalSummary();
+    const stopSync = subscribeDataSync(supabase, ["jobs"], loadOperationalSummary);
     return () => {
       mounted = false;
+      stopSync();
     };
-  }, [canViewInternalControlQueue]);
-
-  useEffect(() => {
-    if (!canViewInternalControlQueue) return undefined;
-    const channel = supabase
-      .channel("supervisor-internal-control-queue")
-      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, ({ eventType, new: nextRow, old: previousRow }) => {
-        if (eventType === "DELETE") {
-          setJobs((current) => current.filter((job) => String(job.id) !== String(previousRow?.id)));
-          return;
-        }
-        setJobs((current) => {
-          const exists = current.some((job) => String(job.id) === String(nextRow.id));
-          return exists
-            ? current.map((job) => String(job.id) === String(nextRow.id) ? nextRow : job)
-            : [nextRow, ...current];
-        });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
   }, [canViewInternalControlQueue]);
 
   const today = new Date().toISOString().slice(0, 10);

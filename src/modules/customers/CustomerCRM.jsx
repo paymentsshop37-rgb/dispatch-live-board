@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BriefcaseBusiness, Edit3, Mail, Phone, Plus, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { loadBoardJobs } from "../jobs/loadBoardJobs.js";
+import { useDataSync } from "../../lib/useDataSync.js";
+import { loadAllRows } from "../../lib/loadAllRows.js";
 
 const profileTabs = ["Overview", "Contacts", "Locations", "Invoices", "Jobs", "Notes", "Payment History", "Activity Timeline"];
 const defaultContactRoles = ["Fleet Manager", "Dispatcher", "Accounting", "After Hours"];
@@ -20,13 +23,15 @@ export default function CustomerCRM({ onOpenJob }) {
     loadCustomers();
   }, []);
 
-  async function loadCustomers() {
-    setLoading(true);
+  useDataSync(() => loadCustomers(true), ["jobs", "customers", "customer_contacts", "customer_locations", "invoice_payments"]);
+
+  async function loadCustomers(background = false) {
+    if (!background) setLoading(true);
     const [customerResult, contactsResult, locationsResult, jobsResult] = await Promise.all([
-      supabase.from("customers").select("*"),
-      supabase.from("customer_contacts").select("*"),
-      supabase.from("customer_locations").select("*"),
-      supabase.from("jobs").select("*"),
+      loadAllRows(() => supabase.from("customers").select("*").order("id")).then(data => ({ data })).catch(error => ({ error })),
+      loadAllRows(() => supabase.from("customer_contacts").select("*").order("id")).then(data => ({ data })).catch(error => ({ error })),
+      loadAllRows(() => supabase.from("customer_locations").select("*").order("id")).then(data => ({ data })).catch(error => ({ error })),
+      loadBoardJobs(supabase).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
     ]);
 
     const loadErrors = [customerResult, contactsResult, locationsResult, jobsResult]
@@ -34,11 +39,11 @@ export default function CustomerCRM({ onOpenJob }) {
       .map((result) => result.error.message);
 
     setWarnings(loadErrors.length ? [`Unable to load CRM data: ${loadErrors.join("; ")}`] : []);
-    setJobs((jobsResult.data || []).map(normalizeJob));
+    if (!jobsResult.error) setJobs((jobsResult.data || []).map(normalizeJob));
 
-    setCustomerRows(customerResult.data || []);
-    setContactRows(contactsResult.data || []);
-    setLocationRows(locationsResult.data || []);
+    if (!customerResult.error) setCustomerRows(customerResult.data || []);
+    if (!contactsResult.error) setContactRows(contactsResult.data || []);
+    if (!locationsResult.error) setLocationRows(locationsResult.data || []);
     setLoading(false);
   }
 
@@ -151,7 +156,7 @@ export default function CustomerCRM({ onOpenJob }) {
 
       {selectedCustomer && (
         <CustomerProfile
-          customer={selectedCustomer}
+          customer={customers.find(customer => customer.id === selectedCustomer.id) || selectedCustomer}
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onClose={() => setSelectedCustomer(null)}
@@ -170,9 +175,9 @@ function CustomerProfile({ customer, activeTab, setActiveTab, onClose, openProfi
   const [draft, setDraft] = useState(() => createCustomerDraft(customer));
 
   useEffect(() => {
-    setDraft(createCustomerDraft(customer));
-    setEditing(false);
-  }, [customer]);
+    if (!editing) setDraft(createCustomerDraft(customer));
+  }, [customer, editing]);
+  useEffect(() => { setEditing(false); }, [customer.id]);
 
   function updateField(field, value) {
     setDraft((current) => ({ ...current, [field]: value }));

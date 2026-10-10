@@ -4,6 +4,8 @@ import { summaryHtml, reportCsv } from "../reporting/summaryRenderers.js";
 import React, { useEffect, useMemo, useState } from "react";
 import { Download, FileText, Printer, RefreshCw, Search } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { loadBoardJobs } from "../jobs/loadBoardJobs.js";
+import { useDataSync } from "../../lib/useDataSync.js";
 import { formatDateTime12Hour } from "../../utils/timeFormat";
 
 const columnAliases = {
@@ -40,13 +42,14 @@ export default function BillingDashboard({ onOpenJob }) {
     loadBillingJobs();
   }, []);
 
-  async function loadBillingJobs() {
-    setLoading(true);
-    const { data, error } = await supabase.from("jobs").select("*, reference_number");
+  useDataSync(() => loadBillingJobs(true), ["jobs"]);
 
-    if (error) {
+  async function loadBillingJobs(background = false) {
+    if (!background) setLoading(true);
+    let data;
+    try { data = await loadBoardJobs(supabase); }
+    catch (error) {
       setWarnings([`Safe mode: unable to load jobs table (${error.message}).`]);
-      setJobs([]);
       setLoading(false);
       return;
     }
