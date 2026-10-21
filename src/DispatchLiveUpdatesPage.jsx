@@ -464,6 +464,7 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   const [technicianLoadError, setTechnicianLoadError] = useState("");
   const [coverageCities, setCoverageCities] = useState([]);
   const [coverageCitiesError, setCoverageCitiesError] = useState("");
+  const [coverageCitiesLoading, setCoverageCitiesLoading] = useState(false);
   const [serviceAreas, setServiceAreas] = useState([]);
   const [citiesWithoutJobsOpen, setCitiesWithoutJobsOpen] = useState(false);
   const [changeLogs, setChangeLogs] = useState([]);
@@ -735,9 +736,8 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
   useEffect(() => {
     if (!accessGranted) return undefined;
 
-    loadJobs();
+    loadJobs({ deduplicate: true });
     loadDispatchTechnicians();
-    loadDispatchCoverageCities();
     loadServiceAreaConfiguration({ includeAliases: false })
       .then(({ areas }) => setServiceAreas(areas))
       .catch((error) => console.warn("Service areas unavailable:", error.message));
@@ -777,9 +777,13 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
     };
   }, [accessGranted]);
 
-  useDataSync(loadJobs, ["jobs", "change_logs"], accessGranted);
+  useDataSync(() => loadJobs({ deduplicate: true }), ["jobs", "change_logs"], accessGranted);
   useDataSync(loadDispatchTechnicians, ["technicians"], accessGranted);
-  useDataSync(loadDispatchCoverageCities, ["coverage_cities", "service_areas", "service_area_city_aliases"], accessGranted, 120000);
+  useEffect(() => {
+    if (accessGranted && citiesWithoutJobsOpen) loadDispatchCoverageCities();
+  }, [accessGranted, citiesWithoutJobsOpen, isAdmin]);
+
+  useDataSync(loadDispatchCoverageCities, ["coverage_cities", "service_areas", "service_area_city_aliases"], accessGranted && citiesWithoutJobsOpen, 120000);
 
   useEffect(() => {
     if (!accessGranted) return undefined;
@@ -857,11 +861,14 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
 
   async function loadDispatchCoverageCities() {
     setCoverageCitiesError("");
+    setCoverageCitiesLoading(true);
     try {
       setCoverageCities(await loadCoverageCities({ includeInactive: isAdmin }));
     } catch (error) {
       console.error("Coverage cities load error:", error);
       setCoverageCitiesError(error?.message || "Unable to load coverage cities.");
+    } finally {
+      setCoverageCitiesLoading(false);
     }
   }
 
@@ -902,12 +909,12 @@ export default function DispatchLiveUpdatesPage({ currentUser, jobSearchRequest 
     });
   }
 
-  async function loadJobs() {
+  async function loadJobs({ deduplicate = false } = {}) {
     if (import.meta.env.DEV) console.debug("[dispatch] dashboard refresh");
     const requestId = ++jobsLoadRequestRef.current;
     let data;
     try {
-      data = await loadBoardJobs(supabase);
+      data = await loadBoardJobs(supabase, { deduplicate });
     } catch (error) {
       if (requestId !== jobsLoadRequestRef.current) return;
       console.error("Error loading jobs:", error.message);
@@ -3008,6 +3015,15 @@ setActivityLogs((logs) => [newActivity, ...logs]);
             )}
 
             {citiesWithoutJobsOpen && (
+              coverageCitiesLoading || coverageCitiesError ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
+                  <div role="dialog" aria-modal="true" aria-label="Cities Without Jobs" className="rounded-xl bg-white p-6 text-slate-900">
+                    <p role="status">{coverageCitiesLoading ? "Loading coverage cities..." : coverageCitiesError}</p>
+                    {!coverageCitiesLoading && <button type="button" onClick={loadDispatchCoverageCities} className="mr-4 mt-4 font-bold">Retry</button>}
+                    <button type="button" onClick={() => setCitiesWithoutJobsOpen(false)} className="mt-4 font-bold">Close</button>
+                  </div>
+                </div>
+              ) :
               <CitiesWithoutJobsPanel
                 coverageCities={coverageCities}
                 jobs={jobs}
@@ -3158,7 +3174,7 @@ setActivityLogs((logs) => [newActivity, ...logs]);
                 Auto Save Enabled
               </div>
               <div className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 font-bold text-blue-700 shadow-sm">
-                Cloud Backup Active
+                Backup: Not Verified
               </div>
               <div className="rounded-full border border-red-200 bg-red-50 px-3 py-1.5 font-bold text-red-700 shadow-sm">
                 Delete Protection Confirmation

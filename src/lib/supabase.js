@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { clearPendingBoardJobs } from "../modules/jobs/loadBoardJobs.js";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -82,3 +83,5 @@ export const supabase =
         },
       })
     : createDisabledSupabaseClient();
+
+supabase.auth.onAuthStateChange(() => clearPendingBoardJobs(supabase));

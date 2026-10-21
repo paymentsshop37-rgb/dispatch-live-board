@@ -660,7 +660,7 @@ function Application() {
               </div>
               <div className="flex items-center gap-2">
                 <Cloud className="h-4 w-4 text-blue-300" />
-                Cloud Backup Active
+                Backup: Not Verified
               </div>
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-amber-300" />
