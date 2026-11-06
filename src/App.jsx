@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { clearAuthSession, clearCustomAuthStorage, finishSessionAudit, loadCurrentProfile, profileToSession, startSessionAudit } from "./authUsers";
 import { subscribeDataSync } from "./lib/dataSync.js";
+import { installTemporaryDesktopViewport } from "./lib/temporaryDesktopViewport.js";
 import { loadBoardJobs } from "./modules/jobs/loadBoardJobs.js";
 import { InternalControlQueue } from "./modules/executive/InternalControlQueue";
 import { formatDateTime12Hour } from "./utils/timeFormat";
@@ -475,6 +476,12 @@ function Application() {
   }, [handleLogout]);
 
   const role = normalizeRole(session.role);
+  useEffect(() => installTemporaryDesktopViewport({
+    authenticated: isAuthenticated && !isPublicRegistration,
+    role,
+    document,
+    window,
+  }), [isAuthenticated, isPublicRegistration, role]);
   const permissions = useMemo(() => ({
     ...getPermissions(role),
     canViewTechPayments: canEditTechPayment(role) || Boolean(session.canViewTechPayments),
