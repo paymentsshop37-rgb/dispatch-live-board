@@ -24,6 +24,12 @@ Dedicated English analytics application at `/intelligence`, with a fluid full-wi
 - Estimated margin only includes completed jobs with all three numeric source values present: total bill minus parts minus technician labor. Zero is a valid explicit amount. Missing amounts are reported, not replaced with zero in margin calculations. Margin excludes overhead and is not collected cash.
 - All returned raw job fields receive a presence audit. Optional fields may appropriately be empty; presence does not imply validity.
 
+## Dispatcher profits
+
+The dedicated **Dispatcher profits** tab compares dispatcher assignments across the same date/state scope and equal adjacent periods. It shows billing, parts, technician labor, estimated profit, weighted margin, average profit per measured completed job, completion/cancellation rates, loss-making jobs, distinct customers/cities, financial-data coverage, and prior-period comparisons. Search, review filters, and sorting drive the displayed totals and CSV export. Details allow job-level review and filtered transaction export.
+
+Names are case-insensitive and repeated whitespace is normalized. Shared assignment strings remain one group; they are not split into full individual credits. Missing dispatchers remain visible as UNASSIGNED. Financial figures use the same completed-job/complete-source rules as the CFO overview. Distinct customer/city totals count unique values across visible groups, so they need not equal the sum of per-dispatcher distinct counts. Ranking reflects recorded assignment contribution, not a causal assessment of an employee's work.
+
 ## Signals
 
 - No jobs: zero registered jobs in the selected period.
