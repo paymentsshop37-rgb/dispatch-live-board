@@ -10,6 +10,7 @@ export const jobCredit = job => job.dispatcherAllocation?.weight ?? 1;
 const uniqueJobs = jobs => [...new Map(jobs.map(job => [job.id ?? job.raw ?? job, job])).values()];
 export const cancelledDispatcherJobs = jobs => uniqueJobs(jobs.filter(job => coverageStatusBucket(job.status) === "cancelled"));
 export const completedDispatcherJobs = jobs => uniqueJobs(jobs.filter(job => coverageStatusBucket(job.status) === "completed"));
+export const sharedDispatcherJobs = jobs => uniqueJobs(jobs.filter(job => dispatcherNames(job.dispatcher).length > 1));
 
 // Split cents deterministically; a one-cent remainder goes in name order.
 function splitAmount(value, count, index) {
@@ -46,7 +47,7 @@ export function dispatcherMetrics(jobs = []) {
   const dryRuns = credits(jobs.filter(job => coverageStatusBucket(job.status) === "dryRuns"));
   const participated = uniqueJobs(jobs).length, measuredParticipations = measuredJobs.length;
   return {
-    total, participated, measuredParticipations, sharedParticipations: uniqueJobs(jobs.filter(job => dispatcherNames(job.dispatcher).length > 1)).length,
+    total, participated, measuredParticipations, sharedParticipations: sharedDispatcherJobs(jobs).length,
     completed, cancelled, dryRuns, cancelledParticipations: cancelledDispatcherJobs(jobs).length, completedParticipations: completedDispatcherJobs(jobs).length,
     other: total - completed - cancelled - dryRuns,
     measured, missing: Math.max(0, completed - measured),

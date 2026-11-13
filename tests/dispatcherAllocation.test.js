@@ -1,11 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeAccountingJob } from "../src/modules/accounting/accountingData.js";
-import { buildDispatcherPerformance, dispatcherNames, dispatcherSummary, dispatcherExportRows, dispatcherJobProfit, fullDispatcherJobProfit, jobCredit, cancelledDispatcherJobs, completedDispatcherJobs } from "../src/modules/intelligence/dispatcherPerformance.js";
+import { buildDispatcherPerformance, dispatcherNames, dispatcherSummary, dispatcherExportRows, dispatcherJobProfit, fullDispatcherJobProfit, jobCredit, cancelledDispatcherJobs, completedDispatcherJobs, sharedDispatcherJobs } from "../src/modules/intelligence/dispatcherPerformance.js";
 
 const job=(id,overrides={})=>normalizeAccountingJob({id,job_date:"2026-11-13",dispatch:"MARIANA/MICHELLE",status:"Completed",company:"FLEET",job_city:"Dallas",job_state:"TX",total_bill:500,parts:50,tech_labor:50,...overrides});
 const individual=(jobs,prior=[])=>buildDispatcherPerformance(jobs,prior,{mode:"individual"});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
+
+test("shared counts include all statuses and count each underlying job once in filtered totals",()=>{
+  const rows=individual([job(1,{dispatch:"A/B"}),job(2,{dispatch:"A/B/C",status:"Cancelled"}),job(3,{dispatch:"A",status:"Pending"})]);
+  const a=rows.find(row=>row.name==="A"),b=rows.find(row=>row.name==="B"),c=rows.find(row=>row.name==="C");
+  assert.equal(a.sharedParticipations,2);assert.equal(b.sharedParticipations,2);assert.equal(c.sharedParticipations,1);
+  assert.equal(dispatcherSummary(rows).sharedParticipations,2);
+  assert.equal(dispatcherSummary([c]).sharedParticipations,1);
+  assert.deepEqual(sharedDispatcherJobs(rows.flatMap(row=>row.jobs)).map(job=>job.id),[1,2]);
+  const csv=dispatcherExportRows(rows,{from:"2026-11-01",to:"2026-11-13"});
+  assert.equal(csv.at(-1)[csv[0].indexOf("Shared jobs participated")],2);
+});
+
+test("repeating the same name does not make a job shared and original assignments are preserved",()=>{
+  const jobs=[job(1,{dispatch:"A / a"}),job(2,{dispatch:""}),job(3,{dispatch:"A & B",status:"Pending"})];
+  const teams=buildDispatcherPerformance(jobs);
+  assert.deepEqual(sharedDispatcherJobs(teams.flatMap(row=>row.jobs)).map(job=>job.id),[3]);
+  assert.equal(dispatcherSummary(teams).sharedParticipations,1);
+  assert.equal(sharedDispatcherJobs(jobs)[0].dispatcher,"A & B");
+});
 
 test("completed counts include shared and financially incomplete jobs without duplicating company totals",()=>{
   const rows=individual([job(1,{dispatch:"A/B"}),job(2,{dispatch:"A",parts:null}),job(3,{dispatch:"A",status:"Cancelled"})]);
