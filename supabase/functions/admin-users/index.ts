@@ -23,6 +23,11 @@ Deno.serve(async (req) => {
     if (!isActiveAdmin(caller)) return json({ error: "You do not have permission to perform this action." }, 403);
 
     const body = req.method === "GET" ? {} : await req.json();
+    if (req.method !== "GET" && clean(body.id)) {
+      const { data: cfoBinding, error: cfoError } = await admin.from("intelligence_cfo_account").select("app_user_id").eq("app_user_id", clean(body.id)).maybeSingle();
+      if (cfoError) return json({ error: "Unable to verify protected-account status." }, 503);
+      if (cfoBinding) return json({ error: "The exclusive CFO account cannot be changed, reset, synced or deleted through application administration." }, 403);
+    }
     if (req.method === "GET") {
       const [{ data: profiles, error }, authUsers] = await Promise.all([
         admin.from("app_users").select("*").order("created_at", { ascending: false }),

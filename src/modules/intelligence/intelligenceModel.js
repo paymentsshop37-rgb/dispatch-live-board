@@ -36,7 +36,7 @@ export function metrics(jobs) {
 }
 
 export function buildIntelligence({ rawJobs = [], coverageCities = [], areas = [], aliases = [], technicians = [], range, state = "", techniciansAvailable = true }) {
-  if (!validDate(range?.from) || !validDate(range?.to) || range.from > range.to) throw new Error("Selecciona un rango de fechas válido.");
+  if (!validDate(range?.from) || !validDate(range?.to) || range.from > range.to) throw new Error("Select a valid date range.");
   const previous = previousDateRange(range);
   const all = rawJobs.map(raw => ({ ...normalizeAccountingJob(raw), ...locationParts(raw), date: validDate(raw.job_date) }));
   const scoped = all.filter(job => !state || job.state === state);
@@ -73,26 +73,26 @@ export function buildIntelligence({ rawJobs = [], coverageCities = [], areas = [
     const change = previousCount ? (counts.total - previousCount) / previousCount * 100 : null;
     const cancellationRate = counts.total ? counts.cancelled / counts.total * 100 : 0;
     const signals = [];
-    if (!counts.total) signals.push({ type: "silent", label: "Sin trabajos", action: lastDate ? "Revisar clientes históricos y solicitudes recibidas en esta ciudad." : "Validar cobertura comercial y empezar a registrar solicitudes y su origen.", evidence: `0 trabajos registrados en el período; ${previousCount} en el anterior.` });
-    if (previousCount >= 3 && change <= -30) signals.push({ type: "decline", label: "Actividad en caída", action: "Contactar a los clientes que redujeron solicitudes y revisar motivos registrados.", evidence: `${counts.total} trabajos frente a ${previousCount}: ${change.toFixed(0)}%.` });
-    if (counts.total >= 4 && cancellationRate >= 25) signals.push({ type: "cancellation", label: "Cancelaciones altas", action: "Revisar los trabajos cancelados y registrar sus motivos.", evidence: `${counts.cancelled} de ${counts.total} trabajos cancelados (${cancellationRate.toFixed(0)}%).` });
-    if (counts.measured && counts.profit < 0) signals.push({ type: "margin", label: "Margen negativo", action: "Revisar precios, partes y costo del técnico de los trabajos completados.", evidence: `${counts.measured} trabajos completados con importes completos y margen total negativo.` });
-    if (counts.total && techniciansAvailable && !city.technicians.length) signals.push({ type: "technician", label: "Sin técnico local registrado", action: "Verificar técnicos que atienden desde otras ciudades antes de reclutar.", evidence: "Sin técnicos activos registrados en esta ciudad exacta; no evalúa cobertura por radio." });
+    if (!counts.total) signals.push({ type: "silent", label: "No jobs", action: lastDate ? "Review historical customers and requests received in this city." : "Validate commercial coverage and start recording requests and lead sources.", evidence: `0 recorded jobs in this period; ${previousCount} in the previous period.` });
+    if (previousCount >= 3 && change <= -30) signals.push({ type: "decline", label: "Activity declining", action: "Contact customers with fewer requests and review recorded reasons.", evidence: `${counts.total} jobs versus ${previousCount}: ${change.toFixed(0)}%.` });
+    if (counts.total >= 4 && cancellationRate >= 25) signals.push({ type: "cancellation", label: "High cancellations", action: "Review cancelled jobs and record their reasons.", evidence: `${counts.cancelled} of ${counts.total} jobs cancelled (${cancellationRate.toFixed(0)}%).` });
+    if (counts.measured && counts.profit < 0) signals.push({ type: "margin", label: "Negative margin", action: "Review pricing, parts, and technician costs on completed jobs.", evidence: `${counts.measured} completed jobs with complete financial data and a negative combined margin.` });
+    if (counts.total && techniciansAvailable && !city.technicians.length) signals.push({ type: "technician", label: "No registered local technician", action: "Check technicians serving from nearby cities before recruiting.", evidence: "No active technicians registered in this exact city; radius coverage is not evaluated." });
     return { ...city, ...counts, previousCount, change, lastDate, lastCompletedDate, cancellationRate, signals, technicianCount: techniciansAvailable ? city.technicians.length : null };
   }).sort((a, b) => b.signals.length - a.signals.length || b.previousCount - a.previousCount || a.city.localeCompare(b.city));
   const groups = field => {
     const map = new Map();
-    for (const job of [...jobs, ...priorJobs]) { const name = textKey(job[field]) || "SIN REGISTRAR"; if (!map.has(name)) map.set(name, { name, jobs: [], previousJobs: [] }); }
-    for (const job of jobs) map.get(textKey(job[field]) || "SIN REGISTRAR").jobs.push(job);
-    for (const job of priorJobs) map.get(textKey(job[field]) || "SIN REGISTRAR").previousJobs.push(job);
+    for (const job of [...jobs, ...priorJobs]) { const name = textKey(job[field]) || "NOT RECORDED"; if (!map.has(name)) map.set(name, { name, jobs: [], previousJobs: [] }); }
+    for (const job of jobs) map.get(textKey(job[field]) || "NOT RECORDED").jobs.push(job);
+    for (const job of priorJobs) map.get(textKey(job[field]) || "NOT RECORDED").previousJobs.push(job);
     return [...map.values()].map(group => ({ ...group, ...metrics(group.jobs), previousCount: group.previousJobs.length })).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   };
   const fieldNames = [...new Set(scoped.flatMap(job => Object.keys(job.raw)))].sort();
   const fieldAudit = fieldNames.map(name => ({ name, total: jobs.length, filled: jobs.filter(job => { const v = job.raw[name]; return v !== null && v !== undefined && String(v).trim() !== ""; }).length }));
   const trendMap = new Map();
-  for (const job of jobs) { if (!trendMap.has(job.date)) trendMap.set(job.date, { date: job.date, trabajos: 0, cancelados: 0 }); const point = trendMap.get(job.date); point.trabajos++; point.cancelados += coverageStatusBucket(job.status) === "cancelled" ? 1 : 0; }
+  for (const job of jobs) { if (!trendMap.has(job.date)) trendMap.set(job.date, { date: job.date, jobs: 0, cancelled: 0 }); const point = trendMap.get(job.date); point.jobs++; point.cancelled += coverageStatusBucket(job.status) === "cancelled" ? 1 : 0; }
   const trend = []; const day = new Date(`${range.from}T12:00:00`);
-  while (localDate(day) <= range.to) { const date = localDate(day); trend.push(trendMap.get(date) || { date, trabajos: 0, cancelados: 0 }); day.setDate(day.getDate() + 1); }
+  while (localDate(day) <= range.to) { const date = localDate(day); trend.push(trendMap.get(date) || { date, jobs: 0, cancelled: 0 }); day.setDate(day.getDate() + 1); }
   return { jobs, priorJobs, previous, cities, summary: metrics(jobs), trend, customers: groups("company"), dispatchers: groups("dispatcher"), technicianPerformance: groups("technician"), fieldAudit,
     quality: { invalidDates: scoped.filter(job => !job.date).length, missingGeography: jobs.filter(job => !cityKey(job)).length, missingCustomer: jobs.filter(job => !textKey(job.company)).length, unknownStatus: jobs.filter(job => coverageStatusBucket(job.status) === "other").length },
     states: [...new Set([...all.map(job => job.state), ...coverageCities.map(city => normalizeState(city.state)), ...areas.map(area => normalizeState(area.state)), ...aliases.map(alias => normalizeState(alias.state))].filter(Boolean))].sort() };

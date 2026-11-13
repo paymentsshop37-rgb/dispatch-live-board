@@ -136,6 +136,7 @@ function Application() {
   const currentPathRef = useRef(currentPath);
   currentPathRef.current = currentPath;
   const [routeToast, setRouteToast] = useState("");
+  const [intelligenceAccess, setIntelligenceAccess] = useState({ userId: "", allowed: false, loading: true, error: false });
   const [jobSearchRequest, setJobSearchRequest] = useState(0);
   const [sessionWarningOpen, setSessionWarningOpen] = useState(false);
   const [networkLocked, setNetworkLocked] = useState(() => !navigator.onLine);
@@ -157,7 +158,7 @@ function Application() {
     const addJobIsActive =
       currentPathRef.current === "/dispatch/jobs/new" ||
       activePath === "/dispatch/jobs/new";
-    const allowedReasons = ["save-success", "discard-confirmed", "signed-out"];
+    const allowedReasons = ["save-success", "discard-confirmed", "signed-out", "cfo-home"];
     if (addJobIsActive && nextPath !== "/dispatch/jobs/new" && !allowedReasons.includes(reason)) {
       console.warn("[AddJobRoute] blocked navigation", nextPath, reason);
       return false;
@@ -205,11 +206,6 @@ function Application() {
     }
   }, [updateCurrentPath]);
 
-  const openIntelligence = useCallback((event) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-    event.preventDefault();
-    if (updateCurrentPath("/intelligence", "user-open")) setMobileMenuOpen(false);
-  }, [updateCurrentPath]);
 
   const navigateToAddJob = useCallback(() => {
     updateCurrentPath("/dispatch/jobs/new", "user-open");
@@ -308,7 +304,7 @@ function Application() {
           }
           return;
         }
-        if (!["admin", "dispatcher", "supervisor", "technician_manager"].includes(String(profile.role).toLowerCase())) {
+        if (!["admin", "dispatcher", "supervisor", "technician_manager", "cfo"].includes(String(profile.role).toLowerCase())) {
           if (mounted && !isAuthenticatedRef.current) {
             await handleLogout("session_invalid", "You do not have permission to access this application.");
           } else {
@@ -323,7 +319,7 @@ function Application() {
           setProfileVerificationError(false);
           void startSessionAudit(verifiedSession);
           if (window.location.pathname === "/login" && currentPathRef.current !== "/dispatch/jobs/new") {
-            updateCurrentPath(postLoginDestination(window.location.search), "signed-in", { replace: true });
+            updateCurrentPath(verifiedSession.role === "cfo" ? "/intelligence" : postLoginDestination(window.location.search), "signed-in", { replace: true });
           }
         }
       } catch (error) {
@@ -487,6 +483,29 @@ function Application() {
   }, [handleLogout]);
 
   const role = normalizeRole(session.role);
+  const hasIntelligenceAccess = intelligenceAccess.allowed && intelligenceAccess.userId === session.authUserId;
+  useEffect(() => {
+    if (isAuthenticated && role === "cfo" && !isIntelligenceRoute) {
+      updateCurrentPath("/intelligence", "cfo-home", { replace: true });
+    }
+  }, [isAuthenticated, role, isIntelligenceRoute, updateCurrentPath]);
+  useEffect(() => {
+    let stopped = false;
+    const userId = session.authUserId;
+    setIntelligenceAccess({ userId: "", allowed: false, loading: true, error: false });
+    if (!isAuthenticated || !userId || session.forcePasswordChange) return () => { stopped = true; };
+    async function verify() {
+      try {
+        const { data, error } = await supabase.rpc("can_access_intelligence");
+        if (!stopped) setIntelligenceAccess({ userId, allowed: !error && data === true, loading: false, error: Boolean(error) });
+      } catch {
+        if (!stopped) setIntelligenceAccess({ userId, allowed: false, loading: false, error: true });
+      }
+    }
+    verify();
+    const timer = window.setInterval(() => { if (document.visibilityState !== "hidden") verify(); }, 30000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [isAuthenticated, session.authUserId, session.forcePasswordChange]);
   useEffect(() => installTemporaryDesktopViewport({
     authenticated: isAuthenticated && !isPublicRegistration,
     role,
@@ -526,7 +545,7 @@ function Application() {
   const alertSummary = useMemo(() => summarizeAlerts(smartAlerts), [smartAlerts]);
 
   useEffect(() => {
-    if (!isAuthenticated || isPublicRegistration) {
+    if (!isAuthenticated || isPublicRegistration || role === "cfo") {
       setAlertJobs([]);
       return undefined;
     }
@@ -546,7 +565,7 @@ function Application() {
       mounted = false;
       stopSync();
     };
-  }, [isAuthenticated, isPublicRegistration]);
+  }, [isAuthenticated, isPublicRegistration, role]);
 
   useEffect(() => {
     if (!isAuthenticated || !smartAlerts.length) return;
@@ -591,8 +610,10 @@ function Application() {
   }
 
   if (!isAuthenticated) {
-    return <LoginScreen message={authMessage} onMessage={setAuthMessage} onLoginStarted={beginLogin} />;
+    return <LoginScreen intelligence={isIntelligenceRoute || postLoginDestination(window.location.search) === "/intelligence"} message={authMessage} onMessage={setAuthMessage} onLoginStarted={beginLogin} />;
   }
+
+  if (role === "cfo" && !isIntelligenceRoute) return <div role="status" className="min-h-screen bg-slate-950 p-8 text-white">Opening your CFO workspace…</div>;
 
   if (isAddJobRoute) {
     return (
@@ -638,7 +659,7 @@ function Application() {
           </div>
 
           <nav className="flex gap-3 overflow-x-auto lg:flex-1 lg:flex-col lg:overflow-visible">
-            {isAdmin && <a href="/intelligence" onClick={openIntelligence} className="flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20"><BarChart3 className="h-4 w-4" />NTTR Intelligence</a>}
+            {(isAdmin || hasIntelligenceAccess) && <a href="/login?next=%2Fintelligence" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20"><ShieldCheck className="h-4 w-4" />CFO Intelligence</a>}
             {visibleSidebarSections.map((section) => (
               <div key={section.label} className="min-w-max lg:min-w-0">
                 <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{section.label}</p>
@@ -714,7 +735,7 @@ function Application() {
 
       <main className={isIntelligenceRoute ? "min-h-screen w-full min-w-0" : "app-main min-h-screen w-full max-w-none min-w-0 overflow-x-hidden pb-20 lg:pb-0 lg:pl-60"}>
         <Suspense fallback={<div role="status" className="p-8 font-bold text-slate-500">Loading...</div>}>
-        {isIntelligenceRoute ? (isAdmin ? <IntelligencePortal session={session} onOpenJob={(jobId) => { localStorage.setItem("nttr-open-job-details-id", String(jobId)); window.location.assign("/dispatch-board"); }} /> : <><AccessDenied view="NTTR Intelligence" /><a href="/dispatch-board" className="m-6 inline-block rounded-xl bg-blue-600 px-5 py-3 font-bold text-white">Return to Dispatch Board</a></>) : <>
+        {isIntelligenceRoute ? (intelligenceAccess.loading ? <div role="status" className="min-h-screen bg-slate-950 p-10 text-lg text-white">Verifying exclusive CFO access…</div> : hasIntelligenceAccess ? <IntelligencePortal session={session} onLogout={() => handleLogout("manual_logout", "", false)} /> : <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white"><div className="w-full max-w-xl rounded-3xl border border-slate-700 bg-slate-900 p-9"><ShieldCheck className="h-10 w-10 text-cyan-300" /><h1 className="mt-5 text-3xl font-bold">Exclusive CFO access</h1><p className="mt-4 text-lg text-slate-300">{intelligenceAccess.error ? "Access could not be verified. Refresh to try again. The workspace remains locked." : "This workspace is available only to the dedicated CFO account. Admin and other board accounts do not have access."}</p><button onClick={() => handleLogout("switch_to_cfo", "", false)} className="mt-7 min-h-12 rounded-xl bg-cyan-400 px-5 font-bold text-slate-950">Sign in with CFO account</button><a href="/dispatch-board" className="ml-4 mt-4 inline-block text-sm text-slate-300 underline">Return to Dispatch Board</a></div></div>) : <>
         <div className="flex min-h-[72px] items-center border-b border-slate-800 bg-[#0b1628] px-4 py-4 text-white shadow-sm md:px-8">
           <div className="flex w-full max-w-none items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -770,7 +791,7 @@ function Application() {
               <button type="button" onClick={() => setMobileMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><X className="h-5 w-5" /></button>
             </div>
             <nav className="grid gap-2">
-              {isAdmin && <a href="/intelligence" onClick={openIntelligence} className="flex min-h-11 items-center gap-3 rounded-xl bg-cyan-500/10 px-3 py-2 font-bold text-cyan-200"><BarChart3 className="h-5 w-5" />NTTR Intelligence</a>}
+              {(isAdmin || hasIntelligenceAccess) && <a href="/login?next=%2Fintelligence" target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center gap-3 rounded-xl bg-cyan-500/10 px-3 py-2 font-bold text-cyan-200"><ShieldCheck className="h-5 w-5" />CFO Intelligence</a>}
               {visibleItems.map((item) => { const Icon = item.icon; const target = item.target || item.id; return <button key={item.id} type="button" onClick={() => { setActiveView(target); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Icon className="h-5 w-5" />{item.label}</button>; })}
               <button type="button" onClick={() => { setActiveView("flat-rate"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><BookOpen className="h-5 w-5" />Flat Rate Guide</button>
               <button type="button" onClick={() => { setActiveView("ai-labor"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Bot className="h-5 w-5" />AI Labor Guide</button>
@@ -805,6 +826,7 @@ function canShowSidebarItem(item, role, permissions) {
 }
 
 function canAccessView(view, role, permissions) {
+  if (role === "cfo") return false;
   if (view === "dispatch") return true;
   if (view === "dashboard") return ["admin", "dispatcher", "supervisor"].includes(role);
   if (view === "technicians") return Boolean(permissions.canViewTechnicianCenter);
@@ -821,6 +843,7 @@ function canAccessView(view, role, permissions) {
 }
 
 function roleLabel(role) {
+  if (role === "cfo") return "Chief Financial Officer";
   if (role === "admin") return "Administrator";
   if (role === "technician_manager") return "Technician Manager";
   if (role === "dispatcher") return "Dispatcher";
@@ -866,7 +889,7 @@ function ProfileVerificationScreen({ onRetry, onSignOut }) {
   );
 }
 
-function LoginScreen({ message, onMessage, onLoginStarted }) {
+function LoginScreen({ message, onMessage, onLoginStarted, intelligence = false }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -899,8 +922,8 @@ function LoginScreen({ message, onMessage, onLoginStarted }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 p-6">
       <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
-        <h1 className="text-3xl font-bold text-slate-900">Dispatch Live Access</h1>
-        <p className="mt-2 text-sm text-slate-500">Enter your username and password to continue.</p>
+        <h1 className="text-3xl font-bold text-slate-900">{intelligence ? "NTTR Intelligence" : "Dispatch Live Access"}</h1>
+        <p className="mt-2 text-sm text-slate-500">{intelligence ? "Sign in with your exclusive CFO account." : "Enter your username and password to continue."}</p>
         {message && <div className="mt-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-700">{message}</div>}
 
         <input

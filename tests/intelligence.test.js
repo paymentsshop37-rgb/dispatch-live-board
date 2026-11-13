@@ -11,7 +11,7 @@ test("compares equal inclusive periods and keeps zero-job configured cities", ()
   assert.deepEqual(model.previous, { from: "2026-10-25", to: "2026-10-31" });
   assert.equal(model.summary.total, 2); assert.equal(model.priorJobs.length, 2);
   assert.equal(model.cities.find(c => c.city === "AUSTIN").total, 0);
-  assert.equal(model.trend.length, 7); assert.equal(model.trend[0].trabajos, 0);
+  assert.equal(model.trend.length, 7); assert.equal(model.trend[0].jobs, 0);
 });
 test("uses city and state exactly; nearby aliases are separate cities", () => {
   const model = buildIntelligence({ ...base, areas: [{ id: "dfw", primary_city: "Dallas", state: "TX" }], aliases: [{ service_area_id: "dfw", city: "Fort Worth", state: "TX" }], rawJobs: [job(1, { job_city: "Fort Worth" }), job(2, { job_state: "GA" })] });

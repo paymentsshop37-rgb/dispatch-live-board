@@ -9,7 +9,7 @@ const cors = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 const clean = (value: unknown) => String(value ?? "").trim();
-const allowedApplicationRoles = new Set(["admin", "dispatcher", "supervisor", "technician_manager"]);
+const allowedApplicationRoles = new Set(["admin", "dispatcher", "supervisor", "technician_manager", "cfo"]);
 const canonicalRole = (value: unknown) => clean(value).toLowerCase().replace(/[\s-]+/g, "_");
 
 Deno.serve(async (req) => {
