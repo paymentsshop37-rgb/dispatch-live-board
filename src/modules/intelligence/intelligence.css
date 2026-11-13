@@ -75,6 +75,44 @@
 .intel-dispatcher-selected td { background: #15344a !important; }
 .intel-dispatcher-performance .intel-dispatcher-detail table { min-width: 1500px; }
 .intel-dispatcher-chart { font-size: 13px; }
+.intel-allocation-toggle { display: flex; flex-wrap: wrap; gap: 8px; padding: 5px; border: 1px solid #304159; background: #081421; border-radius: 12px; width: fit-content; margin-bottom: 22px; }
+.intel-allocation-toggle button { min-height: 46px; border: 1px solid transparent; border-radius: 8px; padding: 10px 20px; color: #afc4df; font-size: 16px; font-weight: 600; }
+.intel-allocation-toggle button.selected { color: #dff9ff; background: #16405a; border-color: #33799d; }
+.intel-dispatcher-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-bottom: 26px; }
+.intel-split-explanation { margin: 0 0 22px; padding: 16px 20px; border-left: 3px solid #58c9df; border-radius: 6px; background: #112638; color: #b8cbdf; font-size: 16px; }
+.intel-split-explanation strong { color: #def7ff; }
+.intel-dispatcher-simple .intel-table-scroll table { min-width: 0; width: 100%; }
+.intel-dispatcher-simple .intel-table-scroll table.intel-simple-scorecard { min-width: 640px; }
+.intel-dispatcher-simple .intel-table-scroll th:first-child,
+.intel-dispatcher-simple .intel-table-scroll td:first-child { min-width: 0; max-width: none; }
+.intel-simple-scorecard th:first-child { width: 30%; }
+.intel-simple-scorecard th:last-child { width: 130px; }
+.intel-simple-scorecard .intel-city-link { font-size: 18px; padding: 8px 0; }
+.intel-simple-scorecard td { font-size: 18px; padding-top: 23px; padding-bottom: 23px; }
+.intel-simple-scorecard .intel-profit-number { color: #91e1c8; font-size: 22px; font-weight: 650; }
+.intel-simple-scorecard .intel-negative { color: #fb9aad; }
+.intel-simple-secondary { display: block; margin-top: 5px; font-size: 13px; font-weight: 400; color: #9fb2cc; white-space: normal; }
+.intel-person-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 25px; }
+.intel-person-detail h3 { margin: 28px 0 15px; font-size: 19px; font-weight: 600; color: #dfedff; }
+.intel-person-facts > div { display: flex; justify-content: space-between; align-items: baseline; gap: 25px; padding: 13px 0; border-bottom: 1px solid #24344b; }
+.intel-person-facts dt { color: #9fb7d6; font-size: 15px; }
+.intel-person-facts dd { text-align: right; font-size: 17px; }
+.intel-person-comparison { font-size: 14px !important; }
+.intel-person-comparison th { font-size: 11px !important; }
+.intel-person-comparison td, .intel-person-comparison th { padding: 12px 8px !important; white-space: normal; }
+.intel-person-comparison td:first-child, .intel-person-comparison th:first-child { position: static !important; }
+.intel-person-jobs { margin: 15px 0 20px; }
+.intel-person-jobs article { padding: 20px; border: 1px solid #304159; border-radius: 10px; background: #111e31; margin-bottom: 12px; }
+.intel-person-jobs strong { font-size: 16px; }
+.intel-person-jobs small { display: block; margin-top: 6px; color: #9fb7d6; font-size: 13px; }
+.intel-person-job-values { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+.intel-person-job-values span { font-size: 13px; color: #99b0ce; }
+.intel-person-job-values b { display: block; font-size: 21px; font-weight: 600; color: #e5f3ff; margin-top: 4px; }
+.intel-person-job-values span:last-child b { color: #91e1c8; }
+.intel-allocation-method { border-top: 1px solid #2a3a51; margin-top: 28px; padding-top: 19px; font-size: 13px; color: #9fb7d6; }
+.intel-allocation-method summary { cursor: pointer; color: #c8ddf5; min-height: 40px; }
+.intel-allocation-method p { line-height: 1.8; }
+@media (max-width: 700px) { .intel-dispatcher-summary { grid-template-columns: 1fr; gap: 12px; } .intel-person-totals { grid-template-columns: 1fr; } .intel-simple-scorecard td { font-size: 16px; } .intel-simple-scorecard .intel-profit-number { font-size: 19px; } }
 @media (min-width: 2200px) { .intel-field-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
 @media (max-width: 1399px) { .intel-field-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 1050px) { .intel-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .intel-owner { display: none; } }

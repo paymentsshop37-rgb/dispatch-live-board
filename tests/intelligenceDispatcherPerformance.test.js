@@ -60,7 +60,7 @@ test("CSV rows and filtered totals use the same measured jobs, previous scope an
   const filtered = rows.filter(row => row.name === "CLAUDIA");
   const csv = dispatcherExportRows(filtered, range), headers = csv[0], total = csv.at(-1);
   assert.ok(csv.every(row => row.length === headers.length));
-  assert.equal(total[headers.indexOf("Jobs")], 2); assert.equal(total[headers.indexOf("Estimated profit USD")], "50.00");
-  assert.equal(total[headers.indexOf("Previous jobs")], 1);
+  assert.equal(total[headers.indexOf("Job credits")], 2); assert.equal(total[headers.indexOf("Estimated profit USD")], "50.00");
+  assert.equal(total[headers.indexOf("Previous job credits")], 1);
   assert.equal(total[headers.indexOf("Profit change USD")], "0.00");
 });
