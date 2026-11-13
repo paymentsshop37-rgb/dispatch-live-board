@@ -1,11 +1,30 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeAccountingJob } from "../src/modules/accounting/accountingData.js";
-import { buildDispatcherPerformance, dispatcherNames, dispatcherSummary, dispatcherExportRows, dispatcherJobProfit, fullDispatcherJobProfit, jobCredit, cancelledDispatcherJobs } from "../src/modules/intelligence/dispatcherPerformance.js";
+import { buildDispatcherPerformance, dispatcherNames, dispatcherSummary, dispatcherExportRows, dispatcherJobProfit, fullDispatcherJobProfit, jobCredit, cancelledDispatcherJobs, completedDispatcherJobs } from "../src/modules/intelligence/dispatcherPerformance.js";
 
 const job=(id,overrides={})=>normalizeAccountingJob({id,job_date:"2026-11-13",dispatch:"MARIANA/MICHELLE",status:"Completed",company:"FLEET",job_city:"Dallas",job_state:"TX",total_bill:500,parts:50,tech_labor:50,...overrides});
 const individual=(jobs,prior=[])=>buildDispatcherPerformance(jobs,prior,{mode:"individual"});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
+
+test("completed counts include shared and financially incomplete jobs without duplicating company totals",()=>{
+  const rows=individual([job(1,{dispatch:"A/B"}),job(2,{dispatch:"A",parts:null}),job(3,{dispatch:"A",status:"Cancelled"})]);
+  const a=rows.find(row=>row.name==="A"),b=rows.find(row=>row.name==="B");
+  assert.equal(a.completedParticipations,2);assert.equal(a.completed,1.5);assert.equal(a.measured,.5);
+  assert.equal(b.completedParticipations,1);assert.equal(b.completed,.5);
+  assert.equal(dispatcherSummary(rows).completedParticipations,2);
+  assert.deepEqual(completedDispatcherJobs(rows.flatMap(row=>row.jobs)).map(job=>job.id),[1,2]);
+  const csv=dispatcherExportRows([b],{from:"2026-11-01",to:"2026-11-13"});
+  assert.equal(csv.at(-1)[csv[0].indexOf("Completed jobs involved")],1);
+  assert.equal(csv.at(-1)[csv[0].indexOf("Completed credits")],.5);
+});
+
+test("completed status aliases follow board normalization and previous completions stay in their period",()=>{
+  const rows=individual([job(1,{status:"Complete"}),job(2,{status:"In Progress"})],[job(3)]);
+  assert.equal(dispatcherSummary(rows).completedParticipations,1);
+  assert.equal(dispatcherSummary(rows).previous.completedParticipations,1);
+  assert.equal(completedDispatcherJobs([]).length,0);
+});
 
 test("visible cancellation counts show actual jobs per person and unique company cancellations",()=>{
   const rows=individual([job(1,{dispatch:"A/B",status:"Cancelled"}),job(2,{dispatch:"A",status:"Canceled"}),job(3,{dispatch:"A"})]);

@@ -9,6 +9,7 @@ export const dispatcherName = job => dispatcherNames(job.dispatcher).join(" / ")
 export const jobCredit = job => job.dispatcherAllocation?.weight ?? 1;
 const uniqueJobs = jobs => [...new Map(jobs.map(job => [job.id ?? job.raw ?? job, job])).values()];
 export const cancelledDispatcherJobs = jobs => uniqueJobs(jobs.filter(job => coverageStatusBucket(job.status) === "cancelled"));
+export const completedDispatcherJobs = jobs => uniqueJobs(jobs.filter(job => coverageStatusBucket(job.status) === "completed"));
 
 // Split cents deterministically; a one-cent remainder goes in name order.
 function splitAmount(value, count, index) {
@@ -46,7 +47,7 @@ export function dispatcherMetrics(jobs = []) {
   const participated = uniqueJobs(jobs).length, measuredParticipations = measuredJobs.length;
   return {
     total, participated, measuredParticipations, sharedParticipations: uniqueJobs(jobs.filter(job => dispatcherNames(job.dispatcher).length > 1)).length,
-    completed, cancelled, dryRuns, cancelledParticipations: cancelledDispatcherJobs(jobs).length,
+    completed, cancelled, dryRuns, cancelledParticipations: cancelledDispatcherJobs(jobs).length, completedParticipations: completedDispatcherJobs(jobs).length,
     other: total - completed - cancelled - dryRuns,
     measured, missing: Math.max(0, completed - measured),
     billed, parts, labor, expenses: parts + labor, profit,
@@ -101,8 +102,8 @@ export function dispatcherExportRows(rows, range) {
   const body = rows.map(row => [row.name, range.from, range.to, row.total, row.completed, row.cancelled, row.dryRuns, value(row.completionRate), value(row.cancellationRate), row.measured, row.missing, ...amounts(row), value(row.margin), value(row.averageProfit), row.losses, row.customers, row.cities, row.previous.total, row.previous.measured, row.previous.measured ? value(row.previous.profit) : "No data", value(row.profitChange), value(row.marginChange)]);
   const total = dispatcherSummary(rows);
   body.push(["FILTERED TOTAL", range.from, range.to, total.total, total.completed, total.cancelled, total.dryRuns, value(total.completionRate), value(total.cancellationRate), total.measured, total.missing, ...amounts(total), value(total.margin), value(total.averageProfit), total.losses, total.customers, total.cities, total.previous.total, total.previous.measured, total.previous.measured ? value(total.previous.profit) : "No data", value(total.profitChange), total.margin !== null && total.previous.margin !== null ? value(total.margin - total.previous.margin) : "No data"]);
-  headers.push("Cancelled jobs involved");
-  rows.forEach((row, index) => body[index].push(row.mode || "team", row.participated, row.sharedParticipations, row.measuredParticipations, value(row.profitPerParticipation), row.cancelledParticipations));
-  body.at(-1).push(rows[0]?.mode || "team", total.participated, total.sharedParticipations, total.measuredParticipations, value(total.profitPerParticipation), total.cancelledParticipations);
+  headers.push("Cancelled jobs involved", "Completed jobs involved");
+  rows.forEach((row, index) => body[index].push(row.mode || "team", row.participated, row.sharedParticipations, row.measuredParticipations, value(row.profitPerParticipation), row.cancelledParticipations, row.completedParticipations));
+  body.at(-1).push(rows[0]?.mode || "team", total.participated, total.sharedParticipations, total.measuredParticipations, value(total.profitPerParticipation), total.cancelledParticipations, total.completedParticipations);
   return [headers, ...body];
 }
