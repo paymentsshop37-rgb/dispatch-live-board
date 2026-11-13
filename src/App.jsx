@@ -33,6 +33,7 @@ import { InternalControlQueue } from "./modules/executive/InternalControlQueue";
 import { formatDateTime12Hour } from "./utils/timeFormat";
 import { canEditTechPayment, getPermissions, normalizeRole } from "./modules/permissions";
 import { supabase } from "./lib/supabase";
+import { loginDestination, postLoginDestination } from "./lib/loginDestination.js";
 import {
   buildSmartAlerts,
   getVisibleAlerts,
@@ -199,7 +200,15 @@ function Application() {
   }, []);
 
   const redirectToLogin = useCallback((reason = "signed-out") => {
-    if (window.location.pathname !== "/login") updateCurrentPath("/login", reason, { replace: true });
+    if (window.location.pathname !== "/login") {
+      updateCurrentPath(loginDestination(window.location.pathname, window.location.search), reason, { replace: true });
+    }
+  }, [updateCurrentPath]);
+
+  const openIntelligence = useCallback((event) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+    event.preventDefault();
+    if (updateCurrentPath("/intelligence", "user-open")) setMobileMenuOpen(false);
   }, [updateCurrentPath]);
 
   const navigateToAddJob = useCallback(() => {
@@ -314,7 +323,7 @@ function Application() {
           setProfileVerificationError(false);
           void startSessionAudit(verifiedSession);
           if (window.location.pathname === "/login" && currentPathRef.current !== "/dispatch/jobs/new") {
-            updateCurrentPath("/dispatch-board", "signed-in", { replace: true });
+            updateCurrentPath(postLoginDestination(window.location.search), "signed-in", { replace: true });
           }
         }
       } catch (error) {
@@ -629,7 +638,7 @@ function Application() {
           </div>
 
           <nav className="flex gap-3 overflow-x-auto lg:flex-1 lg:flex-col lg:overflow-visible">
-            {isAdmin && <a href="/intelligence" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20"><BarChart3 className="h-4 w-4" />NTTR Intelligence</a>}
+            {isAdmin && <a href="/intelligence" onClick={openIntelligence} className="flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20"><BarChart3 className="h-4 w-4" />NTTR Intelligence</a>}
             {visibleSidebarSections.map((section) => (
               <div key={section.label} className="min-w-max lg:min-w-0">
                 <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{section.label}</p>
@@ -761,7 +770,7 @@ function Application() {
               <button type="button" onClick={() => setMobileMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><X className="h-5 w-5" /></button>
             </div>
             <nav className="grid gap-2">
-              {isAdmin && <a href="/intelligence" target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center gap-3 rounded-xl bg-cyan-500/10 px-3 py-2 font-bold text-cyan-200"><BarChart3 className="h-5 w-5" />NTTR Intelligence</a>}
+              {isAdmin && <a href="/intelligence" onClick={openIntelligence} className="flex min-h-11 items-center gap-3 rounded-xl bg-cyan-500/10 px-3 py-2 font-bold text-cyan-200"><BarChart3 className="h-5 w-5" />NTTR Intelligence</a>}
               {visibleItems.map((item) => { const Icon = item.icon; const target = item.target || item.id; return <button key={item.id} type="button" onClick={() => { setActiveView(target); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Icon className="h-5 w-5" />{item.label}</button>; })}
               <button type="button" onClick={() => { setActiveView("flat-rate"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><BookOpen className="h-5 w-5" />Flat Rate Guide</button>
               <button type="button" onClick={() => { setActiveView("ai-labor"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Bot className="h-5 w-5" />AI Labor Guide</button>
