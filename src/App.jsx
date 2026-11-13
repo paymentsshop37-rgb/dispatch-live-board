@@ -56,6 +56,7 @@ const PartsIntelligence = lazy(() => import("./modules/parts/PartsIntelligence.j
 const AiLaborGuide = lazy(() => import("./modules/ai-labor/AiLaborGuide.jsx"));
 const AddJobRoute = lazy(() => import("./modules/jobs/AddJobRoute.jsx"));
 const DispatcherCoverageSummary = lazy(() => import("./modules/coverage/DispatcherCoverageSummary.jsx"));
+const IntelligencePortal = lazy(() => import("./modules/intelligence/IntelligencePortal.jsx"));
 
 const sidebarItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "dispatcher", "supervisor"] },
@@ -146,6 +147,7 @@ function Application() {
   const isAuthenticated = Boolean(session.isAuthenticated);
   const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
   const isAddJobRoute = normalizedPath === "/dispatch/jobs/new";
+  const isIntelligenceRoute = currentPath.replace(/\/+$/, "") === "/intelligence";
   const isAuthenticatedRef = useRef(isAuthenticated);
   isAuthenticatedRef.current = isAuthenticated;
 
@@ -619,7 +621,7 @@ function Application() {
           </div>
         </div>
       )}
-      <aside className="hidden bg-[#08111f] text-white lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col">
+      {!isIntelligenceRoute && <aside className="hidden bg-[#08111f] text-white lg:fixed lg:inset-y-0 lg:flex lg:w-60 lg:flex-col">
         <div className="flex w-full flex-col gap-4 p-4 lg:min-h-screen">
           <div className="border-b border-white/10 pb-5">
             <p className="text-3xl font-black tracking-[0.18em] text-white">NTTR</p>
@@ -627,6 +629,7 @@ function Application() {
           </div>
 
           <nav className="flex gap-3 overflow-x-auto lg:flex-1 lg:flex-col lg:overflow-visible">
+            {isAdmin && <a href="/intelligence" target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl border border-cyan-400/25 bg-cyan-500/10 px-3 py-3 text-sm font-bold text-cyan-200 hover:bg-cyan-500/20"><BarChart3 className="h-4 w-4" />NTTR Intelligence</a>}
             {visibleSidebarSections.map((section) => (
               <div key={section.label} className="min-w-max lg:min-w-0">
                 <p className="mb-2 px-3 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">{section.label}</p>
@@ -698,10 +701,11 @@ function Application() {
             </button>
           </div>
         </div>
-      </aside>
+      </aside>}
 
-      <main className="app-main min-h-screen w-full max-w-none min-w-0 overflow-x-hidden pb-20 lg:pb-0 lg:pl-60">
+      <main className={isIntelligenceRoute ? "min-h-screen w-full min-w-0" : "app-main min-h-screen w-full max-w-none min-w-0 overflow-x-hidden pb-20 lg:pb-0 lg:pl-60"}>
         <Suspense fallback={<div role="status" className="p-8 font-bold text-slate-500">Loading...</div>}>
+        {isIntelligenceRoute ? (isAdmin ? <IntelligencePortal session={session} onOpenJob={(jobId) => { localStorage.setItem("nttr-open-job-details-id", String(jobId)); window.location.assign("/dispatch-board"); }} /> : <><AccessDenied view="NTTR Intelligence" /><a href="/dispatch-board" className="m-6 inline-block rounded-xl bg-blue-600 px-5 py-3 font-bold text-white">Return to Dispatch Board</a></>) : <>
         <div className="flex min-h-[72px] items-center border-b border-slate-800 bg-[#0b1628] px-4 py-4 text-white shadow-sm md:px-8">
           <div className="flex w-full max-w-none items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
@@ -745,6 +749,7 @@ function Application() {
         {canAccessActiveView && activeView === "flat-rate" && <FlatRateGuide session={session} role={role} onCreateJob={navigateToAddJob} />}
         {canAccessActiveView && activeView === "ai-labor" && <AiLaborGuide session={session} role={role} />}
         {canAccessActiveView && activeView === "parts-intelligence" && <PartsIntelligence session={session} role={role} />}
+        </>}
         </Suspense>
       </main>
 
@@ -756,6 +761,7 @@ function Application() {
               <button type="button" onClick={() => setMobileMenuOpen(false)} className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/10"><X className="h-5 w-5" /></button>
             </div>
             <nav className="grid gap-2">
+              {isAdmin && <a href="/intelligence" target="_blank" rel="noopener noreferrer" className="flex min-h-11 items-center gap-3 rounded-xl bg-cyan-500/10 px-3 py-2 font-bold text-cyan-200"><BarChart3 className="h-5 w-5" />NTTR Intelligence</a>}
               {visibleItems.map((item) => { const Icon = item.icon; const target = item.target || item.id; return <button key={item.id} type="button" onClick={() => { setActiveView(target); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Icon className="h-5 w-5" />{item.label}</button>; })}
               <button type="button" onClick={() => { setActiveView("flat-rate"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><BookOpen className="h-5 w-5" />Flat Rate Guide</button>
               <button type="button" onClick={() => { setActiveView("ai-labor"); setMobileMenuOpen(false); }} className="flex min-h-11 items-center gap-3 rounded-xl px-3 py-2 text-left font-bold text-slate-200 hover:bg-white/10"><Bot className="h-5 w-5" />AI Labor Guide</button>
@@ -767,13 +773,13 @@ function Application() {
         </div>
       )}
 
-      <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-[70] grid h-20 grid-cols-5 border-t border-slate-700 bg-[#08111f]/95 px-1 pb-[env(safe-area-inset-bottom)] text-white backdrop-blur lg:hidden">
+      {!isIntelligenceRoute && <nav className="mobile-bottom-nav fixed inset-x-0 bottom-0 z-[70] grid h-20 grid-cols-5 border-t border-slate-700 bg-[#08111f]/95 px-1 pb-[env(safe-area-inset-bottom)] text-white backdrop-blur lg:hidden">
         <MobileNavButton icon={ClipboardList} label="Board" active={activeView === "dispatch"} onClick={() => setActiveView("dispatch")} />
         <MobileNavButton icon={Plus} label="Add Job" onClick={navigateToAddJob} />
         <MobileNavButton icon={Users} label="Technicians" active={activeView === "technicians"} onClick={() => setActiveView("technicians")} />
         <MobileNavButton icon={Search} label="Search" onClick={() => { setActiveView("dispatch"); setJobSearchRequest((value) => value + 1); }} />
         <MobileNavButton icon={Menu} label="More" onClick={() => setMobileMenuOpen(true)} />
-      </nav>
+      </nav>}
     </div>
   );
 }
