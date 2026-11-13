@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Search, X, ChevronRight } from "lucide-react";
-import { buildDispatcherPerformance, dispatcherExportRows, dispatcherJobProfit, dispatcherSummary, isMeasuredDispatcherJob, sourceAmount, dispatcherAmount, fullDispatcherJobProfit, jobCredit } from "./dispatcherPerformance.js";
+import { buildDispatcherPerformance, dispatcherExportRows, dispatcherJobProfit, dispatcherSummary, isMeasuredDispatcherJob, sourceAmount, dispatcherAmount, fullDispatcherJobProfit, jobCredit, cancelledDispatcherJobs } from "./dispatcherPerformance.js";
 import { intelligenceCsv } from "./intelligenceModel.js";
 import { coverageStatusBucket } from "../coverage/serviceAreaAssignment.js";
 
@@ -36,28 +36,29 @@ export default function DispatcherPerformance({ jobs, previousJobs, range, onOpe
       <p className="intel-split-explanation">{mode === "individual" ? <>Shared jobs are split equally. <strong>$400 profit shared by 2 people = $200 each.</strong></> : <>Each team receives the full result of its jobs. <strong>Mariana / Michelle appears as one team.</strong></>}</p>
       <div className="intel-city-filters"><label className="intel-search"><Search size={17} /><input aria-label="Search dispatchers" placeholder={mode === "individual" ? "Find a dispatcher" : "Find a team"} value={search} onChange={event => setSearch(event.target.value)} /></label><select aria-label="Sort dispatchers" value={sort} onChange={event => setSort(event.target.value)}><option value="profit">Highest profit first</option><option value="jobs">Most jobs first</option><option value="name">Name A–Z</option></select></div>
     </section>
-    <div className="intel-dispatcher-summary"><Summary label="Estimated profit" value={total.measured ? money(total.profit) : "No data"} note="Profit attributed to the visible names" /><Summary label="Jobs covered" value={total.participated} note="Each job counted once in this total" /><Summary label={mode === "individual" ? "Dispatchers" : "Teams"} value={total.dispatchers} note="With activity in the selected period" /></div>
+    <div className="intel-dispatcher-summary"><Summary label="Estimated profit" value={total.measured ? money(total.profit) : "No data"} note="Profit attributed to the visible names" /><Summary label="Jobs covered" value={total.participated} note="Each job counted once in this total" /><Summary label="Cancelled jobs" value={total.cancelledParticipations} note="Each cancelled job counted once" onClick={total.cancelledParticipations ? () => onOpenJobs({ title: "Cancelled jobs · Visible dispatchers", jobs: cancelledDispatcherJobs(rows.flatMap(row => row.jobs)) }) : undefined} /><Summary label={mode === "individual" ? "Dispatchers" : "Teams"} value={total.dispatchers} note="With activity in the selected period" /></div>
     <section className="intel-panel">
       <div className="intel-panel-heading"><h2>{mode === "individual" ? "Profit by person" : "Profit by team"}</h2><span className="intel-muted">{rows.length} {mode === "individual" ? "names" : "teams"} shown</span></div>
       <div className="intel-table-scroll"><table className="intel-simple-scorecard">
-        <thead><tr><th>{mode === "individual" ? "Dispatcher" : "Team"}</th><th>Jobs involved</th><th>{mode === "individual" ? "Their profit" : "Team profit"}</th><th>Margin</th><th><span className="sr-only">Open details</span></th></tr></thead>
+        <thead><tr><th>{mode === "individual" ? "Dispatcher" : "Team"}</th><th>Jobs involved</th><th>Cancelled</th><th>{mode === "individual" ? "Their profit" : "Team profit"}</th><th>Margin</th><th><span className="sr-only">Open details</span></th></tr></thead>
         <tbody>{rows.map(row => <tr key={row.name}>
           <td><button className="intel-city-link" onClick={() => setSelectedName(row.name)}>{row.name}</button></td>
           <td>{row.participated}{row.sharedParticipations > 0 && <small className="intel-simple-secondary">{row.sharedParticipations} shared</small>}</td>
+          <td>{row.cancelledParticipations ? <button className="intel-cancelled-count" aria-label={`View cancelled jobs for ${row.name}`} onClick={() => onOpenJobs({ title: `${row.name} · Cancelled jobs`, jobs: cancelledDispatcherJobs(row.jobs) })}>{row.cancelledParticipations}</button> : 0}</td>
           <td className={row.profit < 0 && row.measured ? "intel-negative intel-profit-number" : "intel-profit-number"}>{row.measured ? money(row.profit) : "No data"}{row.missing > 0 && <small className="intel-simple-secondary">Some financial amounts are missing</small>}</td>
           <td>{percent(row.margin)}</td><td><button className="intel-button" aria-label={`Details for ${row.name}`} onClick={() => setSelectedName(row.name)}>Details <ChevronRight size={15} /></button></td>
         </tr>)}</tbody>
-        <tfoot><tr><th>VISIBLE TOTAL</th><td>{total.participated}<small className="intel-simple-secondary">unique jobs</small></td><td className="intel-profit-number">{total.measured ? money(total.profit) : "No data"}</td><td>{percent(total.margin)}</td><td /></tr></tfoot>
+        <tfoot><tr><th>VISIBLE TOTAL</th><td>{total.participated}<small className="intel-simple-secondary">unique jobs</small></td><td>{total.cancelledParticipations}<small className="intel-simple-secondary">unique cancelled</small></td><td className="intel-profit-number">{total.measured ? money(total.profit) : "No data"}</td><td>{percent(total.margin)}</td><td /></tr></tfoot>
       </table></div>
       {!rows.length && <p className="intel-empty">No dispatchers match this search in either period.</p>}
-      <p className="intel-footnote">{mode === "individual" ? "A shared job appears under everyone involved. The company total counts it once, and its profit is divided between those people." : "Each job belongs to one team. Reversed name order does not create a different team."}</p>
+      <p className="intel-footnote">{mode === "individual" ? "A shared job appears under everyone involved, including cancellations. The company total counts each job once, and profit is divided between those people." : "Each job belongs to one team. Reversed name order does not create a different team."} Select a cancelled count to see those jobs.</p>
       <p className="intel-footnote">Estimated profit = billed amount − parts − technician labor, using completed jobs with all three amounts recorded. It excludes overhead and is not cash collected.{total.missing > 0 && " Jobs with missing financial amounts are excluded; open Details to review them."}</p>
     </section>
     {selected && <DispatcherDetail row={selected} mode={mode} range={range} onClose={() => setSelectedName("")} onInspect={selection => { setSelectedName(""); onOpenJobs(selection); }} />}
   </div>;
 }
 
-function Summary({ label, value, note }) { return <section className="intel-kpi"><div><span>{label}</span></div><strong>{value}</strong><small>{note}</small></section>; }
+function Summary({ label, value, note, onClick }) { return <section className="intel-kpi"><div><span>{label}</span></div><strong>{value}</strong><small>{note}</small>{onClick && <button className="intel-text-button" onClick={onClick}>View cancelled jobs <ChevronRight size={15} /></button>}</section>; }
 
 function DispatcherDetail({ row, mode, range, onClose, onInspect }) {
   const [scope, setScope] = useState("all");

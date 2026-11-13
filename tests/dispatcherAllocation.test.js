@@ -1,11 +1,31 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeAccountingJob } from "../src/modules/accounting/accountingData.js";
-import { buildDispatcherPerformance, dispatcherNames, dispatcherSummary, dispatcherExportRows, dispatcherJobProfit, fullDispatcherJobProfit, jobCredit } from "../src/modules/intelligence/dispatcherPerformance.js";
+import { buildDispatcherPerformance, dispatcherNames, dispatcherSummary, dispatcherExportRows, dispatcherJobProfit, fullDispatcherJobProfit, jobCredit, cancelledDispatcherJobs } from "../src/modules/intelligence/dispatcherPerformance.js";
 
 const job=(id,overrides={})=>normalizeAccountingJob({id,job_date:"2026-11-13",dispatch:"MARIANA/MICHELLE",status:"Completed",company:"FLEET",job_city:"Dallas",job_state:"TX",total_bill:500,parts:50,tech_labor:50,...overrides});
 const individual=(jobs,prior=[])=>buildDispatcherPerformance(jobs,prior,{mode:"individual"});
 const near=(a,b)=>assert.ok(Math.abs(a-b)<1e-9,`${a} != ${b}`);
+
+test("visible cancellation counts show actual jobs per person and unique company cancellations",()=>{
+  const rows=individual([job(1,{dispatch:"A/B",status:"Cancelled"}),job(2,{dispatch:"A",status:"Canceled"}),job(3,{dispatch:"A"})]);
+  const a=rows.find(row=>row.name==="A"), b=rows.find(row=>row.name==="B");
+  assert.equal(a.cancelledParticipations,2);assert.equal(a.cancelled,1.5);
+  assert.equal(b.cancelledParticipations,1);assert.equal(b.cancelled,.5);
+  assert.equal(dispatcherSummary(rows).cancelledParticipations,2);
+  assert.equal(dispatcherSummary([b]).cancelledParticipations,1);
+  assert.deepEqual(cancelledDispatcherJobs(rows.flatMap(row=>row.jobs)).map(job=>job.id),[1,2]);
+  const csv=dispatcherExportRows([b],{from:"2026-11-01",to:"2026-11-13"});
+  assert.equal(csv.at(-1)[csv[0].indexOf("Cancelled jobs involved")],1);
+  assert.equal(csv.at(-1)[csv[0].indexOf("Cancelled credits")],.5);
+});
+
+test("prior-period cancellations and completed current jobs do not inflate current cancellation totals",()=>{
+  const rows=individual([job(1)],[job(2,{status:"Cancelled"})]);
+  assert.equal(dispatcherSummary(rows).cancelledParticipations,0);
+  assert.equal(dispatcherSummary(rows).previous.cancelledParticipations,1);
+  assert.deepEqual(cancelledDispatcherJobs(rows.flatMap(row=>row.jobs)),[]);
+});
 
 test("two dispatchers each receive half a job and $200 of a $400 job profit",()=>{
   const rows=individual([job(1)]);
