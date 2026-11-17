@@ -8,7 +8,7 @@ import { buildTechnicianCosts, costSourceLabels, loadTechnicianCosts } from "./t
 const dollars = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const money = cents => dollars.format(cents / 100);
 const pageSize = 50;
-const summaryHeaders = ["Technician", "Payment transactions", "Marked Paid", "Total labor paid", "Parts recorded"];
+const summaryHeaders = ["Technician", "Payment transactions", "Marked Paid", "Total labor paid", "Parts recorded", "Labor + Parts Total"];
 const detailHeaders = ["Date", "Technician", "Invoice #", "Reference #", "Source", "Amount", "Method", "Confirmation #", "Review", "Job ID"];
 
 function yearRange(lastYear = false) {
@@ -18,7 +18,8 @@ function yearRange(lastYear = false) {
 }
 
 function summaryValues(group) {
-  return [group.transaction, group.paid_status, group.transaction + group.paid_status, group.job_parts];
+  const laborPaid = group.transaction + group.paid_status;
+  return [group.transaction, group.paid_status, laborPaid, group.job_parts, laborPaid + group.job_parts];
 }
 
 function detailRow(row, formatAmount) {
@@ -33,12 +34,12 @@ async function exportReport(report, from, to) {
   summary.addRows([["Report period", from, to], ["Parts amounts come from job records. Transfer confirmation is unavailable."], [],
     summaryHeaders, ...report.groups.map(group => [group.label, ...summaryValues(group).map(value => value / 100)]),
     ["Total", ...summaryValues(report.totals).map(value => value / 100)]]);
-  summary.mergeCells("A2:E2");
+  summary.mergeCells("A2:F2");
 
   const details = workbook.addWorksheet("Job and payment details");
   details.addRows([detailHeaders, ...report.rows.map(row => detailRow(row, value => value / 100))]);
   for (const [sheet, header, widths, moneyColumns] of [
-    [summary, 4, [32, 24, 20, 22, 20], [2, 3, 4, 5]],
+    [summary, 4, [32, 24, 20, 22, 20, 24], [2, 3, 4, 5, 6]],
     [details, 1, [16, 32, 18, 22, 26, 16, 18, 24, 31, 40], [6]],
   ]) {
     sheet.views = [{ state: "frozen", ySplit: header }];
@@ -152,6 +153,9 @@ export default function TechnicianCostReports() {
           <tbody>{report.groups.map(group => <tr key={group.key}>
             <th scope="row">{group.label}</th>{summaryValues(group).map((value, index) => <td key={summaryHeaders[index + 1]}>{money(value)}</td>)}
           </tr>)}</tbody>
+          {report.groups.length > 0 && <tfoot><tr>
+            <th scope="row">Total</th>{summaryValues(report.totals).map((value, index) => <td key={summaryHeaders[index + 1]}><strong>{money(value)}</strong></td>)}
+          </tr></tfoot>}
         </table></div>
         {!report.groups.length && <p className="intel-empty">No amounts with valid dates for this period.</p>}
       </section>
